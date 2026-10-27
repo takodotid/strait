@@ -185,7 +185,7 @@ spec:
   members:
     - {name: a, site: a, cnpg: {cluster: pg-a}}
 ---
-# want: spec.policy: Invalid value: "object": unknownHold must not exceed 10m
+# want: spec.policy: Invalid value: "object": unknownHold must be between 0s and 10m
 apiVersion: strait.tako.id/v1alpha1
 kind: SiteService
 metadata:
@@ -424,3 +424,30 @@ spec:
   plugin: {declared: {}}
   members:
     - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: <nil>: Invalid value: "object": the name must be a DNS-1035 label, since it names a Service
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: 1pg
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+---
+# want: spec.policy: Invalid value: "object": unknownHold must be between 0s and 10m
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: unknown-hold-negative
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+  policy: {unknownHold: -5s}

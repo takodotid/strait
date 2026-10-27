@@ -16,7 +16,7 @@ type Site struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +kubebuilder:default={}
-	Spec   SiteSpec   `json:"spec,omitempty"`
+	Spec   SiteSpec   `json:"spec,omitzero"`
 	Status SiteStatus `json:"status,omitempty"`
 }
 
@@ -25,12 +25,12 @@ type SiteSpec struct {
 	// Gateway sets the ports of the site's gateway.
 	// +kubebuilder:default={}
 	// +optional
-	Gateway GatewaySpec `json:"gateway,omitempty"`
+	Gateway GatewaySpec `json:"gateway,omitzero"`
 
 	// Exchange sets how peers are polled.
 	// +kubebuilder:default={}
 	// +optional
-	Exchange ExchangeSpec `json:"exchange,omitempty"`
+	Exchange ExchangeSpec `json:"exchange,omitzero"`
 
 	// WireGuard is the site's WireGuard identity. Required when a SiteLink uses the wireguard transport.
 	// +optional
@@ -52,12 +52,12 @@ type GatewaySpec struct {
 	// ExportPorts is the range that export ports are allocated from. Peers reach exports on these ports.
 	// +kubebuilder:default={first:30901,last:31899}
 	// +optional
-	ExportPorts PortRange `json:"exportPorts,omitempty"`
+	ExportPorts PortRange `json:"exportPorts,omitzero"`
 
 	// ImportPorts is the range that local import listeners are allocated from. Peers never reach them.
 	// +kubebuilder:default={first:15000,last:15999}
 	// +optional
-	ImportPorts PortRange `json:"importPorts,omitempty"`
+	ImportPorts PortRange `json:"importPorts,omitzero"`
 
 	// PeerPort is the local listener that the controller polls peers through. Peers never reach it.
 	// +kubebuilder:validation:Minimum=1
@@ -70,12 +70,12 @@ type GatewaySpec struct {
 	// Expose it on the private link only.
 	// +kubebuilder:default={}
 	// +optional
-	DirectService ServiceExposure `json:"directService,omitempty"`
+	DirectService ServiceExposure `json:"directService,omitzero"`
 
 	// WireGuardService sets how peers reach the UDP ports of wireguard links.
 	// +kubebuilder:default={}
 	// +optional
-	WireGuardService ServiceExposure `json:"wireGuardService,omitempty"`
+	WireGuardService ServiceExposure `json:"wireGuardService,omitzero"`
 }
 
 // ServiceExposure sets the type and annotations of a gateway Service.
@@ -109,12 +109,12 @@ type ExchangeSpec struct {
 	// PollInterval is the time between two polls of a peer.
 	// +kubebuilder:default="2s"
 	// +optional
-	PollInterval metav1.Duration `json:"pollInterval,omitempty"`
+	PollInterval metav1.Duration `json:"pollInterval,omitzero"`
 
 	// PeerTimeout is the age after which a peer's last document is stale and its members are Unknown.
 	// +kubebuilder:default="6s"
 	// +optional
-	PeerTimeout metav1.Duration `json:"peerTimeout,omitempty"`
+	PeerTimeout metav1.Duration `json:"peerTimeout,omitzero"`
 }
 
 // SiteWireGuard is the site's WireGuard identity.
@@ -136,7 +136,7 @@ type SecretKeyRef struct {
 type SiteStatus struct {
 	// Gateway shows the active gateway replica.
 	// +optional
-	Gateway GatewayStatus `json:"gateway,omitempty"`
+	Gateway GatewayStatus `json:"gateway,omitzero"`
 
 	// WireGuardPublicKey is the public key of the site's private key. Peers put it in their SitePeer.
 	// +optional
@@ -180,7 +180,7 @@ type SitePeer struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// +kubebuilder:default={}
-	Spec   SitePeerSpec   `json:"spec,omitempty"`
+	Spec   SitePeerSpec   `json:"spec,omitzero"`
 	Status SitePeerStatus `json:"status,omitempty"`
 }
 

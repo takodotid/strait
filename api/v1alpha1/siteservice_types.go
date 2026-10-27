@@ -57,6 +57,7 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=ss
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && size(self.metadata.name) <= 63",message="the name must be a DNS-1035 label, since it names a Service"
 // +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
 // +kubebuilder:printcolumn:name="Route",type=string,JSONPath=`.status.route.members`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.route.reason`
@@ -100,7 +101,7 @@ type SiteServiceSpec struct {
 	// Policy decides the route when observations are incomplete or contradict each other.
 	// +kubebuilder:default={}
 	// +optional
-	Policy Policy `json:"policy,omitempty"`
+	Policy Policy `json:"policy,omitzero"`
 }
 
 // ServicePort is the port of the application name.
@@ -172,7 +173,7 @@ type CNPGMember struct {
 }
 
 // Policy decides the route when observations are incomplete or contradict each other.
-// +kubebuilder:validation:XValidation:rule="!has(self.unknownHold) || duration(self.unknownHold) <= duration('10m')",message="unknownHold must not exceed 10m"
+// +kubebuilder:validation:XValidation:rule="!has(self.unknownHold) || (duration(self.unknownHold) >= duration('0s') && duration(self.unknownHold) <= duration('10m'))",message="unknownHold must be between 0s and 10m"
 type Policy struct {
 	// Multiple is what Single mode does when two or more members are writable.
 	// +kubebuilder:default=RouteNowhere
@@ -182,7 +183,7 @@ type Policy struct {
 	// UnknownHold is how long an Unknown member stays in the route after it was last confirmed.
 	// +kubebuilder:default="30s"
 	// +optional
-	UnknownHold metav1.Duration `json:"unknownHold,omitempty"`
+	UnknownHold metav1.Duration `json:"unknownHold,omitzero"`
 }
 
 // State is a member's state.

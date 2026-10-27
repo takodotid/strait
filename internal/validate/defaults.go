@@ -15,6 +15,8 @@ func Default(obj runtime.Object) {
 	switch o := obj.(type) {
 	case *v1alpha1.Site:
 		defaultSite(&o.Spec)
+	case *v1alpha1.SitePeer:
+		setInt(&o.Spec.ControlPort, 30900)
 	case *v1alpha1.SiteLink:
 		defaultSiteLink(&o.Spec)
 	case *v1alpha1.SiteService:
@@ -28,6 +30,11 @@ func defaultSite(s *v1alpha1.SiteSpec) {
 	setRange(&g.ExportPorts, 30901, 31899)
 	setRange(&g.ImportPorts, 15000, 15999)
 	setInt(&g.PeerPort, 14999)
+	for _, e := range []*v1alpha1.ServiceExposure{&g.DirectService, &g.WireGuardService} {
+		if e.Type == "" {
+			e.Type = "NodePort"
+		}
+	}
 	setDuration(&s.Exchange.PollInterval, 2*time.Second)
 	setDuration(&s.Exchange.PeerTimeout, 6*time.Second)
 	if s.WireGuard != nil && s.WireGuard.PrivateKeySecretRef.Key == "" {

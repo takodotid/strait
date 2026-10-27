@@ -6,7 +6,7 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=${VERSION}" -o /out/ ./cmd/... \
- && go run ./hack/gendocs -man /out/man/man1
+ && go run ./hack/gendocs /out/man/man1
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/strait /out/strait-controller /out/strait-gateway /usr/local/bin/

@@ -156,11 +156,8 @@ func spanning(objs []runtime.Object) []Problem {
 		}
 	}
 
-	type key struct {
-		peer string
-		port int32
-	}
-	ports := map[key]string{}
+	// Every wireguard link has its own interface in the one gateway, so listen ports must differ across all links.
+	ports := map[int32]string{}
 	for i, obj := range objs {
 		l, ok := obj.(*v1alpha1.SiteLink)
 		if !ok {
@@ -191,13 +188,16 @@ func spanning(objs []runtime.Object) []Problem {
 		if l.Spec.WireGuard == nil {
 			continue
 		}
-		k := key{l.Spec.Peer, l.Spec.WireGuard.ListenPort}
-		if other, ok := ports[k]; ok {
-			out = append(out, newProblem(i, l, SeverityError, detail(field.Duplicate(spec.Child("wireguard", "listenPort"), k.port),
-				fmt.Sprintf("SiteLink/%s to the same peer uses this listen port", other))))
+		p := l.Spec.WireGuard.ListenPort
+		if p == 0 {
+			p = 51820
+		}
+		if other, ok := ports[p]; ok {
+			out = append(out, newProblem(i, l, SeverityError, detail(field.Duplicate(spec.Child("wireguard", "listenPort"), p),
+				fmt.Sprintf("SiteLink/%s uses this listen port", other))))
 			continue
 		}
-		ports[k] = l.Name
+		ports[p] = l.Name
 	}
 	return out
 }

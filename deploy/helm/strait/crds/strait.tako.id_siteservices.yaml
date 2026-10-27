@@ -179,8 +179,9 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-validations:
-                - message: unknownHold must not exceed 10m
-                  rule: '!has(self.unknownHold) || duration(self.unknownHold) <= duration(''10m'')'
+                - message: unknownHold must be between 0s and 10m
+                  rule: '!has(self.unknownHold) || (duration(self.unknownHold) >=
+                    duration(''0s'') && duration(self.unknownHold) <= duration(''10m''))'
               port:
                 description: Port is the port of the application name.
                 properties:
@@ -374,6 +375,10 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: the name must be a DNS-1035 label, since it names a Service
+          rule: self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && size(self.metadata.name)
+            <= 63
     served: true
     storage: true
     subresources:

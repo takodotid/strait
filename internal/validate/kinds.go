@@ -44,6 +44,16 @@ func Site(s *v1alpha1.Site) field.ErrorList {
 		!hasImport || g.PeerPort == 0 || g.ImportPorts.First > g.PeerPort || g.ImportPorts.Last < g.PeerPort,
 		"peerPort must be outside importPorts")...)
 
+	for _, e := range []struct {
+		name string
+		v1alpha1.ServiceExposure
+	}{{"directService", g.DirectService}, {"wireGuardService", g.WireGuardService}} {
+		name := e.name
+		if e.Type != "ClusterIP" && e.Type != "NodePort" && e.Type != "LoadBalancer" {
+			errs = append(errs, field.NotSupported(gp.Child(name, "type"), e.Type, []string{"ClusterIP", "NodePort", "LoadBalancer"}))
+		}
+	}
+
 	x := s.Spec.Exchange
 	errs = append(errs, rule(spec.Child("exchange"),
 		x.PeerTimeout.Duration == 0 || x.PollInterval.Duration == 0 || x.PeerTimeout.Duration >= 2*x.PollInterval.Duration,
@@ -57,7 +67,10 @@ func Site(s *v1alpha1.Site) field.ErrorList {
 
 // SitePeer checks a SitePeer.
 func SitePeer(s *v1alpha1.SitePeer) field.ErrorList {
+	s = s.DeepCopy()
+	Default(s)
 	errs := objectMeta(&s.ObjectMeta)
+	errs = append(errs, port(field.NewPath("spec", "controlPort"), s.Spec.ControlPort)...)
 	if w := s.Spec.WireGuard; w != nil {
 		p := field.NewPath("spec", "wireguard", "publicKey")
 		if w.PublicKey == "" {
@@ -123,6 +136,9 @@ func SiteService(ss *v1alpha1.SiteService) field.ErrorList {
 	ss = ss.DeepCopy()
 	defaultSiteService(&ss.Spec)
 	errs := objectMeta(&ss.ObjectMeta)
+	errs = append(errs, rule(nil,
+		ss.Name == "" || (dns1035.MatchString(ss.Name) && len(ss.Name) <= 63),
+		"the name must be a DNS-1035 label, since it names a Service")...)
 	s := ss.Spec
 	spec := field.NewPath("spec")
 
@@ -167,8 +183,8 @@ func SiteService(ss *v1alpha1.SiteService) field.ErrorList {
 	pol := spec.Child("policy")
 	errs = append(errs, enum(pol.Child("multiple"), s.Policy.Multiple, false, v1alpha1.RouteNowhere, v1alpha1.PreferDeclaredIfConsistent)...)
 	errs = append(errs, rule(pol,
-		s.Policy.UnknownHold.Duration <= 10*time.Minute,
-		"unknownHold must not exceed 10m")...)
+		s.Policy.UnknownHold.Duration >= 0 && s.Policy.UnknownHold.Duration <= 10*time.Minute,
+		"unknownHold must be between 0s and 10m")...)
 
 	cnpg, declared := s.Plugin.CNPG, s.Plugin.Declared
 	errs = append(errs, rule(spec,
@@ -222,6 +238,8 @@ func servicePortRef(p *field.Path, r v1alpha1.ServicePortRef) field.ErrorList {
 }
 
 // rule reports a failed XValidation rule at the struct that carries it, as the API server does.
+var dns1035 = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
+
 func rule(p *field.Path, ok bool, message string) field.ErrorList {
 	if ok {
 		return nil

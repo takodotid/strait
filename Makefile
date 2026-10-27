@@ -29,7 +29,7 @@ build: ## Build every binary into bin/.
 
 .PHONY: docs
 docs: ## Write the man pages into bin/man and the skill document into bin/SKILL.md.
-	go run ./hack/gendocs -man bin/man/man1 -skill bin/SKILL.md
+	go run ./hack/gendocs -skill bin/SKILL.md bin/man/man1
 
 .PHONY: test
 test: ## Run unit tests.
