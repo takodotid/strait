@@ -76,6 +76,8 @@ type cluster struct {
 	phase, currentPrimary, target   string
 	demoting                        bool
 	promotionToken, lastPromotionTk string
+	// writable is the operator's last report that the current primary instance is out of recovery.
+	writable bool
 }
 
 func readCluster(u *unstructured.Unstructured) cluster {
@@ -105,6 +107,9 @@ func readCluster(u *unstructured.Unstructured) cluster {
 	c.target, _, _ = unstructured.NestedString(u.Object, "status", "targetPrimary")
 	c.demoting, _, _ = unstructured.NestedBool(u.Object, "status", "switchReplicaClusterStatus", "inProgress")
 	c.lastPromotionTk, _, _ = unstructured.NestedString(u.Object, "status", "lastPromotionToken")
+	if c.currentPrimary != "" {
+		c.writable, _, _ = unstructured.NestedBool(u.Object, "status", "instancesReportedState", c.currentPrimary, "isPrimary")
+	}
 	return c
 }
 
@@ -119,6 +124,10 @@ func (c cluster) transition() string {
 		return "Demoting"
 	case c.promotionToken != "" && c.promotionToken != c.lastPromotionTk:
 		return "Promoting"
+	case !c.replica && !c.writable:
+		return "NotYetWritable"
+	case c.replica && c.writable:
+		return "NotYetReadOnly"
 	}
 	return ""
 }
