@@ -8,7 +8,7 @@ Two kind clusters, one per site, with CloudNativePG in the distributed topology 
 make e2e
 ```
 
-`make e2e` builds the image (`make images`), then runs `go test -tags e2e ./test/e2e/...`. One run takes about 8 minutes.
+`make e2e` builds the image (`make images`), then runs `go test -tags e2e ./test/e2e/...`. One run takes about 7 minutes.
 
 | Variable | Default | Effect |
 |---|---|---|
