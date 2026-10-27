@@ -123,5 +123,15 @@ Commit and push only when the operator asks.
 
 ## Current state
 
-- Started on 2026-10-27. No RFC and no code yet.
-- There are no commands to run yet. Add them here when they exist.
+- Started on 2026-10-27. v1 is built on the Draft RFCs in `rfcs/`.
+- Commands:
+
+| Command | Does |
+|---|---|
+| `make generate` | Generates deepcopy code and CRDs from `api/`, and copies them into the chart. |
+| `make verify` | Fails if generated files are stale, `gofmt` or `go vet` complain. |
+| `make build` | Builds every binary into `bin/`. |
+| `make test` | Runs unit tests. |
+| `make docs` | Writes the man pages and the skill document into `bin/`. |
+| `make images` | Builds the container image. |
+| `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |

@@ -1,0 +1,35 @@
+# Proposed GitHub Actions workflow. Move it to .github/workflows/ to enable it.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make verify
+      - run: make test
+      - run: make build
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: verify
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: sudo modprobe wireguard
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+          version: v0.33.0
+      - uses: azure/setup-helm@v4
+      - run: make e2e
