@@ -65,6 +65,31 @@ type GatewaySpec struct {
 	// +kubebuilder:default=14999
 	// +optional
 	PeerPort int32 `json:"peerPort,omitempty"`
+
+	// DirectService sets how peers reach the control port and the export ports over direct links.
+	// Expose it on the private link only.
+	// +kubebuilder:default={}
+	// +optional
+	DirectService ServiceExposure `json:"directService,omitempty"`
+
+	// WireGuardService sets how peers reach the UDP ports of wireguard links.
+	// +kubebuilder:default={}
+	// +optional
+	WireGuardService ServiceExposure `json:"wireGuardService,omitempty"`
+}
+
+// ServiceExposure sets the type and annotations of a gateway Service.
+// With NodePort, each node port equals its port, so a port number is the same on every path.
+type ServiceExposure struct {
+	// Type is ClusterIP, NodePort or LoadBalancer.
+	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
+	// +kubebuilder:default=NodePort
+	// +optional
+	Type string `json:"type,omitempty"`
+
+	// Annotations are added to the Service, for example to make a load balancer internal.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // PortRange is an inclusive range of ports.
