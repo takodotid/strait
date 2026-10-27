@@ -30,10 +30,11 @@ func defaultSite(s *v1alpha1.SiteSpec) {
 	setRange(&g.ExportPorts, 30901, 31899)
 	setRange(&g.ImportPorts, 15000, 15999)
 	setInt(&g.PeerPort, 14999)
-	for _, e := range []*v1alpha1.ServiceExposure{&g.DirectService, &g.WireGuardService} {
-		if e.Type == "" {
-			e.Type = "NodePort"
-		}
+	if g.DirectService.Type == "" {
+		g.DirectService.Type = "ClusterIP"
+	}
+	if g.WireGuardService.Type == "" {
+		g.WireGuardService.Type = "NodePort"
 	}
 	setDuration(&s.Exchange.PollInterval, 2*time.Second)
 	setDuration(&s.Exchange.PeerTimeout, 6*time.Second)
@@ -45,7 +46,7 @@ func defaultSite(s *v1alpha1.SiteSpec) {
 func defaultSiteLink(s *v1alpha1.SiteLinkSpec) {
 	setInt(&s.Cost, 100)
 	if w := s.WireGuard; w != nil {
-		setInt(&w.ListenPort, 51820)
+		setInt(&w.ListenPort, 31820)
 		if w.PersistentKeepalive == nil {
 			w.PersistentKeepalive = &metav1.Duration{Duration: 25 * time.Second}
 		}

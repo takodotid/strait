@@ -12,3 +12,5 @@ site:
   spec:
     wireguard: {privateKeySecretRef: {name: strait-wireguard}}
     exchange: {pollInterval: 1s, peerTimeout: 3s}
+    # The direct link reaches the gateway on node a's direct address.
+    gateway: {directService: {type: NodePort}}

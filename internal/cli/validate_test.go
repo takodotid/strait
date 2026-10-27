@@ -35,7 +35,7 @@ func TestValidateTable(t *testing.T) {
 		t.Errorf("exit %d", r.code)
 	}
 	diff(t, r.stdout, `SEVERITY  FILE                                       DOC  OBJECT                  FIELD                      MESSAGE
-Error     ../validate/testdata/set/listen-port.yaml  4    SiteLink/b-wireguard-2  spec.wireguard.listenPort  Duplicate value: 51820: SiteLink/b-wireguard-1 uses this listen port
+Error     ../validate/testdata/set/listen-port.yaml  4    SiteLink/b-wireguard-2  spec.wireguard.listenPort  Duplicate value: 31820: SiteLink/b-wireguard-1 uses this listen port
 
 Objects checked: 4. Documents of other API groups skipped: 0. Errors: 1. Warnings: 0.
 `)

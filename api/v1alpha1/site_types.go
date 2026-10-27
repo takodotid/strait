@@ -67,13 +67,14 @@ type GatewaySpec struct {
 	PeerPort int32 `json:"peerPort,omitempty"`
 
 	// DirectService sets how peers reach the control port and the export ports over direct links.
-	// Expose it on the private link only.
-	// +kubebuilder:default={}
+	// It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
+	// A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
+	// +kubebuilder:default={type: ClusterIP}
 	// +optional
 	DirectService ServiceExposure `json:"directService,omitzero"`
 
-	// WireGuardService sets how peers reach the UDP ports of wireguard links.
-	// +kubebuilder:default={}
+	// WireGuardService sets how peers reach the UDP ports of wireguard links. It is NodePort unless set.
+	// +kubebuilder:default={type: NodePort}
 	// +optional
 	WireGuardService ServiceExposure `json:"wireGuardService,omitzero"`
 }
@@ -81,9 +82,8 @@ type GatewaySpec struct {
 // ServiceExposure sets the type and annotations of a gateway Service.
 // With NodePort, each node port equals its port, so a port number is the same on every path.
 type ServiceExposure struct {
-	// Type is ClusterIP, NodePort or LoadBalancer.
+	// Type is ClusterIP, NodePort or LoadBalancer. Empty means the default of the Service it sets.
 	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
-	// +kubebuilder:default=NodePort
 	// +optional
 	Type string `json:"type,omitempty"`
 
@@ -326,9 +326,10 @@ type DirectLink struct {
 // WireGuardLink holds the settings of a wireguard link.
 type WireGuardLink struct {
 	// ListenPort is the local UDP port of this link's interface.
+	// With a NodePort or LoadBalancer WireGuard Service, the node port equals it, so it must be in the cluster's node port range.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
-	// +kubebuilder:default=51820
+	// +kubebuilder:default=31820
 	// +optional
 	ListenPort int32 `json:"listenPort,omitempty"`
 
