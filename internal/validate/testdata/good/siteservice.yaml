@@ -1,0 +1,99 @@
+# The example of RFC#0002.
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: pg
+  namespace: app
+spec:
+  mode: Single
+  port:
+    name: postgres
+    port: 5432
+  plugin:
+    cnpg:
+      role: primary
+  members:
+    - name: pg-a
+      site: a
+      cnpg:
+        cluster: pg-a
+    - name: pg-b
+      site: b
+      cnpg:
+        cluster: pg-b
+  policy:
+    multiple: RouteNowhere
+    unknownHold: 30s
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: cache
+  namespace: app
+spec:
+  mode: Set
+  locality: LocalOnly
+  port:
+    name: redis
+    port: 6379
+  plugin:
+    declared: {}
+  members:
+    - name: cache-a
+      site: a
+      service:
+        name: cache
+        port: 6379
+    - name: cache-b
+      site: b
+      service:
+        name: cache
+        port: 6379
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: queue
+  namespace: app
+spec:
+  mode: Single
+  port:
+    name: amqp
+    port: 5672
+  plugin:
+    declared:
+      active: queue-b
+  members:
+    - name: queue-a
+      site: a
+      service:
+        name: queue
+        port: 5672
+    - name: queue-b
+      site: b
+      service:
+        name: queue
+        port: 5672
+  policy:
+    multiple: PreferDeclaredIfConsistent
+    unknownHold: 10m
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: pg-ro
+  namespace: app
+spec:
+  mode: Set
+  port:
+    name: postgres
+    port: 5432
+  plugin:
+    cnpg:
+      role: replica
+  members:
+    - name: pg-a
+      site: a
+      cnpg:
+        cluster: pg-a
+        pooler: pg-a-ro

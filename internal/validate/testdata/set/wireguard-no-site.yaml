@@ -1,0 +1,19 @@
+# want: Warning SiteLink/b-wireguard: spec.transport: Invalid value: "wireguard": no Site in the set: cannot check that it sets spec.wireguard
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: b
+spec:
+  wireguard:
+    publicKey: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wireguard
+spec:
+  peer: b
+  transport: wireguard
+  wireguard:
+    address: 10.200.0.1/30
+    peerAddress: 10.200.0.2

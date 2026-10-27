@@ -1,0 +1,41 @@
+# want: spec.service.name: Required value
+# want: spec.service.port: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: Export
+metadata:
+  name: service-missing
+  namespace: app
+spec:
+  service: {}
+---
+# want: spec.service.name: Too long: may not be more than 63 characters
+# want: spec.service.port: Invalid value: 70000: must be between 1 and 65535
+apiVersion: strait.tako.id/v1alpha1
+kind: Export
+metadata:
+  name: service-limits
+  namespace: app
+spec:
+  service:
+    name: ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss
+    port: 70000
+---
+# want: spec.site: Required value
+# want: spec.export: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: Import
+metadata:
+  name: import-missing
+  namespace: app
+spec: {}
+---
+# want: spec.site: Too long: may not be more than 63 characters
+# want: spec.export: Too long: may not be more than 253 characters
+apiVersion: strait.tako.id/v1alpha1
+kind: Import
+metadata:
+  name: import-limits
+  namespace: app
+spec:
+  site: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  export: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee

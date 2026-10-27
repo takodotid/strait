@@ -1,0 +1,115 @@
+# want: spec.gateway: Invalid value: "object": controlPort must be outside exportPorts
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: control-port-in-export-ports
+spec:
+  gateway:
+    controlPort: 31000
+---
+# want: spec.gateway: Invalid value: "object": importPorts must not overlap exportPorts
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: import-ports-overlap
+spec:
+  gateway:
+    importPorts:
+      first: 30000
+      last: 30950
+---
+# want: spec.gateway: Invalid value: "object": peerPort must be outside importPorts
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: peer-port-in-import-ports
+spec:
+  gateway:
+    peerPort: 15500
+---
+# want: spec.gateway.exportPorts: Invalid value: "object": first must not exceed last
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: range-reversed
+spec:
+  gateway:
+    exportPorts:
+      first: 31899
+      last: 30901
+---
+# want: spec.gateway.controlPort: Invalid value: 70000: must be between 1 and 65535
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: control-port-range
+spec:
+  gateway:
+    controlPort: 70000
+---
+# want: spec.gateway.importPorts.first: Invalid value: -1: must be between 1 and 65535
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: range-first
+spec:
+  gateway:
+    importPorts:
+      first: -1
+      last: 10
+---
+# want: spec.gateway.exportPorts.last: Required value
+# want: spec.gateway.exportPorts: Invalid value: "object": first must not exceed last
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: range-last-missing
+spec:
+  gateway:
+    exportPorts:
+      first: 31000
+---
+# want: spec.gateway.peerPort: Invalid value: 65536: must be between 1 and 65535
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: peer-port-range
+spec:
+  gateway:
+    peerPort: 65536
+---
+# The default peerTimeout of 6s is less than twice 5s.
+# want: spec.exchange: Invalid value: "object": peerTimeout must be at least twice pollInterval
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: poll-interval-only
+spec:
+  exchange:
+    pollInterval: 5s
+---
+# The default pollInterval of 2s is more than half of 3s.
+# want: spec.exchange: Invalid value: "object": peerTimeout must be at least twice pollInterval
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: peer-timeout-only
+spec:
+  exchange:
+    peerTimeout: 3s
+---
+# want: spec.wireguard.privateKeySecretRef.name: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: secret-name-missing
+spec:
+  wireguard:
+    privateKeySecretRef:
+      key: key
+---
+# want: metadata.name: Invalid value: "Site_A": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: Site_A

@@ -1,0 +1,25 @@
+# want: Error SiteLink/b-wireguard: spec.transport: Invalid value: "wireguard": the wireguard transport needs spec.wireguard on SitePeer/b
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: a
+spec:
+  wireguard:
+    privateKeySecretRef:
+      name: strait-wireguard
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: b
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wireguard
+spec:
+  peer: b
+  transport: wireguard
+  wireguard:
+    address: 10.200.0.1/30
+    peerAddress: 10.200.0.2

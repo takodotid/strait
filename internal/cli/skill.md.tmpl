@@ -1,0 +1,85 @@
+---
+name: strait
+description: Read the state of Strait, the virtual service that points one local name per dependency at its active member across Kubernetes clusters at different sites. Use it to see where an application name points and why, to check peers and links, and to validate Strait manifests. Read-only.
+---
+
+# Strait
+
+## What Strait is
+
+Strait is a virtual service between Kubernetes clusters at different sites. Each cluster is one site, and every site serves traffic.
+
+- An application connects to one local name per dependency, such as `pg.app.svc` for a PostgreSQL primary. Each name is a `SiteService`.
+- Plugins observe each member of the dependency: its role, whether it is eligible, and its state. Each site shares what it observes with its peers.
+- Strait points the name at the member that is active now. A local member gets its own pods as endpoints. A member at another site gets the local gateway, which carries the TCP traffic to that site over a link.
+- When Strait cannot tell which member is active, it routes nowhere: the name has no endpoints, and a new connection is refused at once. This is deliberate. A refused connection is retried, while a connection to the wrong primary can lose writes.
+
+Each site runs its own Strait and has its own view. Read each site with its own kubeconfig context.
+
+## Rules
+
+- Strait never changes a workload. It never fails over, switches over, promotes, demotes or fences anything. It observes, and it follows.
+- Failover, switchover and promotion belong to the workload's own controller, such as CloudNativePG, or to the operator. Once the workload has moved, Strait follows on its own.
+- The `strait` CLI is read-only. It never creates, updates, patches or deletes an object.
+- A route to nowhere is a safe state, not a fault to work around. Find its cause with `strait explain` and report it to the operator. Do not edit Strait's resources to force a route.
+- Pass `--context` on every call. The CLI reads exactly that context and no other.
+
+## How to read the state
+
+1. `strait status` shows the site, its peers, and where every application name points.
+2. `strait explain SITESERVICE` shows why one name points where it does.
+3. When members are `Unknown`, `strait peers` shows whether their site can be read.
+4. When a peer cannot be read, `strait links` shows the health of each path to it.
+5. Before Strait manifests are applied, `strait validate -f PATH` checks them offline.
+
+Every command takes `-o json` or `-o yaml` for output that a program reads. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
+
+## Commands
+
+The flags of `strait` are global: every command takes them.
+{{range .Commands}}
+### {{.Path}}
+
+{{.Short}}.
+
+```
+{{.Usage}}
+```
+
+{{.Long}}
+{{- if .Example}}
+
+Examples:
+
+```
+{{.Example}}
+```
+{{- end}}
+{{- if .Flags}}
+
+Flags:
+
+```
+{{.Flags}}
+```
+{{- end}}
+{{end}}
+## Route reasons
+
+`status.route.reason` of a `SiteService` says why its name points where it does. `strait explain` prints it with its meaning.
+
+| Reason | Meaning |
+|---|---|
+{{- range .Reasons}}
+| `{{.Name}}` | {{.Meaning}} |
+{{- end}}
+
+## Member states
+
+| State | Meaning |
+|---|---|
+| `Stable` | The plugin read the member, and the member is not moving. |
+| `Transitioning` | The member is moving: a switchover, a promotion or a demotion is in progress. |
+| `Unknown` | The plugin could not read the member, or the peer site that hosts it cannot be read. |
+
+A member is writable when it is `Stable`, eligible, and has role `primary`.

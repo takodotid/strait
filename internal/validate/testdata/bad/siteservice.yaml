@@ -1,0 +1,426 @@
+# want: spec.mode: Unsupported value: "Primary": supported values: "Single", "Set"
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: mode-enum
+  namespace: app
+spec:
+  mode: Primary
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: a}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.mode: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: mode-missing
+  namespace: app
+spec:
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: a}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec: Invalid value: "object": locality applies to Set mode only
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: locality-single
+  namespace: app
+spec:
+  mode: Single
+  locality: LocalFirst
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: a}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.locality: Unsupported value: "Nearest": supported values: "LocalFirst", "LocalOnly", "Any"
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: locality-enum
+  namespace: app
+spec:
+  mode: Set
+  locality: Nearest
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec: Invalid value: "object": cnpg role primary requires Single mode; replica and any require Set mode
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: cnpg-primary-set
+  namespace: app
+spec:
+  mode: Set
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+---
+# want: spec: Invalid value: "object": cnpg role primary requires Single mode; replica and any require Set mode
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: cnpg-replica-single
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: replica}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+---
+# want: spec.plugin.cnpg.role: Unsupported value: "leader": supported values: "primary", "replica", "any"
+# want: spec: Invalid value: "object": cnpg role primary requires Single mode; replica and any require Set mode
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: cnpg-role-enum
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: leader}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+---
+# want: spec: Invalid value: "object": the declared plugin needs active in Single mode
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: declared-without-active
+  namespace: app
+spec:
+  mode: Single
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec: Invalid value: "object": declared.active must name a member
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: declared-active-unknown
+  namespace: app
+spec:
+  mode: Single
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: c}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec: Invalid value: "object": every member must carry the source of the plugin in use, and no other
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-source-cnpg
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+    - {name: b, site: b, cnpg: {cluster: pg-b}, service: {name: pg-b, port: 5432}}
+---
+# want: spec: Invalid value: "object": every member must carry the source of the plugin in use, and no other
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-source-declared
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+---
+# want: spec.members[1]: Duplicate value: {"name":"a"}
+# want: spec: Invalid value: "object": member names must be unique
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-names-unique
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+    - {name: a, site: b, service: {name: web, port: 80}}
+---
+# want: spec.plugin: Invalid value: "object": set exactly one plugin
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: plugin-none
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.plugin: Invalid value: "object": set exactly one plugin
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: plugin-both
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}, declared: {active: a}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
+---
+# want: spec.policy: Invalid value: "object": unknownHold must not exceed 10m
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: unknown-hold-range
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    unknownHold: 11m
+---
+# want: spec.policy.multiple: Unsupported value: "Random": supported values: "RouteNowhere", "PreferDeclaredIfConsistent"
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: multiple-enum
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    multiple: Random
+---
+# want: spec.port.name: Invalid value: "PG": must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: port-name-pattern
+  namespace: app
+spec:
+  mode: Set
+  port: {name: PG, port: 5432}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.port.name: Too long: may not be more than 15 characters
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: port-name-long
+  namespace: app
+spec:
+  mode: Set
+  port: {name: postgres-primary, port: 5432}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.port.name: Required value
+# want: spec.port.port: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: port-missing
+  namespace: app
+spec:
+  mode: Set
+  port: {}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.port.port: Invalid value: 70000: must be between 1 and 65535
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: port-range
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 70000}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: spec.members: Required value: must have at least 1 item
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: members-empty
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members: []
+---
+# want: spec.members: Too many: 17: must have at most 16 items
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: members-many
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: m1, site: a, service: {name: web, port: 80}}
+    - {name: m2, site: a, service: {name: web, port: 80}}
+    - {name: m3, site: a, service: {name: web, port: 80}}
+    - {name: m4, site: a, service: {name: web, port: 80}}
+    - {name: m5, site: a, service: {name: web, port: 80}}
+    - {name: m6, site: a, service: {name: web, port: 80}}
+    - {name: m7, site: a, service: {name: web, port: 80}}
+    - {name: m8, site: a, service: {name: web, port: 80}}
+    - {name: m9, site: b, service: {name: web, port: 80}}
+    - {name: m10, site: b, service: {name: web, port: 80}}
+    - {name: m11, site: b, service: {name: web, port: 80}}
+    - {name: m12, site: b, service: {name: web, port: 80}}
+    - {name: m13, site: b, service: {name: web, port: 80}}
+    - {name: m14, site: b, service: {name: web, port: 80}}
+    - {name: m15, site: b, service: {name: web, port: 80}}
+    - {name: m16, site: b, service: {name: web, port: 80}}
+    - {name: m17, site: b, service: {name: web, port: 80}}
+---
+# want: spec.members[0].name: Invalid value: "A_1": must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-name-pattern
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: A_1, site: a, service: {name: web, port: 80}}
+---
+# want: spec.members[0].name: Too long: may not be more than 63 characters
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-name-long
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm, site: a, service: {name: web, port: 80}}
+---
+# want: spec.members[0].site: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-site-missing
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, service: {name: web, port: 80}}
+---
+# want: spec.members[0].site: Invalid value: "Site.A": must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-site-pattern
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: Site.A, service: {name: web, port: 80}}
+---
+# want: spec.members[0].cnpg.cluster: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: cnpg-cluster-missing
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: a, site: a, cnpg: {}}
+---
+# want: spec.members[0].cnpg.cluster: Too long: may not be more than 50 characters
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: cnpg-cluster-long
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: ccccccccccccccccccccccccccccccccccccccccccccccccccc}}
+---
+# want: spec.members[0].service.port: Required value
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: member-service-port
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web}}
+---
+# want: metadata.name: Required value: name or generateName is required
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+---
+# want: metadata.namespace: Invalid value: "App": a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: namespace-invalid
+  namespace: App
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}

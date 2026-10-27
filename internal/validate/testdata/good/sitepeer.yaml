@@ -1,0 +1,12 @@
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: b
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: c
+spec:
+  wireguard:
+    publicKey: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
