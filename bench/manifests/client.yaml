@@ -1,0 +1,20 @@
+# Site b: the client and the dummy member.
+apiVersion: v1
+kind: Pod
+metadata: {name: client, namespace: bench}
+spec:
+  containers:
+    - name: client
+      image: strait-bench-tcpbench:dev
+      imagePullPolicy: Never
+      # The server only keeps the pod running. The measurements run through kubectl exec.
+      args: [server, -listen, ":7001"]
+      resources: {requests: {cpu: "1", memory: 64Mi}}
+---
+# Member srv-b. No pod matches it, so it is never eligible.
+apiVersion: v1
+kind: Service
+metadata: {name: srv-b, namespace: bench}
+spec:
+  selector: {app: none}
+  ports: [{name: tcp, port: 7000, targetPort: 7001}]

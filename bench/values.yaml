@@ -1,0 +1,14 @@
+# Helm values of the benchmark's Strait install. run.sh sets site.name.
+image: {repository: strait-bench-strait, tag: dev, pullPolicy: Never}
+envoy: {image: {pullPolicy: Never}}
+gateway:
+  replicas: 1
+  resources:
+    # The same CPU request as HAProxy, the client and the server, and no CPU limit.
+    envoy:
+      requests: {cpu: "1", memory: 64Mi}
+      limits: {memory: 512Mi}
+site:
+  spec:
+    wireguard: {privateKeySecretRef: {name: strait-wireguard}}
+    exchange: {pollInterval: 1s, peerTimeout: 3s}

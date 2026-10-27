@@ -1,0 +1,27 @@
+# Site b: the HAProxy that plays the import side. run.sh makes its ConfigMap haproxy-b from bench/haproxy/b.cfg.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: haproxy, namespace: bench}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: haproxy}}
+  template:
+    metadata: {labels: {app: haproxy}}
+    spec:
+      containers:
+        - name: haproxy
+          image: haproxy:3.2.26-alpine
+          imagePullPolicy: Never
+          ports: [{containerPort: 7000}]
+          readinessProbe: {tcpSocket: {port: 7000}, periodSeconds: 2}
+          resources: {requests: {cpu: "1", memory: 64Mi}}
+          volumeMounts: [{name: cfg, mountPath: /usr/local/etc/haproxy, readOnly: true}]
+      volumes: [{name: cfg, configMap: {name: haproxy-b}}]
+---
+# The client reaches HAProxy through a ClusterIP Service, as it reaches the application name.
+apiVersion: v1
+kind: Service
+metadata: {name: haproxy-b, namespace: bench}
+spec:
+  selector: {app: haproxy}
+  ports: [{name: tcp, port: 7000, targetPort: 7000}]

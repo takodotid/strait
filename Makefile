@@ -57,6 +57,10 @@ images: ## Build the container image.
 e2e: images ## Run the end-to-end tests on kind (test/e2e/README.md). Creates and deletes strait-e2e-* clusters.
 	STRAIT_IMAGE=$(IMAGE):$(TAG) go test -tags e2e -count=1 -timeout 60m -v ./test/e2e/...
 
+.PHONY: bench
+bench: ## Run the gateway benchmark on kind. Creates and deletes strait-bench-* clusters.
+	bench/run.sh
+
 .PHONY: help
 help:
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "%-10s %s\n", $$1, $$2}'

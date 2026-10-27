@@ -135,3 +135,4 @@ Commit and push only when the operator asks.
 | `make docs` | Writes the man pages and the skill document into `bin/`. |
 | `make images` | Builds the container image. |
 | `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |
+| `make bench` | Runs the gateway benchmark on kind clusters named `strait-bench-*`. See `docs/benchmark.md`. |
