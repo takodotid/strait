@@ -18,6 +18,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,7 @@ func main() {
 		"connect": connect,
 		"stream":  stream,
 		"load":    load,
+		"spin":    spin,
 		"report":  report,
 		"wgkey":   wgkey,
 	}
@@ -58,11 +60,30 @@ In the pods:
   connect  time from dial to the first echoed response, on new connections one after another
   stream   bulk transfer from the server, over one or more connections
   load     many connections, each doing request/response at a fixed rate
+  spin     keep threads busy, as a neighbour that competes for CPU
 
 On the host:
   report   turn the raw results of bench/run.sh into results.md and results.json
   wgkey    write a WireGuard private key to a file and print its public key`)
 	os.Exit(2)
+}
+
+func spin(args []string) error {
+	fs := flag.NewFlagSet("spin", flag.ExitOnError)
+	threads := fs.Int("threads", 2, "busy threads")
+	_ = fs.Parse(args)
+	var sink atomic.Uint64
+	for range *threads {
+		go func() {
+			runtime.LockOSThread()
+			for i := uint64(0); ; i++ {
+				if i%(1<<24) == 0 {
+					sink.Add(1)
+				}
+			}
+		}()
+	}
+	select {}
 }
 
 func server(args []string) error {

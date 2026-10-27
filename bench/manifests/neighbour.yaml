@@ -1,0 +1,17 @@
+# A neighbour that competes for CPU on the node, for bench/contention.sh. Applied at both sites.
+# It requests as much CPU as each proxy, so the scheduler weighs them alike.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: neighbour, namespace: bench}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: neighbour}}
+  template:
+    metadata: {labels: {app: neighbour}}
+    spec:
+      containers:
+        - name: spin
+          image: strait-bench-tcpbench:dev
+          imagePullPolicy: Never
+          args: [spin, -threads, "2"]
+          resources: {requests: {cpu: "1", memory: 16Mi}}
