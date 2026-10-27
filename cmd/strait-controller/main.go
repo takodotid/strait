@@ -79,7 +79,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		LeaderElectionID:        "strait-controller",
 		LeaderElectionNamespace: gatewayNamespace,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&corev1.Pod{}:            inGateway,
+			&corev1.Pod{}:           inGateway,
 			&coordinationv1.Lease{}: inGateway,
 		}},
 		Client: client.Options{Cache: &client.CacheOptions{Unstructured: true}},

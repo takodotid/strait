@@ -35,7 +35,6 @@ const (
 	ComponentGateway        = "gateway"
 )
 
-
 // GatewayReconciler finds the active gateway pod and keeps the Services that peers reach the gateway on.
 type GatewayReconciler struct {
 	client.Client

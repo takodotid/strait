@@ -34,7 +34,6 @@ const resync = 2 * time.Second
 // statusRefresh bounds the age of the timestamps in a SiteService's status.
 const statusRefresh = 10 * time.Second
 
-
 // SiteServiceReconciler decides each SiteService's route and writes its Service and EndpointSlices.
 type SiteServiceReconciler struct {
 	client.Client

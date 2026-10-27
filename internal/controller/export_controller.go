@@ -30,7 +30,6 @@ const (
 	ConditionAllocated = "Allocated"
 )
 
-
 // ExportReconciler allocates each Export's gateway port and reports its readiness.
 type ExportReconciler struct {
 	client.Client
@@ -136,7 +135,6 @@ func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
 }
-
 
 // ImportReconciler allocates each Import's gateway port and reads the peer's export port.
 type ImportReconciler struct {
