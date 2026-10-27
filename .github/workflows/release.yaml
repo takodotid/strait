@@ -23,6 +23,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # The multi-arch index carries the source and licence too, not only each platform's image.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ghcr.io/takodotid/strait
           tags: |
@@ -36,6 +39,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha
@@ -73,6 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cat config/crd/*.yaml > dist/strait-crds.yaml
           cd dist
-          sha256sum *.tar.gz *.tgz > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.tgz SHA256SUMS
+          sha256sum *.tar.gz *.tgz strait-crds.yaml > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.tgz strait-crds.yaml SHA256SUMS
