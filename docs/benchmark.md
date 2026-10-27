@@ -149,6 +149,17 @@ Host during the run:
 | Idle CPU, both Envoys | 10 to 13 millicores |
 | Idle CPU, both HAProxys | under 1 millicore |
 
+## Under CPU contention
+
+[`bench/contention.sh`](../bench/contention.sh) at commit ca788b0, on the clusters of a kept run. Both nodes are held to the same 4 host CPUs. The load is the one above: 50 connections, 100 requests per second each. Envoy and HAProxy alternate A B B A, 8 runs each, so neither always goes first. Then a neighbour pod per site keeps 2 threads busy, with the same CPU request as each proxy, and the runs repeat. Every run held its rate. The load average was 1.5 to 2.1 without the neighbour, and 7 to 25 with it, other workloads included.
+
+| Condition | Proxy | Under load p50, µs | Under load p99, µs |
+|---|---|---|---|
+| No neighbour | Envoy | 331 (329 to 335) | 1363 (1087 to 1880) |
+| No neighbour | HAProxy | 260 (259 to 296) | 1025 (853 to 1301) |
+| Neighbour | Envoy | 11482 (9300 to 12260) | 25877 (20584 to 40850) |
+| Neighbour | HAProxy | 10559 (10091 to 11508) | 19593 (12955 to 36046) |
+
 ## Reading
 
 A pooled PostgreSQL or Valkey connection pays the request/response cost once per query. A new connection pays the setup cost once.
@@ -163,15 +174,16 @@ A pooled PostgreSQL or Valkey connection pays the request/response cost once per
 | Which moves more data? | Envoy, at defaults: 2.6 times HAProxy on one stream, 1.7 times on four. |
 | Which uses less CPU? | HAProxy, by 1.5 millicores per connection, about 7%. |
 | What does WireGuard add? | 142 µs at p50 and 1.8 ms at p99 over the direct link, and one stream tops out near 0.75 Gbit/s on this host. |
+| What happens when CPU runs short? | Both proxies slow down 35 to 40 times at p50, from about 0.3 ms to about 11 ms. Envoy's p99 is about 1.3 times HAProxy's with and without the neighbour, and the ranges overlap. |
 
-Conclusion: the difference between Envoy and HAProxy is not meaningful for an application that talks to PostgreSQL or Valkey across sites. Envoy costs about 50 µs more per round trip over two hops and about 7% more CPU per request, and moves 1.7 to 2.6 times as much data at defaults. Against a cross-site round trip of 1 ms or more, the latency difference is 5% or less. Between sites so close that the round trip is shorter, the gateway itself, 156 to 225 µs here, weighs more than the choice of proxy, and endpoint-direct removes it.
+Conclusion: the difference between Envoy and HAProxy is not meaningful for an application that talks to PostgreSQL or Valkey across sites, while the gateway has CPU to spare. Envoy costs about 50 µs more per round trip over two hops and about 7% more CPU per request, and moves 1.7 to 2.6 times as much data at defaults. Against a cross-site round trip of 1 ms or more, the latency difference is 5% or less. Between sites so close that the round trip is shorter, the gateway itself, 156 to 225 µs here, weighs more than the choice of proxy, and endpoint-direct removes it. When the gateway's node runs short of CPU, both proxies slow down far more than they differ: the gateway needs CPU headroom whichever proxy runs.
 
 ## Limits
 
 | Limit | Effect |
 |---|---|
 | Both sites, the client and the server share one host and one kernel. The link is a Linux bridge. | Absolute numbers compare only within one run. The fixture's round trip is far shorter than a real link's. |
-| The host is shared, and no core is reserved. | Scheduling delays add to every proxy hop. Runs on a busier host gave the same order with wider ranges. In one busy round, Envoy's p99 under load was 4.4 ms above HAProxy's. The benchmark cannot tell how much of that is Envoy and how much is scheduling. |
+| The host is shared, and no core is reserved. | Scheduling delays add to every proxy hop. In `make bench`, Envoy always runs just before HAProxy, so a host whose load falls during a round favours HAProxy. The contention check alternates them. |
 | Kernel work is charged to no container: iptables, conntrack, softirq, WireGuard encryption in kernel workers. | The CPU columns cover the proxy processes only. The WireGuard row understates the tunnel's CPU. |
 | One client, one server, 64-byte messages, an echo with no server time. | Real replies are larger and servers take time, which shrinks the proxy's share. |
 | Both proxies run at their defaults. | HAProxy offers splice and larger buffers, which this run does not use. The throughput gap is at defaults only. |
@@ -191,3 +203,15 @@ It needs Docker, kind, kubectl, helm, Go and the `wireguard` kernel module. It c
 | `STRAIT_BENCH_SKIP_BUILD=1` | Uses the images of an earlier run. |
 | `STRAIT_BENCH_ROUNDS=N` | Rounds. 5 by default. |
 | `STRAIT_BENCH_PATHS="..."` | Paths, in measuring order. `pod-ip` adds the client dialing the server pod's address, with no Service. |
+
+The contention check runs on kept clusters and writes `_output/bench/contention.md`:
+
+```sh
+STRAIT_BENCH_KEEP=1 make bench
+bench/contention.sh
+```
+
+| Variable | Effect |
+|---|---|
+| `STRAIT_BENCH_CPUS=4-7` | Host CPUs that both nodes are held to. Given back at the end. |
+| `STRAIT_BENCH_BLOCKS=4` | A B B A blocks per condition. |
