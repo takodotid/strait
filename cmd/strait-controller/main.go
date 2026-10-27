@@ -14,8 +14,13 @@ import (
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	coordinationv1client "k8s.io/client-go/kubernetes/typed/coordination/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,13 +78,19 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		return err
 	}
 	inGateway := cache.ByObject{Namespaces: map[string]cache.Config{gatewayNamespace: {}}}
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                  scheme,
-		Metrics:                 metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress:  probeAddr,
-		LeaderElection:          leaderElect,
-		LeaderElectionID:        "strait-controller",
-		LeaderElectionNamespace: gatewayNamespace,
+	cfg := ctrl.GetConfigOrDie()
+	lock, err := leaderLock(cfg, gatewayNamespace)
+	if err != nil {
+		return err
+	}
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:                              scheme,
+		Metrics:                             metricsserver.Options{BindAddress: metricsAddr},
+		HealthProbeBindAddress:              probeAddr,
+		LeaderElection:                      leaderElect,
+		LeaderElectionID:                    leaderElectionID,
+		LeaderElectionNamespace:             gatewayNamespace,
+		LeaderElectionResourceLockInterface: lock,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
 			&corev1.Pod{}:           inGateway,
 			&coordinationv1.Lease{}: inGateway,
@@ -193,6 +204,30 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		return err
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())
+}
+
+// leaderElectionID names the controller's leader election Lease.
+const leaderElectionID = "strait-controller"
+
+// leaderLock is the controller's leader election Lease. It records no event: controller-runtime's own lock writes
+// core Events, and the controller may only write events.k8s.io Events (RFC0007).
+func leaderLock(cfg *rest.Config, namespace string) (resourcelock.Interface, error) {
+	host, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+	cfg = rest.AddUserAgent(rest.CopyConfig(cfg), "leader-election")
+	// Half the manager's renew deadline of 10s, so one hung request does not lose the Lease.
+	cfg.Timeout = 5 * time.Second
+	leases, err := coordinationv1client.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcelock.LeaseLock{
+		LeaseMeta:  metav1.ObjectMeta{Namespace: namespace, Name: leaderElectionID},
+		Client:     leases,
+		LockConfig: resourcelock.ResourceLockConfig{Identity: host + "_" + string(uuid.NewUUID())},
+	}, nil
 }
 
 func notify(ch chan event.GenericEvent) {
