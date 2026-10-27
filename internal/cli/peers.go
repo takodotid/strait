@@ -27,7 +27,7 @@ func newPeers(o *options) *cobra.Command {
 		Short: "Show every peer site and whether its observations can be read",
 		Long: `peers shows every SitePeer: one peer site that this site polls for observations.
 
-REACHABLE is true while the peer's last observation document is fresh. While it is false, every member at that peer counts as Unknown. LAST SEEN is how long ago the last poll succeeded. SERVICES and EXPORTS count what the peer's last document held. LAST ERROR is the error of the last failed poll.
+REACHABLE is true while the peer's last observation document is fresh. While it is false, every member at that peer counts as Unknown. LAST SEEN is how long ago the last poll succeeded. SERVICES and EXPORTS count what the peer's last document held. LAST ERROR is the error of the last failed poll, shown while the peer is unreachable.
 
 SitePeers are cluster-scoped, so -n and -A do not apply.`,
 		Example: `  strait peers --context site-a
@@ -80,7 +80,11 @@ func (o *options) peersTable(w io.Writer, peers []peerView) {
 		if p.LastSeenTime == nil {
 			seen = "never"
 		}
-		rows = append(rows, []string{p.Name, boolean(p.Reachable), seen, number(p.Services), number(p.Exports), dash(p.LastError)})
+		lastError := p.LastError
+		if p.Reachable {
+			lastError = ""
+		}
+		rows = append(rows, []string{p.Name, boolean(p.Reachable), seen, number(p.Services), number(p.Exports), dash(lastError)})
 	}
 	table(w, []string{"PEER", "REACHABLE", "LAST SEEN", "SERVICES", "EXPORTS", "LAST ERROR"}, rows)
 }

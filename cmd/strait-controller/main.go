@@ -23,11 +23,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/takodotid/strait/api/v1alpha1"
 	"github.com/takodotid/strait/internal/controller"
 	"github.com/takodotid/strait/internal/exchange"
+	"github.com/takodotid/strait/internal/metrics"
 	"github.com/takodotid/strait/internal/version"
 	"github.com/takodotid/strait/internal/xds"
 )
@@ -173,6 +175,8 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 			return err
 		}
 	}
+
+	ctrlmetrics.Registry.MustRegister(&metrics.Collector{Reader: reader})
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
