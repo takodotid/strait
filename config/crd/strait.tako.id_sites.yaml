@@ -79,10 +79,12 @@ spec:
                     minimum: 1
                     type: integer
                   directService:
-                    default: {}
+                    default:
+                      type: ClusterIP
                     description: |-
                       DirectService sets how peers reach the control port and the export ports over direct links.
-                      Expose it on the private link only.
+                      It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
+                      A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
                     properties:
                       annotations:
                         additionalProperties:
@@ -91,8 +93,8 @@ spec:
                           to make a load balancer internal.
                         type: object
                       type:
-                        default: NodePort
                         description: Type is ClusterIP, NodePort or LoadBalancer.
+                          Empty means the default of the Service it sets.
                         enum:
                         - ClusterIP
                         - NodePort
@@ -156,9 +158,10 @@ spec:
                     minimum: 1
                     type: integer
                   wireGuardService:
-                    default: {}
+                    default:
+                      type: NodePort
                     description: WireGuardService sets how peers reach the UDP ports
-                      of wireguard links.
+                      of wireguard links. It is NodePort unless set.
                     properties:
                       annotations:
                         additionalProperties:
@@ -167,8 +170,8 @@ spec:
                           to make a load balancer internal.
                         type: object
                       type:
-                        default: NodePort
                         description: Type is ClusterIP, NodePort or LoadBalancer.
+                          Empty means the default of the Service it sets.
                         enum:
                         - ClusterIP
                         - NodePort

@@ -76,6 +76,7 @@ site:
   spec:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
+    gateway: {directService: {type: NodePort}}
 `, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {

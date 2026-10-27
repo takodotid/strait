@@ -81,10 +81,10 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	sortPorts(wg)
 
 	cond := metav1.Condition{Type: "GatewayServices", Status: metav1.ConditionTrue, Reason: "Synced", ObservedGeneration: site.Generation}
-	if err := r.syncService(ctx, GatewayDirectService, site.Spec.Gateway.DirectService, direct, addr); err != nil {
+	if err := r.syncService(ctx, GatewayDirectService, site.Spec.Gateway.DirectService, corev1.ServiceTypeClusterIP, direct, addr); err != nil {
 		cond.Status, cond.Reason, cond.Message = metav1.ConditionFalse, "DirectServiceFailed", err.Error()
 	}
-	if err := r.syncService(ctx, GatewayWireGuardService, site.Spec.Gateway.WireGuardService, wg, addr); err != nil {
+	if err := r.syncService(ctx, GatewayWireGuardService, site.Spec.Gateway.WireGuardService, corev1.ServiceTypeNodePort, wg, addr); err != nil {
 		cond.Status, cond.Reason, cond.Message = metav1.ConditionFalse, "WireGuardServiceFailed", err.Error()
 	}
 
@@ -149,8 +149,8 @@ func sortPorts(ports []corev1.ServicePort) {
 }
 
 // syncService keeps a selector-less gateway Service and its EndpointSlice, which holds the active gateway pod only.
-// A Service with no ports is deleted.
-func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1alpha1.ServiceExposure, ports []corev1.ServicePort, addr string) error {
+// A Service with no ports is deleted. An exposure with no type gets def.
+func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1alpha1.ServiceExposure, def corev1.ServiceType, ports []corev1.ServicePort, addr string) error {
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	if len(ports) == 0 {
@@ -163,7 +163,7 @@ func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1
 	}
 	typ := corev1.ServiceType(exp.Type)
 	if typ == "" {
-		typ = corev1.ServiceTypeNodePort
+		typ = def
 	}
 	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
 		svc.Labels = map[string]string{LabelComponent: ComponentGateway}

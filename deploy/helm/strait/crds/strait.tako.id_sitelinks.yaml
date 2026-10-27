@@ -116,8 +116,10 @@ spec:
                       this side waits for the peer to dial.
                     type: string
                   listenPort:
-                    default: 51820
-                    description: ListenPort is the local UDP port of this link's interface.
+                    default: 31820
+                    description: |-
+                      ListenPort is the local UDP port of this link's interface.
+                      With a NodePort or LoadBalancer WireGuard Service, the node port equals it, so it must be in the cluster's node port range.
                     format: int32
                     maximum: 65535
                     minimum: 1

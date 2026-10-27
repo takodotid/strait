@@ -1,0 +1,13 @@
+# The image needs the Go sources only. A change elsewhere must not invalidate the build layer.
+.git
+.github
+.claude
+bin
+dist
+_output
+bench
+ci
+docs
+rfcs
+test
+*.md
