@@ -56,7 +56,11 @@ func Decide(in Input) Result {
 	return decideSingle(in)
 }
 
+// observation returns the member's observation. A member whose site is not known is Unknown, whatever was last observed.
 func (in Input) observation(m v1alpha1.Member) observe.Observation {
+	if s, ok := in.Sites[m.Site]; !ok || !s.Known {
+		return observe.Unknown(m.Name, m.Site, "SiteUnknown", in.Now)
+	}
 	if o, ok := in.Observations[m.Name]; ok {
 		return o
 	}

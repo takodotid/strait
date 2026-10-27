@@ -16,9 +16,6 @@ var now = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 
 const hold = 30 * time.Second
 
-// staleSkip marks cases where Decide trusts an observation from a site that is not Known.
-const staleSkip = "a member at a site that is not Known keeps its observation; RFC0002 req 16 and RFC0004 req 8 make it Unknown"
-
 func ago(d time.Duration) time.Time { return now.Add(-d) }
 
 // pgSpec is a Single SiteService with one member pg-<site> per site.
@@ -115,7 +112,6 @@ func TestSingle(t *testing.T) {
 		name string
 		in   decide.Input
 		want decide.Result
-		skip string
 	}{
 		{
 			name: "row 1: sites declare different primaries",
@@ -425,7 +421,6 @@ func TestSingle(t *testing.T) {
 				Observations: observations(writable("pg-a", "a"), writable("pg-b", "b")),
 			},
 			want: decide.Result{Members: []string{"pg-a"}, Reason: v1alpha1.ReasonActive},
-			skip: staleSkip,
 		},
 		{
 			name: "req 16: a stale peer's member is held as Unknown",
@@ -437,7 +432,6 @@ func TestSingle(t *testing.T) {
 				LastConfirmed: map[string]time.Time{"pg-b": ago(5 * time.Second)},
 			},
 			want: decide.Result{Members: []string{"pg-b"}, Reason: v1alpha1.ReasonHeldUnknown, Held: []string{"pg-b"}},
-			skip: staleSkip,
 		},
 		{
 			name: "req 16: a stale peer's member past its hold routes nowhere",
@@ -449,7 +443,6 @@ func TestSingle(t *testing.T) {
 				LastConfirmed: map[string]time.Time{"pg-b": ago(31 * time.Second)},
 			},
 			want: decide.Result{Reason: v1alpha1.ReasonUnknownTimeout},
-			skip: staleSkip,
 		},
 		{
 			name: "a stale peer's declaration is not compared",
@@ -505,9 +498,6 @@ func TestSingle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.skip != "" {
-				t.Skip("spec mismatch: " + tt.skip)
-			}
 			tt.in.Now = now
 			check(t, decide.Decide(tt.in), tt.want)
 		})
@@ -580,7 +570,6 @@ func TestSet(t *testing.T) {
 		confirmed map[string]time.Time
 		want      []string
 		held      []string
-		skip      string
 	}{
 		{
 			name:  "Any routes every eligible member",
@@ -707,7 +696,6 @@ func TestSet(t *testing.T) {
 			sites: map[string]decide.SiteView{"a": declares(""), "b": stale("")},
 			obs:   observations(replica("r-a1", "a"), replica("r-a2", "a"), replica("r-b1", "b")),
 			want:  []string{"r-a1", "r-a2"},
-			skip:  staleSkip,
 		},
 		{
 			name:  "req 21: disagreeing declarations do not change the route",
@@ -733,9 +721,6 @@ func TestSet(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.skip != "" {
-				t.Skip("spec mismatch: " + tt.skip)
-			}
 			got := decide.Decide(decide.Input{
 				Spec:          tt.spec,
 				LocalSite:     "a",
