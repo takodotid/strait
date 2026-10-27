@@ -4,3 +4,6 @@ description: A virtual service between Kubernetes clusters at different sites.
 type: application
 version: 0.1.0
 appVersion: dev
+home: https://github.com/takodotid/strait
+sources:
+  - https://github.com/takodotid/strait
