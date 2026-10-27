@@ -21,6 +21,7 @@ The test prints each site's kubeconfig path and context at start. It never reads
 
 | Tool | Version |
 |---|---|
+| Host | Linux with docker. 8 vCPU and 16 GiB are enough. |
 | docker | recent |
 | kind | v0.33.0. Its default node image is the pinned one. |
 | kubectl, helm | recent |
