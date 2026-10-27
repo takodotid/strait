@@ -27,7 +27,7 @@ The test prints each site's kubeconfig path and context at start. It never reads
 | Go | as in `go.mod` |
 | `wireguard` kernel module | loaded on the host (`sudo modprobe wireguard`) |
 
-The host needs network access to pull the images and the CloudNativePG manifest. The operator Deployment pulls with `imagePullPolicy: Always`, so its node checks the registry even though the image is loaded.
+The host needs network access to pull the images and the CloudNativePG manifest. CloudNativePG's operator Deployment pulls with `imagePullPolicy: Always`, so its node checks the registry even though the image is loaded.
 
 ## Fixture
 

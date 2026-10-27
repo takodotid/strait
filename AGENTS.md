@@ -123,7 +123,7 @@ Commit and push only when the operator asks.
 
 ## Current state
 
-- Started on 2026-10-27. v1 is built on the Draft RFCs in `rfcs/`.
+- Started on 2026-10-27. RFC0001 to RFC0007 are Active.
 - Commands:
 
 | Command | Does |
