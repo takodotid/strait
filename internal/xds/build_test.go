@@ -1,6 +1,7 @@
 package xds
 
 import (
+	"time"
 	"context"
 	"net"
 	"slices"
@@ -346,7 +347,7 @@ func TestBuildClusters(t *testing.T) {
 		if hc.GetHttpHealthCheck().GetPath() != path {
 			t.Errorf("%s health check path = %s, want %s", name, hc.GetHttpHealthCheck().GetPath(), path)
 		}
-		if hc.GetInterval().AsDuration().Seconds() != 1 || hc.GetTimeout().AsDuration().Seconds() != 1 ||
+		if hc.GetInterval().AsDuration().Seconds() != 1 || hc.GetTimeout().AsDuration() != 500*time.Millisecond ||
 			hc.GetNoTrafficInterval().AsDuration().Seconds() != 1 ||
 			hc.GetUnhealthyThreshold().GetValue() != 2 || hc.GetHealthyThreshold().GetValue() != 2 {
 			t.Errorf("%s health check = %v", name, hc)
