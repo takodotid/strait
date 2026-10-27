@@ -102,6 +102,12 @@ func TestCNPG(t *testing.T) {
 			s["phase"] = "Primary instance is being restarted in-place"
 			return s
 		}()), []string{"10.0.0.1"}, v1alpha1.RolePrimary, false, v1alpha1.StateTransitioning, "pg-a"},
+		{"promoted, applying configuration before the restart", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
+			s := reported("cluster-a-1", true)
+			s["lastPromotionToken"] = "t1"
+			s["phase"] = "Applying configuration"
+			return s
+		}()), []string{"10.0.0.1"}, v1alpha1.RolePrimary, false, v1alpha1.StateTransitioning, "pg-a"},
 		{"promoted", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
 			s := reported("cluster-a-1", true)
 			s["lastPromotionToken"] = "t1"

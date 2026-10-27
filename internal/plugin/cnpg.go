@@ -29,6 +29,8 @@ var transitioningPhases = []string{
 	"Setting up primary",
 	"Primary instance is being restarted in-place",
 	"Primary instance is being restarted without a switchover",
+	// Set right after a promotion, before the new primary restarts, and during a demotion.
+	"Applying configuration",
 }
 
 // postgresPort is the port of every CloudNativePG Service and Pooler Service.
