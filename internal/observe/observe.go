@@ -1,0 +1,54 @@
+// Package observe holds what plugins report and what sites exchange.
+package observe
+
+import (
+	"time"
+
+	"github.com/takodotid/strait/api/v1alpha1"
+)
+
+// Observation is one report about one member.
+type Observation struct {
+	Member     string
+	Site       string
+	Role       v1alpha1.Role
+	Eligible   bool
+	State      v1alpha1.State
+	Reason     string
+	ObservedAt time.Time
+	// Endpoint is where the member takes traffic. Set for members observed at their own site.
+	Endpoint Endpoint
+}
+
+// Writable reports whether the member is a confirmed writable primary.
+func (o Observation) Writable() bool {
+	return o.State == v1alpha1.StateStable && o.Eligible && o.Role == v1alpha1.RolePrimary
+}
+
+// Confirmed reports whether the member is Stable and eligible.
+func (o Observation) Confirmed() bool {
+	return o.State == v1alpha1.StateStable && o.Eligible
+}
+
+// Endpoint is a member's endpoint Service and its ready addresses.
+type Endpoint struct {
+	// Service is the member's endpoint Service, in the SiteService's namespace.
+	Service string
+	// Addresses are the ready addresses of the Service.
+	Addresses []string
+	// Port is the target port of the Service's port.
+	Port int32
+}
+
+// Unknown is the observation of a member that could not be read.
+func Unknown(member, site, reason string, at time.Time) Observation {
+	return Observation{Member: member, Site: site, Role: v1alpha1.RoleUnknown, State: v1alpha1.StateUnknown, Reason: reason, ObservedAt: at}
+}
+
+// Report is what one site observes about its own members of one SiteService.
+type Report struct {
+	// Declared is the member the site declares primary. Empty when it declares none.
+	Declared string
+	// Members are the observations, by member name.
+	Members map[string]Observation
+}
