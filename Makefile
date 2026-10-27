@@ -21,6 +21,7 @@ generate: ## Generate deepcopy code and CRDs from api/.
 verify: generate ## Fail if generated files are out of date.
 	gofmt -l . | (! grep .)
 	go vet ./...
+	go vet -tags e2e ./test/e2e/...
 	git diff --exit-code -- api config deploy/helm/strait/crds deploy/helm/strait/files
 
 .PHONY: build
@@ -53,8 +54,8 @@ images: ## Build the container image.
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
 
 .PHONY: e2e
-e2e: images ## Run the end-to-end tests on kind. Creates and deletes strait-e2e-* clusters.
-	STRAIT_IMAGE=$(IMAGE):$(TAG) go test -tags e2e -count=1 -timeout 90m -v ./test/e2e/...
+e2e: images ## Run the end-to-end tests on kind (test/e2e/README.md). Creates and deletes strait-e2e-* clusters.
+	STRAIT_IMAGE=$(IMAGE):$(TAG) go test -tags e2e -count=1 -timeout 60m -v ./test/e2e/...
 
 .PHONY: help
 help:
