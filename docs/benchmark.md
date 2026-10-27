@@ -97,7 +97,7 @@ Each cell of the results is the median over rounds, with the lowest and highest 
 
 ## Results
 
-`make bench` at commit 56cfe48. Five rounds, every check passed. Each cell is the median, with the lowest and highest round in brackets.
+`make bench`, five rounds, every check passed. Each cell is the median, with the lowest and highest round in brackets.
 
 Latency, µs:
 
@@ -151,7 +151,7 @@ Host during the run:
 
 ## Under CPU contention
 
-[`bench/contention.sh`](../bench/contention.sh) at commit ca788b0, on the clusters of a kept run. Both nodes are held to the same 4 host CPUs. The load is the one above: 50 connections, 100 requests per second each. Envoy and HAProxy alternate A B B A, 8 runs each, so neither always goes first. Then a neighbour pod per site keeps 2 threads busy, with the same CPU request as each proxy, and the runs repeat. Every run held its rate. The load average was 1.5 to 2.1 without the neighbour, and 7 to 25 with it, other workloads included.
+[`bench/contention.sh`](../bench/contention.sh), on the clusters of a kept run. Both nodes are held to the same 4 host CPUs. The load is the one above: 50 connections, 100 requests per second each. Envoy and HAProxy alternate A B B A, 8 runs each, so neither always goes first. Then a neighbour pod per site keeps 2 threads busy, with the same CPU request as each proxy, and the runs repeat. Every run held its rate. The load average was 1.5 to 2.1 without the neighbour, and 7 to 25 with it, other workloads included.
 
 | Condition | Proxy | Under load p50, µs | Under load p99, µs |
 |---|---|---|---|
