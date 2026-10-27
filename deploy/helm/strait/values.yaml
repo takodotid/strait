@@ -23,6 +23,7 @@ gateway:
   # One replica is active; the others are warm standbys (RFC0005).
   replicas: 2
   resources:
+    # Envoy's latency depends on spare CPU on its node. Size its request to the site's traffic (docs/benchmark.md).
     envoy:
       requests: {cpu: 50m, memory: 64Mi}
       limits: {memory: 512Mi}
