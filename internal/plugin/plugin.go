@@ -52,7 +52,7 @@ var ErrNoService = fmt.Errorf("service not found")
 // ReadyEndpoint returns the ready addresses of a Service and the target port of its port.
 // It returns ErrNoService when the Service does not exist.
 func ReadyEndpoint(ctx context.Context, r client.Reader, namespace, name string, port int32) (observe.Endpoint, error) {
-	ep := observe.Endpoint{Service: name}
+	ep := observe.Endpoint{Service: name, ServicePort: port}
 	var svc corev1.Service
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &svc); err != nil {
 		if apierrors.IsNotFound(err) {

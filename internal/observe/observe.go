@@ -34,6 +34,8 @@ func (o Observation) Confirmed() bool {
 type Endpoint struct {
 	// Service is the member's endpoint Service, in the SiteService's namespace.
 	Service string
+	// ServicePort is the port of that Service.
+	ServicePort int32
 	// Addresses are the ready addresses of the Service.
 	Addresses []string
 	// Port is the target port of the Service's port.
