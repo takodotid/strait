@@ -30,9 +30,6 @@ const (
 	ConditionAllocated = "Allocated"
 )
 
-// +kubebuilder:rbac:groups=strait.tako.id,resources=exports;imports,verbs=get;list;watch
-// +kubebuilder:rbac:groups=strait.tako.id,resources=exports/status;imports/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 
 // ExportReconciler allocates each Export's gateway port and reports its readiness.
 type ExportReconciler struct {
@@ -140,7 +137,6 @@ func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// +kubebuilder:rbac:groups=strait.tako.id,resources=imports,verbs=get;list;watch
 
 // ImportReconciler allocates each Import's gateway port and reads the peer's export port.
 type ImportReconciler struct {

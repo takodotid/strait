@@ -35,9 +35,6 @@ const (
 	ComponentGateway        = "gateway"
 )
 
-// +kubebuilder:rbac:groups=strait.tako.id,resources=sites/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 
 // GatewayReconciler finds the active gateway pod and keeps the Services that peers reach the gateway on.
 type GatewayReconciler struct {

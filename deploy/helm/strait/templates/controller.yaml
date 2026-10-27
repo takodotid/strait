@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strait-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  # One leader decides routes. Recreate avoids a rollout that waits on a standby.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "strait.labels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: strait-controller
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: controller
+          image: {{ include "strait.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/strait-controller"]
+          args:
+            - --gateway-namespace={{ .Release.Namespace }}
+            - --observations-service=strait-controller.{{ .Release.Namespace }}.svc
+            - --zap-log-level={{ .Values.controller.logLevel }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef: {fieldPath: metadata.namespace}
+          ports:
+            - {name: metrics, containerPort: 8080}
+            - {name: probes, containerPort: 8081}
+            - {name: observations, containerPort: 8082}
+            - {name: xds, containerPort: 18000}
+          livenessProbe:
+            httpGet: {path: /healthz, port: probes}
+          readinessProbe:
+            httpGet: {path: /readyz, port: probes}
+            periodSeconds: 2
+          securityContext:
+            {{- include "strait.restricted" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: strait-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    app.kubernetes.io/name: strait
+    app.kubernetes.io/component: controller
+  ports:
+    - {name: observations, port: 8082, targetPort: observations}
+    - {name: xds, port: 18000, targetPort: xds}

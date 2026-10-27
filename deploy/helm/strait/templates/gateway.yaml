@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strait-gateway-envoy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+data:
+  bootstrap.yaml: |
+    {{- .Files.Get "files/envoy-bootstrap.yaml" | replace "XDS_ADDRESS" (printf "strait-controller.%s.svc" .Release.Namespace) | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        {{- include "strait.labels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+      annotations:
+        checksum/bootstrap: {{ .Files.Get "files/envoy-bootstrap.yaml" | sha256sum }}
+    spec:
+      serviceAccountName: strait-gateway
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: strait
+                    app.kubernetes.io/component: gateway
+      containers:
+        - name: envoy
+          image: {{ .Values.envoy.image.repository }}:{{ .Values.envoy.image.tag }}
+          imagePullPolicy: {{ .Values.envoy.image.pullPolicy }}
+          args:
+            - -c
+            - /etc/envoy/bootstrap.yaml
+            - --service-node
+            - $(POD_NAME)
+            - --service-cluster
+            - strait-gateway
+            - --disable-hot-restart
+            - --concurrency
+            - {{ .Values.envoy.concurrency | quote }}
+            - --log-level
+            - {{ .Values.envoy.logLevel }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8090}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: bootstrap, mountPath: /etc/envoy, readOnly: true}
+          securityContext:
+            {{- include "strait.restricted" . | nindent 12 }}
+            runAsUser: 101
+            runAsGroup: 101
+          resources:
+            {{- toYaml .Values.gateway.resources.envoy | nindent 12 }}
+        - name: agent
+          image: {{ include "strait.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/strait-gateway"]
+          args:
+            - --envoy-admin=http://127.0.0.1:9901
+            - --probe-addr=:8090
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef: {fieldPath: metadata.namespace}
+          ports:
+            - {name: probes, containerPort: 8090}
+          livenessProbe:
+            httpGet: {path: /healthz, port: probes}
+          readinessProbe:
+            httpGet: {path: /healthz, port: probes}
+          volumeMounts:
+            - {name: token, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+          securityContext:
+            # Root in the pod's own network namespace, with NET_ADMIN only, to hold WireGuard interfaces (RFC0007).
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 0
+            runAsNonRoot: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["NET_ADMIN"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            {{- toYaml .Values.gateway.resources.agent | nindent 12 }}
+      volumes:
+        - name: bootstrap
+          configMap:
+            name: strait-gateway-envoy
+        - name: token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - {key: ca.crt, path: ca.crt}
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: {fieldPath: metadata.namespace}

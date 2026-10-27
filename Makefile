@@ -14,8 +14,8 @@ all: generate build test
 generate: ## Generate deepcopy code and CRDs from api/.
 	$(CONTROLLER_GEN) object paths=./api/...
 	$(CONTROLLER_GEN) crd paths=./api/... output:crd:artifacts:config=config/crd
-	$(CONTROLLER_GEN) rbac:roleName=strait-controller paths=./internal/controller/... output:rbac:artifacts:config=config/rbac
 	rm -rf deploy/helm/strait/crds && mkdir -p deploy/helm/strait/crds && cp config/crd/*.yaml deploy/helm/strait/crds/
+	cp deploy/envoy-bootstrap.yaml deploy/helm/strait/files/envoy-bootstrap.yaml
 
 .PHONY: verify
 verify: generate ## Fail if generated files are out of date.

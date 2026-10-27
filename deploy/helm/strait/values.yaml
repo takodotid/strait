@@ -1,0 +1,50 @@
+image:
+  repository: ghcr.io/takodotid/strait
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+envoy:
+  image:
+    repository: envoyproxy/envoy
+    tag: distroless-v1.40.2
+    pullPolicy: IfNotPresent
+  # Envoy worker threads.
+  concurrency: 2
+  logLevel: warn
+
+controller:
+  logLevel: info
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}
+
+gateway:
+  # One replica is active; the others are warm standbys (RFC0005).
+  replicas: 2
+  resources:
+    envoy:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {memory: 512Mi}
+    agent:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {memory: 128Mi}
+
+# The local Site. The chart renders it so the WireGuard Secret's name is stated once,
+# for both the Site and the gateway's RBAC.
+site:
+  create: true
+  # The site's name. Required when create is true.
+  name: ""
+  # Site.spec, as in api/v1alpha1. Example:
+  # spec:
+  #   wireguard:
+  #     privateKeySecretRef: {name: strait-wireguard}
+  spec: {}
+
+# Read access for the cnpg plugin.
+cnpg:
+  enabled: true
+
+networkPolicy:
+  enabled: true

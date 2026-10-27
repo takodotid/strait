@@ -1,0 +1,10 @@
+{{- if .Values.site.create }}
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: {{ required "site.name is required" .Values.site.name }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+spec:
+  {{- toYaml .Values.site.spec | nindent 2 }}
+{{- end }}

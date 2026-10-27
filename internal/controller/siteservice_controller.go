@@ -34,14 +34,6 @@ const resync = 2 * time.Second
 // statusRefresh bounds the age of the timestamps in a SiteService's status.
 const statusRefresh = 10 * time.Second
 
-// +kubebuilder:rbac:groups=strait.tako.id,resources=siteservices,verbs=get;list;watch
-// +kubebuilder:rbac:groups=strait.tako.id,resources=siteservices/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=strait.tako.id,resources=exports;imports,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=strait.tako.id,resources=sites;sitepeers;sitelinks,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
-// +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;poolers,verbs=get;list;watch
 
 // SiteServiceReconciler decides each SiteService's route and writes its Service and EndpointSlices.
 type SiteServiceReconciler struct {
