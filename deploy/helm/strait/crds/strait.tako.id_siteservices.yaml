@@ -323,6 +323,14 @@ spec:
                       description: ObservedTime is when the observation was made.
                       format: date-time
                       type: string
+                    path:
+                      description: Path is how the member takes traffic while it is
+                        routed and has endpoints. Empty otherwise.
+                      enum:
+                      - Local
+                      - Gateway
+                      - EndpointDirect
+                      type: string
                     reason:
                       type: string
                     role:

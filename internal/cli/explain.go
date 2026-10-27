@@ -54,7 +54,7 @@ func newExplain(o *options) *cobra.Command {
 
 explain reads the SiteService's status. It never decides the route itself, so it shows the controller's view and not a second opinion.
 
-In the members table, ROUTED is true for the members the name points at. A member with STATE - is in the spec but not in the status yet. OBSERVED is the age of the member's last observation. CONFIRMED is how long ago it was last seen Stable and eligible.
+In the members table, ROUTED is true for the members the name points at. PATH is how a routed member with endpoints takes traffic: Local is its own pods at this site, Gateway is the local gateway over the active link, EndpointDirect is its own pods at its site over a direct link, with no gateway. A member with STATE - is in the spec but not in the status yet. OBSERVED is the age of the member's last observation. CONFIRMED is how long ago it was last seen Stable and eligible.
 
 With -A, explain looks for the name in every namespace. It fails if more than one namespace holds it.`,
 		Example: `  # Explain the application name pg in namespace app at site a.
@@ -213,10 +213,10 @@ func (o *options) explainTable(w io.Writer, v explainView) {
 		if m.Observed {
 			eligible = boolean(m.Eligible)
 		}
-		rows = append(rows, []string{m.Name, m.Site, boolean(m.Routed), dash(string(m.Role)), eligible, dash(string(m.State)),
+		rows = append(rows, []string{m.Name, m.Site, boolean(m.Routed), dash(string(m.Path)), dash(string(m.Role)), eligible, dash(string(m.State)),
 			dash(m.Reason), o.age(m.ObservedTime), o.age(m.LastConfirmedTime)})
 	}
-	table(w, []string{"NAME", "SITE", "ROUTED", "ROLE", "ELIGIBLE", "STATE", "REASON", "OBSERVED", "CONFIRMED"}, rows)
+	table(w, []string{"NAME", "SITE", "ROUTED", "PATH", "ROLE", "ELIGIBLE", "STATE", "REASON", "OBSERVED", "CONFIRMED"}, rows)
 
 	fmt.Fprintln(w, "\nDeclarations:")
 	if len(v.Declarations) == 0 {

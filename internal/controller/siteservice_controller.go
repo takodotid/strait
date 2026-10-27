@@ -118,14 +118,15 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 	endpoints := 0
+	var paths map[string]v1alpha1.Path
 	if !conflict {
-		endpoints, err = r.syncSlices(ctx, &svc, site, result.Members, observations)
+		endpoints, paths, err = r.syncSlices(ctx, &svc, site, result.Members, observations)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, result, endpoints, conflict, now); err != nil {
+	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, result, endpoints, paths, conflict, now); err != nil {
 		return ctrl.Result{}, err
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", endpoints)
@@ -255,10 +256,11 @@ func (r *SiteServiceReconciler) syncService(ctx context.Context, svc *v1alpha1.S
 	return false, err
 }
 
-// target is one routed member's addresses and port.
+// target is one routed member's addresses and port, and the path they take.
 type target struct {
 	addresses []string
 	port      int32
+	path      v1alpha1.Path
 }
 
 // targets returns where each routed member takes traffic. A member with no target is left out.
@@ -279,10 +281,10 @@ func (r *SiteServiceReconciler) targets(ctx context.Context, svc *v1alpha1.SiteS
 		switch {
 		case m.Site == site.Name:
 			if len(o.Endpoint.Addresses) > 0 && o.Endpoint.Port > 0 {
-				out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port}
+				out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, v1alpha1.PathLocal}
 			}
 		case direct[m.Site] && len(o.Endpoint.Addresses) > 0 && o.Endpoint.Port > 0:
-			out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port}
+			out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, v1alpha1.PathEndpointDirect}
 		default:
 			var imp v1alpha1.Import
 			if err := r.Reader.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: memberObjectName(svc, name)}, &imp); err != nil {
@@ -292,7 +294,7 @@ func (r *SiteServiceReconciler) targets(ctx context.Context, svc *v1alpha1.SiteS
 				return nil, err
 			}
 			if imp.Status.GatewayPort > 0 && site.Status.Gateway.Address != "" {
-				out[name] = target{[]string{site.Status.Gateway.Address}, imp.Status.GatewayPort}
+				out[name] = target{[]string{site.Status.Gateway.Address}, imp.Status.GatewayPort, v1alpha1.PathGateway}
 			}
 		}
 	}
@@ -315,13 +317,14 @@ func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]bool,
 }
 
 // syncSlices writes one EndpointSlice per routed member that has a target and deletes the rest.
-// It returns the number of endpoints written.
-func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *v1alpha1.SiteService, site *v1alpha1.Site, members []string, observations map[string]observe.Observation) (int, error) {
+// It returns the number of endpoints written, and the path of each member that has endpoints.
+func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *v1alpha1.SiteService, site *v1alpha1.Site, members []string, observations map[string]observe.Observation) (int, map[string]v1alpha1.Path, error) {
 	targets, err := r.targets(ctx, svc, site, members, observations)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	count := 0
+	paths := map[string]v1alpha1.Path{}
 	for member, t := range targets {
 		name := memberObjectName(svc, member)
 		es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
@@ -352,14 +355,17 @@ func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *v1alpha1.Si
 			}
 			return controllerutil.SetControllerReference(svc, es, r.Scheme())
 		}); err != nil {
-			return 0, fmt.Errorf("endpointslice %s: %w", name, err)
+			return 0, nil, fmt.Errorf("endpointslice %s: %w", name, err)
 		}
 		count += len(es.Endpoints)
+		if len(es.Endpoints) > 0 {
+			paths[member] = t.path
+		}
 	}
 
 	var existing discoveryv1.EndpointSliceList
 	if err := r.List(ctx, &existing, client.InNamespace(svc.Namespace), client.MatchingLabels{LabelSiteService: svc.Name, LabelManagedBy: ManagedBy}); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	for i := range existing.Items {
 		es := &existing.Items[i]
@@ -367,10 +373,10 @@ func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *v1alpha1.Si
 			continue
 		}
 		if err := r.Delete(ctx, es); client.IgnoreNotFound(err) != nil {
-			return 0, err
+			return 0, nil, err
 		}
 	}
-	return count, nil
+	return count, paths, nil
 }
 
 func addressType(addresses []string) discoveryv1.AddressType {
@@ -380,7 +386,7 @@ func addressType(addresses []string) discoveryv1.AddressType {
 	return discoveryv1.AddressTypeIPv4
 }
 
-func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, endpoints int, conflict bool, now time.Time) error {
+func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, endpoints int, paths map[string]v1alpha1.Path, conflict bool, now time.Time) error {
 	old := svc.Status.DeepCopy()
 	st := &svc.Status
 	st.ObservedGeneration = svc.Generation
@@ -397,7 +403,7 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.S
 		}
 		ms := v1alpha1.MemberStatus{
 			Name: m.Name, Site: m.Site, Role: o.Role, Eligible: o.Eligible, State: o.State, Reason: o.Reason,
-			ObservedTime: previous[m.Name].ObservedTime,
+			ObservedTime: previous[m.Name].ObservedTime, Path: paths[m.Name],
 		}
 		if !o.ObservedAt.IsZero() {
 			ms.ObservedTime = &metav1.Time{Time: o.ObservedAt}

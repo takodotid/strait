@@ -153,6 +153,9 @@ func TestLocalActiveMember(t *testing.T) {
 	if !meta.IsStatusConditionTrue(st.Conditions, v1alpha1.ConditionRouted) {
 		t.Fatalf("conditions = %+v", st.Conditions)
 	}
+	if st.Members[0].Path != v1alpha1.PathLocal || st.Members[1].Path != "" {
+		t.Fatalf("members = %+v", st.Members)
+	}
 	var exp v1alpha1.Export
 	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &exp); err != nil {
 		t.Fatalf("export: %v", err)
@@ -184,8 +187,36 @@ func TestRemoteActiveMemberThroughGateway(t *testing.T) {
 	if len(got.Endpoints) != 1 || got.Endpoints[0].Addresses[0] != "10.0.9.9" || *got.Ports[0].Port != 15001 {
 		t.Fatalf("slice = %+v", got)
 	}
-	if st := status(t, c); st.Route.Reason != v1alpha1.ReasonActive || st.Route.Members[0] != "web-b" {
-		t.Fatalf("route = %+v", st.Route)
+	if st := status(t, c); st.Route.Reason != v1alpha1.ReasonActive || st.Route.Members[0] != "web-b" || st.Members[1].Path != v1alpha1.PathGateway {
+		t.Fatalf("status = %+v", st)
+	}
+}
+
+func TestRemoteActiveMemberEndpointDirect(t *testing.T) {
+	imp := &v1alpha1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: v1alpha1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp.Status.GatewayPort = 15001
+	link := &v1alpha1.SiteLink{
+		ObjectMeta: metav1.ObjectMeta{Name: "b-direct"},
+		Spec:       v1alpha1.SiteLinkSpec{Peer: "b", Transport: v1alpha1.TransportDirect, Direct: &v1alpha1.DirectLink{Address: "172.31.0.22", EndpointDirect: true}},
+	}
+	link.Status.Active, link.Status.Healthy = true, true
+	p := peers{
+		fresh: map[string]bool{"b": true},
+		view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
+			"web-b": {Member: "web-b", Site: "b", Role: v1alpha1.RolePrimary, Eligible: true, State: v1alpha1.StateStable, ObservedAt: now,
+				Endpoint: observe.Endpoint{Addresses: []string{"10.1.0.7"}, Port: 9090}},
+		}}},
+	}
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-b"), imp, link)
+	r, c := reconciler(t, p, objs...)
+	run(t, r)
+
+	got := endpointSlices(t, c)["web-b"]
+	if len(got.Endpoints) != 1 || got.Endpoints[0].Addresses[0] != "10.1.0.7" || *got.Ports[0].Port != 9090 {
+		t.Fatalf("slice = %+v", got)
+	}
+	if st := status(t, c); st.Members[1].Path != v1alpha1.PathEndpointDirect {
+		t.Fatalf("members = %+v", st.Members)
 	}
 }
 

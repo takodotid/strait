@@ -17,7 +17,9 @@ type linkView struct {
 	Transport  v1alpha1.Transport  `json:"transport"`
 	Encryption v1alpha1.Encryption `json:"encryption"`
 	Cost       int32               `json:"cost"`
-	Healthy    bool                `json:"healthy"`
+	// EndpointDirect is true on a direct link with endpointDirect.
+	EndpointDirect bool `json:"endpointDirect"`
+	Healthy        bool `json:"healthy"`
 	// Active is true while this link carries the pair's traffic.
 	Active             bool         `json:"active"`
 	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
@@ -34,6 +36,8 @@ func newLinks(o *options) *cobra.Command {
 Links are grouped by peer, in the order traffic prefers them: lowest COST first, then lowest name. ACTIVE is true for the one link that carries the pair's traffic now: the healthy link that comes first. HEALTHY is true while the peer's control port answers over the link. CHANGED is how long ago HEALTHY last changed.
 
 ENCRYPTION is None on a direct link, which carries traffic in clear on a private path, and WireGuard on a wireguard link.
+
+ENDPOINT-DIRECT is true on a direct link with endpointDirect. While that link is ACTIVE, application names point at the remote member's own pods, with no gateway hop. strait explain shows it as PATH EndpointDirect.
 
 SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 		Example: `  strait links --context site-a
@@ -60,6 +64,7 @@ SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 					Transport:          l.Spec.Transport,
 					Encryption:         enc,
 					Cost:               l.Spec.Cost,
+					EndpointDirect:     l.Spec.Direct != nil && l.Spec.Direct.EndpointDirect,
 					Healthy:            l.Status.Healthy,
 					Active:             l.Status.Active,
 					LastTransitionTime: l.Status.LastTransitionTime,
@@ -85,9 +90,9 @@ SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 				var rows [][]string
 				for _, l := range v {
 					rows = append(rows, []string{l.Peer, l.Name, string(l.Transport), dash(string(l.Encryption)), number(l.Cost),
-						boolean(l.Healthy), boolean(l.Active), o.age(l.LastTransitionTime)})
+						boolean(l.EndpointDirect), boolean(l.Healthy), boolean(l.Active), o.age(l.LastTransitionTime)})
 				}
-				table(w, []string{"PEER", "LINK", "TRANSPORT", "ENCRYPTION", "COST", "HEALTHY", "ACTIVE", "CHANGED"}, rows)
+				table(w, []string{"PEER", "LINK", "TRANSPORT", "ENCRYPTION", "COST", "ENDPOINT-DIRECT", "HEALTHY", "ACTIVE", "CHANGED"}, rows)
 			})
 		},
 	}

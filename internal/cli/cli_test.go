@@ -98,7 +98,7 @@ func pg() *v1alpha1.SiteService {
 				LastChangeTime: ago(5 * time.Minute), Endpoints: 1},
 			Members: []v1alpha1.MemberStatus{
 				{Name: "pg-a", Site: "a", Role: v1alpha1.RolePrimary, Eligible: true, State: v1alpha1.StateStable, Reason: "ClusterPrimary",
-					ObservedTime: ago(time.Second), LastConfirmedTime: ago(time.Second)},
+					ObservedTime: ago(time.Second), LastConfirmedTime: ago(time.Second), Path: v1alpha1.PathLocal},
 				{Name: "pg-b", Site: "b", Role: v1alpha1.RoleReplica, Eligible: true, State: v1alpha1.StateStable, Reason: "ClusterReplica",
 					ObservedTime: ago(3 * time.Second), LastConfirmedTime: ago(3 * time.Second)},
 			},
@@ -210,10 +210,10 @@ Since:        2026-10-27T09:55:00Z (5m ago)
 Endpoints:    1
 
 Members:
-NAME  SITE  ROUTED  ROLE     ELIGIBLE  STATE   REASON          OBSERVED  CONFIRMED
-pg-a  a     true    primary  true      Stable  ClusterPrimary  1s        1s
-pg-b  b     false   replica  true      Stable  ClusterReplica  3s        3s
-pg-c  c     false   -        -         -       -               -         -
+NAME  SITE  ROUTED  PATH   ROLE     ELIGIBLE  STATE   REASON          OBSERVED  CONFIRMED
+pg-a  a     true    Local  primary  true      Stable  ClusterPrimary  1s        1s
+pg-b  b     false   -      replica  true      Stable  ClusterReplica  3s        3s
+pg-c  c     false   -      -        -         -       -               -         -
 
 Declarations:
 SITE  PRIMARY
@@ -299,9 +299,9 @@ func TestExplainNamespaces(t *testing.T) {
 
 func TestLinks(t *testing.T) {
 	r := cli(t, fakeReader(cluster()...), "", "links").ok(t)
-	diff(t, r.stdout, `PEER  LINK         TRANSPORT  ENCRYPTION  COST  HEALTHY  ACTIVE  CHANGED
-b     b-direct     direct     None        10    true     true    120m
-b     b-wireguard  wireguard  WireGuard   100   true     false   60m
+	diff(t, r.stdout, `PEER  LINK         TRANSPORT  ENCRYPTION  COST  ENDPOINT-DIRECT  HEALTHY  ACTIVE  CHANGED
+b     b-direct     direct     None        10    false            true     true    120m
+b     b-wireguard  wireguard  WireGuard   100   false            true     false   60m
 `)
 
 	r = cli(t, fakeReader(cluster()...), "", "links", "-o", "json").ok(t)

@@ -210,6 +210,19 @@ const (
 	RoleUnknown Role = "unknown"
 )
 
+// Path is how a routed member takes traffic from this site.
+// +kubebuilder:validation:Enum=Local;Gateway;EndpointDirect
+type Path string
+
+const (
+	// PathLocal is the member's own pods at this site.
+	PathLocal Path = "Local"
+	// PathGateway is the local gateway, over the active link to the member's site.
+	PathGateway Path = "Gateway"
+	// PathEndpointDirect is the member's own pods at its site, over a direct link with endpointDirect.
+	PathEndpointDirect Path = "EndpointDirect"
+)
+
 // Reasons of a route.
 const (
 	ReasonDeclarationsDisagree = "DeclarationsDisagree"
@@ -298,6 +311,9 @@ type MemberStatus struct {
 	// LastConfirmedTime is the last time the member was observed Stable and eligible.
 	// +optional
 	LastConfirmedTime *metav1.Time `json:"lastConfirmedTime,omitempty"`
+	// Path is how the member takes traffic while it is routed and has endpoints. Empty otherwise.
+	// +optional
+	Path Path `json:"path,omitempty"`
 }
 
 // Declaration is a site's declared primary.

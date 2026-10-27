@@ -185,7 +185,7 @@ func describe(ss *v1alpha1.SiteService) string {
 	}
 	var members []string
 	for _, m := range ss.Status.Members {
-		members = append(members, fmt.Sprintf("%s(%s %s eligible=%t %s)", m.Name, m.Role, m.State, m.Eligible, m.Reason))
+		members = append(members, fmt.Sprintf("%s(%s %s eligible=%t %s path=%s)", m.Name, m.Role, m.State, m.Eligible, m.Reason, m.Path))
 	}
 	return fmt.Sprintf("route=%s reason=%s endpoints=%d [%s] members=[%s] message=%q",
 		routeString(ss.Status.Route.Members), ss.Status.Route.Reason, ss.Status.Route.Endpoints,
@@ -201,10 +201,29 @@ func routeIs(s *site, namespace, name string, members []string, reasons ...strin
 		}
 		ok := slices.Equal(ss.Status.Route.Members, members) && (len(reasons) == 0 || slices.Contains(reasons, ss.Status.Route.Reason))
 		if len(members) > 0 {
-			ok = ok && ss.Status.Route.Endpoints > 0
+			ok = ok && ss.Status.Route.Endpoints > 0 && pathsAsExpected(s, ss)
 		}
 		return ok, "site " + s.name + ": " + describe(ss)
 	}
+}
+
+// pathsAsExpected reports whether every routed member shows path Local at its own site and Gateway elsewhere,
+// and every other member shows none. The fixture has no endpoint-direct link.
+func pathsAsExpected(s *site, ss *v1alpha1.SiteService) bool {
+	for _, m := range ss.Status.Members {
+		var want v1alpha1.Path
+		switch {
+		case !slices.Contains(ss.Status.Route.Members, m.Name):
+		case m.Site == s.name:
+			want = v1alpha1.PathLocal
+		default:
+			want = v1alpha1.PathGateway
+		}
+		if m.Path != want {
+			return false
+		}
+	}
+	return true
 }
 
 // conditionTrue reports whether the SiteService's condition is True.
