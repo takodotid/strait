@@ -21,7 +21,7 @@ generate: ## Generate deepcopy code and CRDs from api/.
 verify: generate ## Fail if generated files are out of date.
 	gofmt -l . | (! grep .)
 	go vet ./...
-	git diff --exit-code -- api config deploy/helm/strait/crds
+	git diff --exit-code -- api config deploy/helm/strait/crds deploy/helm/strait/files
 
 .PHONY: build
 build: ## Build every binary into bin/.
