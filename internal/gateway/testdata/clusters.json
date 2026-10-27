@@ -1,0 +1,256 @@
+{
+ "cluster_statuses": [
+  {
+   "name": "peer/c",
+   "host_statuses": [
+    {
+     "address": {
+      "socket_address": {
+       "address": "192.0.2.2",
+       "port_value": 30900
+      }
+     },
+     "stats": [
+      {
+       "name": "cx_connect_fail"
+      },
+      {
+       "name": "cx_total"
+      },
+      {
+       "name": "rq_error"
+      },
+      {
+       "name": "rq_success"
+      },
+      {
+       "name": "rq_timeout"
+      },
+      {
+       "name": "rq_total"
+      },
+      {
+       "type": "GAUGE",
+       "name": "cx_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_pending_active"
+      }
+     ],
+     "health_status": {
+      "eds_health_status": "UNHEALTHY"
+     },
+     "weight": 1,
+     "locality": {}
+    }
+   ],
+   "circuit_breakers": {
+    "thresholds": [
+     {
+      "max_connections": 1024,
+      "max_pending_requests": 1024,
+      "max_requests": 1024,
+      "max_retries": 3
+     },
+     {
+      "priority": "HIGH",
+      "max_connections": 1024,
+      "max_pending_requests": 1024,
+      "max_requests": 1024,
+      "max_retries": 3
+     }
+    ]
+   },
+   "observability_name": "peer/c"
+  },
+  {
+   "name": "import/app/pg",
+   "host_statuses": [
+    {
+     "address": {
+      "socket_address": {
+       "address": "192.0.2.2",
+       "port_value": 30901
+      }
+     },
+     "stats": [
+      {
+       "name": "cx_connect_fail"
+      },
+      {
+       "name": "cx_total"
+      },
+      {
+       "name": "rq_error"
+      },
+      {
+       "name": "rq_success"
+      },
+      {
+       "name": "rq_timeout"
+      },
+      {
+       "name": "rq_total"
+      },
+      {
+       "type": "GAUGE",
+       "name": "cx_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_pending_active"
+      }
+     ],
+     "health_status": {
+      "eds_health_status": "HEALTHY"
+     },
+     "weight": 1,
+     "locality": {}
+    }
+   ],
+   "circuit_breakers": {
+    "thresholds": [
+     {
+      "max_connections": 1024,
+      "max_pending_requests": 1024,
+      "max_requests": 1024,
+      "max_retries": 3
+     },
+     {
+      "priority": "HIGH",
+      "max_connections": 1024,
+      "max_pending_requests": 1024,
+      "max_requests": 1024,
+      "max_retries": 3
+     }
+    ]
+   },
+   "observability_name": "import/app/pg"
+  },
+  {
+   "name": "peer/b",
+   "host_statuses": [
+    {
+     "address": {
+      "socket_address": {
+       "address": "192.0.2.99",
+       "port_value": 30900
+      }
+     },
+     "stats": [
+      {
+       "name": "cx_connect_fail"
+      },
+      {
+       "name": "cx_total"
+      },
+      {
+       "name": "rq_error"
+      },
+      {
+       "name": "rq_success"
+      },
+      {
+       "name": "rq_timeout"
+      },
+      {
+       "name": "rq_total"
+      },
+      {
+       "type": "GAUGE",
+       "name": "cx_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_pending_active"
+      }
+     ],
+     "health_status": {
+      "failed_active_health_check": true,
+      "eds_health_status": "HEALTHY",
+      "active_hc_timeout": true
+     },
+     "weight": 1,
+     "locality": {}
+    },
+    {
+     "address": {
+      "socket_address": {
+       "address": "192.0.2.2",
+       "port_value": 30900
+      }
+     },
+     "stats": [
+      {
+       "name": "cx_connect_fail"
+      },
+      {
+       "name": "cx_total"
+      },
+      {
+       "name": "rq_error"
+      },
+      {
+       "name": "rq_success"
+      },
+      {
+       "name": "rq_timeout"
+      },
+      {
+       "name": "rq_total"
+      },
+      {
+       "type": "GAUGE",
+       "name": "cx_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_active"
+      },
+      {
+       "type": "GAUGE",
+       "name": "rq_pending_active"
+      }
+     ],
+     "health_status": {
+      "eds_health_status": "HEALTHY"
+     },
+     "weight": 1,
+     "priority": 1,
+     "locality": {}
+    }
+   ],
+   "circuit_breakers": {
+    "thresholds": [
+     {
+      "max_connections": 1024,
+      "max_pending_requests": 1024,
+      "max_requests": 1024,
+      "max_retries": 3
+     },
+     {
+      "priority": "HIGH",
+      "max_connections": 1024,
+      "max_pending_requests": 1024,
+      "max_requests": 1024,
+      "max_retries": 3
+     }
+    ]
+   },
+   "observability_name": "peer/b"
+  }
+ ]
+}
