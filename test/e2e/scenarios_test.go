@@ -297,7 +297,8 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	e.times.record(t, "4/held-"+a.name, d)
 	d = eventually(ctx, t, peerTimeout+unknownHold+10*time.Second, 250*time.Millisecond, "site a routes nowhere",
 		routeIs(a, dbNamespace, "pg", nil, timedOut...))
-	e.times.record(t, "4/nowhere-"+a.name, time.Since(cut))
+	nowhere := time.Now()
+	e.times.record(t, "4/nowhere-"+a.name, nowhere.Sub(cut))
 
 	// No endpoint: kube-proxy refuses the connection at once. Retry while it applies the change.
 	attempts := 0
@@ -321,7 +322,8 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	})
 	t.Logf("site a: refused after %d attempts", attempts)
 
-	sa, sb := spA.Stop(), spB.Stop()
+	// The refusal can come within one sample of the route change, so wait for a sample of site a that shows it.
+	sa, sb := spA.StopAfter(nowhere), spB.Stop()
 	t.Logf("site a routes: %s", summary(sa, cut))
 	t.Logf("site b routes: %s", summary(sb, cut))
 	for _, smp := range sb {
