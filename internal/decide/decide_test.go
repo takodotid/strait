@@ -383,7 +383,16 @@ func TestSingle(t *testing.T) {
 				Observations:  observations(unknown("pg-a", "a")),
 				LastConfirmed: map[string]time.Time{"pg-a": ago(time.Second), "pg-b": ago(time.Second)},
 			},
-			want: decide.Result{Reason: v1alpha1.ReasonNoEligibleMember},
+			want: decide.Result{Reason: v1alpha1.ReasonMemberUnknown},
+		},
+		{
+			name: "row 9: a member Unknown after its hold dropped it from the route",
+			in: decide.Input{
+				Spec: two, LocalSite: "b",
+				Sites:        map[string]decide.SiteView{"b": declares("pg-a")},
+				Observations: observations(replica("pg-b", "b")),
+			},
+			want: decide.Result{Reason: v1alpha1.ReasonMemberUnknown},
 		},
 		{
 			name: "row 9: the previous member is now a replica",

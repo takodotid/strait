@@ -44,7 +44,7 @@ const (
 	minHealthyPercentage = 1
 	connectTimeout       = 2 * time.Second
 	checkInterval        = time.Second
-	checkTimeout         = time.Second
+	checkTimeout         = 500 * time.Millisecond
 	unhealthyThreshold   = 2
 	healthyThreshold     = 2
 	keepaliveTime        = 30

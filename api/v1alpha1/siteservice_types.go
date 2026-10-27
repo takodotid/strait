@@ -220,6 +220,7 @@ const (
 	ReasonTransitioning        = "Transitioning"
 	ReasonHeldUnknown          = "HeldUnknown"
 	ReasonUnknownTimeout       = "UnknownTimeout"
+	ReasonMemberUnknown        = "MemberUnknown"
 	ReasonNoEligibleMember     = "NoEligibleMember"
 	ReasonEligible             = "Eligible"
 )

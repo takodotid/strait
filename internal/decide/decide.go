@@ -185,6 +185,14 @@ func decideSingle(in Input) Result {
 		return r
 	}
 	// Row 9.
+	for _, m := range in.Spec.Members {
+		if in.observation(m).State == v1alpha1.StateUnknown {
+			r.Reason = v1alpha1.ReasonMemberUnknown
+			r.Message = fmt.Sprintf("no member is writable and %s is Unknown", m.Name)
+			return r
+		}
+	}
+	// Row 10.
 	r.Reason = v1alpha1.ReasonNoEligibleMember
 	r.Message = "no member is writable"
 	return r

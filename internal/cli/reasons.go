@@ -16,6 +16,7 @@ var reasons = map[string]string{
 	v1alpha1.ReasonTransitioning:        "Single mode. No member is confirmed writable and a member is moving, for example during a switchover. Routed nowhere.",
 	v1alpha1.ReasonHeldUnknown:          "The routed members are Unknown, but each was confirmed less than policy.unknownHold ago. The previous route is kept.",
 	v1alpha1.ReasonUnknownTimeout:       "A member of the previous route has been Unknown for longer than policy.unknownHold, and no other member can be routed. Routed nowhere.",
+	v1alpha1.ReasonMemberUnknown:        "No member is writable and a member cannot be read. It may be writable. Routed nowhere.",
 	v1alpha1.ReasonNoEligibleMember:     "No member is writable in Single mode, or eligible for the locality in Set mode. Routed nowhere.",
 	v1alpha1.ReasonEligible:             "Set mode. The name points at every Stable and eligible member that the locality allows. Members of the previous route that are Transitioning, or Unknown within policy.unknownHold, stay.",
 }
