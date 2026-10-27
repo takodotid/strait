@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+# The Envoy container gets no token. The pod mounts a projected token into the agent only.
+automountServiceAccountToken: false
+---
+# Cluster-wide rules of RFC0007's gateway agent table.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["strait.tako.id"]
+    resources: ["sites", "sitepeers", "sitelinks"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["strait.tako.id"]
+    resources: ["sites/status", "sitelinks/status"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-gateway
+subjects:
+  - kind: ServiceAccount
+    name: strait-gateway
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+rules:
+  {{- with include "strait.wireguardSecret" . }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ . | quote }}]
+    verbs: ["get"]
+  {{- end }}
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["strait-gateway"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: strait-gateway
+subjects:
+  - kind: ServiceAccount
+    name: strait-gateway
+    namespace: {{ .Release.Namespace }}

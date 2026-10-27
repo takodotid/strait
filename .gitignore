@@ -1,0 +1,8 @@
+/bin/
+/dist/
+/_output/
+*.test
+*.out
+coverage.*
+.kubeconfig*
+/.claude/

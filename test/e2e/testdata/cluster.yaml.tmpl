@@ -1,0 +1,74 @@
+# One CloudNativePG Cluster of the distributed topology. Streaming only, no object store.
+# Each Cluster exposes its -rw selector as NodePort 30432; the peer dials the node container's name,
+# with sslmode verify-full against serverAltDNSNames.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  instances: 1
+  imageName: {{.Image}}
+  bootstrap:
+{{- if .Replica}}
+    pg_basebackup:
+      source: {{.Peer}}
+      database: app
+      owner: app
+      secret:
+        name: pg-app
+{{- else}}
+    initdb:
+      database: app
+      owner: app
+      secret:
+        name: pg-app
+{{- end}}
+  replica:
+    primary: {{if .Replica}}{{.Peer}}{{else}}{{.Name}}{{end}}
+    source: {{.Peer}}
+  storage:
+    size: 1Gi
+  postgresql:
+    parameters:
+      shared_buffers: 32MB
+  # Fast shutdown on restart. With the default of 180s, the restart that follows a promotion
+  # waits for open sessions before it forces a fast shutdown.
+  smartShutdownTimeout: 0
+  certificates:
+    serverAltDNSNames:
+      - {{.Host}}
+  managed:
+    services:
+      additional:
+        - selectorType: rw
+          serviceTemplate:
+            metadata:
+              name: {{.Name}}-rw-nodeport
+            spec:
+              type: NodePort
+              ports:
+                - name: postgres
+                  port: 5432
+                  targetPort: 5432
+                  nodePort: 30432
+  # Identical in both Clusters. The webhook requires replica.primary and replica.source to name an entry here.
+  externalClusters:
+{{- range .External}}
+    - name: {{.Name}}
+      connectionParameters:
+        host: {{.Host}}
+        port: "30432"
+        user: streaming_replica
+        dbname: postgres
+        sslmode: verify-full
+      sslCert:
+        name: {{.Name}}-replication
+        key: tls.crt
+      sslKey:
+        name: {{.Name}}-replication
+        key: tls.key
+      sslRootCert:
+        name: {{.Name}}-ca
+        key: ca.crt
+{{- end}}

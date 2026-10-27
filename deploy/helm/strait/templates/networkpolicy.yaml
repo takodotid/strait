@@ -1,0 +1,29 @@
+{{- if .Values.networkPolicy.enabled }}
+# Only gateway pods reach the controller's xDS and observation ports.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: strait-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: controller
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: strait
+              app.kubernetes.io/component: gateway
+      ports:
+        - {port: 8082}
+        - {port: 18000}
+    # Probes and metrics.
+    - ports:
+        - {port: 8080}
+        - {port: 8081}
+{{- end }}

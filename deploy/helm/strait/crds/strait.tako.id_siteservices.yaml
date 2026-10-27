@@ -1,0 +1,393 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: siteservices.strait.tako.id
+spec:
+  group: strait.tako.id
+  names:
+    kind: SiteService
+    listKind: SiteServiceList
+    plural: siteservices
+    shortNames:
+    - ss
+    singular: siteservice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .status.route.members
+      name: Route
+      type: string
+    - jsonPath: .status.route.reason
+      name: Reason
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: SiteService is one application name. It lists a dependency's
+          members across sites and points a local Service at the active ones.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SiteServiceSpec lists the members, the mode, the plugin and
+              the policy.
+            properties:
+              locality:
+                description: Locality filters a Set's members by site. Set mode only.
+                  Defaults to LocalFirst.
+                enum:
+                - LocalFirst
+                - LocalOnly
+                - Any
+                type: string
+              members:
+                description: Members are the dependency's members, at every site.
+                items:
+                  description: Member is one instance of the dependency at one site.
+                  properties:
+                    cnpg:
+                      description: CNPG is the member's CloudNativePG cluster, in
+                        the SiteService's namespace.
+                      properties:
+                        cluster:
+                          description: Cluster is the name of the CloudNativePG Cluster.
+                          maxLength: 50
+                          minLength: 1
+                          type: string
+                        pooler:
+                          description: Pooler is the name of a CloudNativePG Pooler
+                            of that cluster. When set, the member's endpoint is the
+                            Pooler's Service.
+                          type: string
+                      required:
+                      - cluster
+                      type: object
+                    name:
+                      description: Name identifies the member. The same at every site.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    service:
+                      description: Service is the member's Service, in the SiteService's
+                        namespace. For the declared plugin.
+                      properties:
+                        name:
+                          maxLength: 63
+                          minLength: 1
+                          type: string
+                        port:
+                          description: Port is the Service port number.
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                      required:
+                      - name
+                      - port
+                      type: object
+                    site:
+                      description: Site is the name of the site that hosts the member.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                  required:
+                  - name
+                  - site
+                  type: object
+                maxItems: 16
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              mode:
+                description: Mode is Single, for one writable member, or Set, for
+                  every eligible member.
+                enum:
+                - Single
+                - Set
+                type: string
+              plugin:
+                description: Plugin is the plugin that observes the members.
+                properties:
+                  cnpg:
+                    description: CNPG observes CloudNativePG clusters.
+                    properties:
+                      role:
+                        description: Role is primary, replica or any.
+                        enum:
+                        - primary
+                        - replica
+                        - any
+                        type: string
+                    required:
+                    - role
+                    type: object
+                  declared:
+                    description: Declared takes the active member from this spec.
+                    properties:
+                      active:
+                        description: Active is the member that is primary. Required
+                          in Single mode.
+                        type: string
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: set exactly one plugin
+                  rule: has(self.cnpg) != has(self.declared)
+              policy:
+                default: {}
+                description: Policy decides the route when observations are incomplete
+                  or contradict each other.
+                properties:
+                  multiple:
+                    default: RouteNowhere
+                    description: Multiple is what Single mode does when two or more
+                      members are writable.
+                    enum:
+                    - RouteNowhere
+                    - PreferDeclaredIfConsistent
+                    type: string
+                  unknownHold:
+                    default: 30s
+                    description: UnknownHold is how long an Unknown member stays in
+                      the route after it was last confirmed.
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: unknownHold must be between 0s and 10m
+                  rule: '!has(self.unknownHold) || (duration(self.unknownHold) >=
+                    duration(''0s'') && duration(self.unknownHold) <= duration(''10m''))'
+              port:
+                description: Port is the port of the application name.
+                properties:
+                  name:
+                    description: Name is the port's name.
+                    maxLength: 15
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  port:
+                    description: Port is the port number.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                required:
+                - name
+                - port
+                type: object
+            required:
+            - members
+            - mode
+            - plugin
+            - port
+            type: object
+            x-kubernetes-validations:
+            - message: locality applies to Set mode only
+              rule: self.mode == 'Set' || !has(self.locality)
+            - message: cnpg role primary requires Single mode; replica and any require
+                Set mode
+              rule: '!has(self.plugin.cnpg) || (self.plugin.cnpg.role == ''primary'')
+                == (self.mode == ''Single'')'
+            - message: the declared plugin needs active in Single mode
+              rule: '!has(self.plugin.declared) || self.mode == ''Set'' || has(self.plugin.declared.active)'
+            - message: declared.active must name a member
+              rule: '!has(self.plugin.declared) || !has(self.plugin.declared.active)
+                || self.members.exists(m, m.name == self.plugin.declared.active)'
+            - message: every member must carry the source of the plugin in use, and
+                no other
+              rule: 'self.members.all(m, has(self.plugin.cnpg) ? (has(m.cnpg) && !has(m.service))
+                : (has(m.service) && !has(m.cnpg)))'
+            - message: member names must be unique
+              rule: self.members.all(m, self.members.exists_one(n, n.name == m.name))
+          status:
+            description: SiteServiceStatus shows the route and every input of the
+              decision.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              declarations:
+                description: Declarations shows each known site's declared primary.
+                items:
+                  description: Declaration is a site's declared primary.
+                  properties:
+                    primary:
+                      description: Primary is the member the site declares primary.
+                        Empty when the site declares none.
+                      type: string
+                    site:
+                      type: string
+                  required:
+                  - site
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - site
+                x-kubernetes-list-type: map
+              members:
+                description: Members shows each member's last observation.
+                items:
+                  description: MemberStatus is a member's last observation.
+                  properties:
+                    eligible:
+                      type: boolean
+                    lastConfirmedTime:
+                      description: LastConfirmedTime is the last time the member was
+                        observed Stable and eligible.
+                      format: date-time
+                      type: string
+                    name:
+                      type: string
+                    observedTime:
+                      description: ObservedTime is when the observation was made.
+                      format: date-time
+                      type: string
+                    path:
+                      description: Path is how the member takes traffic while it is
+                        routed and has endpoints. Empty otherwise.
+                      enum:
+                      - Local
+                      - Gateway
+                      - EndpointDirect
+                      type: string
+                    reason:
+                      type: string
+                    role:
+                      description: Role is a member's role.
+                      type: string
+                    site:
+                      type: string
+                    state:
+                      description: State is a member's state.
+                      type: string
+                  required:
+                  - name
+                  - site
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the generation the status was computed
+                  from.
+                format: int64
+                type: integer
+              route:
+                description: Route is the current route.
+                properties:
+                  endpoints:
+                    description: Endpoints is the number of endpoints written for
+                      the application name.
+                    format: int32
+                    type: integer
+                  lastChangeTime:
+                    description: LastChangeTime is the last time Members changed.
+                    format: date-time
+                    type: string
+                  members:
+                    description: Members are the routed members. Empty means the route
+                      is nowhere.
+                    items:
+                      type: string
+                    type: array
+                  message:
+                    description: Message explains the reason.
+                    type: string
+                  reason:
+                    description: Reason is the decision's reason.
+                    type: string
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: the name must be a DNS-1035 label, since it names a Service
+          rule: self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && size(self.metadata.name)
+            <= 63
+    served: true
+    storage: true
+    subresources:
+      status: {}

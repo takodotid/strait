@@ -1,0 +1,10 @@
+# want: Error Site/b: metadata.name: Forbidden: a cluster holds exactly one Site, and Site/a comes earlier in the set
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: a
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: b

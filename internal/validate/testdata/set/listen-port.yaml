@@ -1,0 +1,40 @@
+# Both links to b leave listenPort at its default of 51820.
+# want: Error SiteLink/b-wireguard-2: spec.wireguard.listenPort: Duplicate value: 51820: SiteLink/b-wireguard-1 uses this listen port
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: a
+spec:
+  wireguard:
+    privateKeySecretRef:
+      name: strait-wireguard
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: b
+spec:
+  wireguard:
+    publicKey: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wireguard-1
+spec:
+  peer: b
+  transport: wireguard
+  wireguard:
+    address: 10.200.0.1/30
+    peerAddress: 10.200.0.2
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wireguard-2
+spec:
+  peer: b
+  transport: wireguard
+  wireguard:
+    address: 10.200.0.5/30
+    peerAddress: 10.200.0.6

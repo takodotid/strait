@@ -1,0 +1,76 @@
+# One site with two peers. Two wireguard links to b use different listen ports.
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: a
+spec:
+  wireguard:
+    privateKeySecretRef:
+      name: strait-wireguard
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: b
+spec:
+  wireguard:
+    publicKey: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SitePeer
+metadata:
+  name: c
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-direct
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  cost: 10
+  direct:
+    address: 192.0.2.10
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wireguard
+spec:
+  peer: b
+  transport: wireguard
+  wireguard:
+    endpoint: 198.51.100.20:51820
+    address: 10.200.0.1/30
+    peerAddress: 10.200.0.2
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wireguard-backup
+spec:
+  peer: b
+  transport: wireguard
+  cost: 200
+  wireguard:
+    listenPort: 51821
+    endpoint: 198.51.100.21:51821
+    address: 10.200.0.5/30
+    peerAddress: 10.200.0.6
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: c-direct
+spec:
+  peer: c
+  transport: direct
+  encryption: None
+  direct:
+    address: 192.0.2.20
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app

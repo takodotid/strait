@@ -1,0 +1,15 @@
+# Set reports the errors of each object too.
+# want: Error SiteService/app/pg: spec.policy: Invalid value: "object": unknownHold must be between 0s and 10m
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata:
+  name: pg
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary}}
+  members:
+    - {name: pg-a, site: a, cnpg: {cluster: pg-a}}
+  policy:
+    unknownHold: 1h

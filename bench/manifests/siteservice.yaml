@@ -1,0 +1,12 @@
+# The application name bench.bench.svc:7000, applied at both sites. The client at site b connects to it.
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteService
+metadata: {name: bench, namespace: bench}
+spec:
+  mode: Single
+  port: {name: tcp, port: 7000}
+  plugin:
+    declared: {active: srv-a}
+  members:
+    - {name: srv-a, site: a, service: {name: srv-a, port: 7000}}
+    - {name: srv-b, site: b, service: {name: srv-b, port: 7000}}

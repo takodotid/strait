@@ -1,0 +1,16 @@
+# want: Warning SiteLink/b-direct: spec.peer: Not found: "b": no SitePeer of that name in the set
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: a
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-direct
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: 192.0.2.10

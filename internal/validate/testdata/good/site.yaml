@@ -1,0 +1,26 @@
+# Every default left unset.
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: a
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: Site
+metadata:
+  name: b
+spec:
+  gateway:
+    controlPort: 30900
+    exportPorts:
+      first: 30901
+      last: 31899
+    importPorts:
+      first: 15000
+      last: 15999
+    peerPort: 14999
+  exchange:
+    pollInterval: 2s
+    peerTimeout: 6s
+  wireguard:
+    privateKeySecretRef:
+      name: strait-wireguard
