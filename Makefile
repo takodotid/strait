@@ -41,7 +41,7 @@ dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill
 	rm -rf $(DIST) && mkdir -p $(DIST)/man/man1
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=$(VERSION)" -o $(DIST)/strait ./cmd/strait
 	cp $(DIST)/strait $(DIST)/kubectl-strait
-	go run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
+	GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) go run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
 	cp LICENSE README.md $(DIST)/
 	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
 

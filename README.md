@@ -92,7 +92,7 @@ For AI agents: `strait --skill > <skills dir>/strait/SKILL.md` installs a skill 
 
 ## Install
 
-The Helm chart is in [`deploy/helm/strait`](deploy/helm/strait). The gateway's namespace needs the Pod Security level `privileged`, since the gateway agent holds WireGuard interfaces with `NET_ADMIN` ([RFC0007](rfcs/RFC0007.md)).
+Each release publishes the image `ghcr.io/takodotid/strait` (linux/amd64, linux/arm64), the Helm chart `oci://ghcr.io/takodotid/charts/strait`, and the CLI archives for Linux and macOS with `SHA256SUMS` on the [releases page](https://github.com/takodotid/strait/releases). The chart's source is [`deploy/helm/strait`](deploy/helm/strait). The gateway's namespace needs the Pod Security level `privileged`, since the gateway agent holds WireGuard interfaces with `NET_ADMIN` ([RFC0007](rfcs/RFC0007.md)).
 
 ## License
 

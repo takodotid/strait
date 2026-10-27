@@ -1,6 +1,6 @@
 # Gateway benchmark
 
-This benchmark measures what the gateway costs an application at site b that talks to a server at site a. It compares Strait's Envoy gateway with a plain HAProxy pair on the same `direct` link, and with endpoint-direct, which has no proxy. [RFC0005](../rfcs/RFC0005.md)'s Limitation "No HAProxy driver" refers to it.
+This benchmark measures what the gateway costs an application at site b that talks to a server at site a. It compares Strait's Envoy gateway with a plain HAProxy pair on the same `direct` link, and with endpoint-direct, which has no proxy. [RFC0005](../rfcs/RFC0005.md) cites its results.
 
 ## Paths
 
