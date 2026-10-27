@@ -31,6 +31,19 @@ build: ## Build every binary into bin/.
 docs: ## Write the man pages into bin/man and the skill document into bin/SKILL.md.
 	go run ./hack/gendocs -skill bin/SKILL.md bin/man/man1
 
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+DIST := dist/strait_$(VERSION)_$(GOOS)_$(GOARCH)
+
+.PHONY: dist
+dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill document.
+	rm -rf $(DIST) && mkdir -p $(DIST)/man/man1
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=$(VERSION)" -o $(DIST)/strait ./cmd/strait
+	cp $(DIST)/strait $(DIST)/kubectl-strait
+	go run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
+	cp LICENSE README.md $(DIST)/
+	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
+
 .PHONY: test
 test: ## Run unit tests.
 	go test ./...
