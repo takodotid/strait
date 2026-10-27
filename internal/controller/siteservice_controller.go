@@ -88,12 +88,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	for name, o := range report.Members {
 		observations[name] = o
 	}
-	for _, m := range svc.Spec.Members {
-		if m.Site != site.Name && r.Peers.Fresh(m.Site, now, timeout) {
-			sites[m.Site] = decide.SiteView{Known: true}
-		}
-	}
-	for peer, ps := range r.Peers.Service(svc.Namespace, svc.Name, svc.Spec.Members, now, timeout) {
+	for peer, ps := range r.Peers.View(svc.Namespace, svc.Name, svc.Spec.Members, now, timeout) {
 		sites[peer] = decide.SiteView{Known: true, Declared: ps.Declared}
 		for name, o := range ps.Members {
 			observations[name] = o

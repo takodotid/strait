@@ -180,7 +180,7 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// The remote port is kept from the last document while the peer is stale, so the gateway keeps its listener.
 	ready := metav1.Condition{Type: ConditionReady, Status: metav1.ConditionFalse, Reason: "PeerUnknown", ObservedGeneration: imp.Generation}
-	if port, ok, found := r.Peers.Export(imp.Spec.Site, imp.Namespace, imp.Spec.Export, r.Now(), site.Spec.Exchange.PeerTimeout.Duration); found {
+	if port, ok, found := remoteExport(r.Peers, imp.Spec.Site, imp.Namespace, imp.Spec.Export, r.Now(), site.Spec.Exchange.PeerTimeout.Duration); found {
 		imp.Status.RemotePort = port
 		imp.Status.RemoteReady = ok
 		ready.Status, ready.Reason = metav1.ConditionTrue, "RemoteReady"
@@ -222,4 +222,15 @@ func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan eve
 		WatchesRawSource(source.Channel(changes, all)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
+}
+
+// remoteExport returns an export's port from the peer's last document, and its readiness while that document is fresh.
+func remoteExport(p Peers, peer, namespace, name string, now time.Time, timeout time.Duration) (port int32, ready bool, found bool) {
+	doc, state := p.Snapshot(peer)
+	for _, e := range doc.Exports {
+		if e.Namespace == namespace && e.Name == name {
+			return e.Port, e.Ready && state.Fresh(now, timeout), true
+		}
+	}
+	return 0, false, false
 }
