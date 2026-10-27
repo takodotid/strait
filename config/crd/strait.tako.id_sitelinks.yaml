@@ -67,11 +67,13 @@ spec:
                 description: Direct holds the settings of a direct link.
                 properties:
                   address:
-                    description: 'Address is the peer gateway''s address on this link:
-                      an IP address or a host name.'
-                    maxLength: 253
-                    minLength: 1
+                    description: Address is the peer gateway's IP address on this
+                      link.
+                    maxLength: 45
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be an IP address
+                      rule: isIP(self)
                   endpointDirect:
                     description: EndpointDirect points application names straight
                       at the remote member's addresses while this link is the active
@@ -104,8 +106,11 @@ spec:
                 properties:
                   address:
                     description: Address is this side's tunnel address, in CIDR notation.
-                    minLength: 1
+                    maxLength: 49
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be an address in CIDR notation
+                      rule: isCIDR(self)
                   endpoint:
                     description: Endpoint is the peer's host:port to dial. Empty means
                       this side waits for the peer to dial.
@@ -119,8 +124,11 @@ spec:
                     type: integer
                   peerAddress:
                     description: PeerAddress is the peer's tunnel address.
-                    minLength: 1
+                    maxLength: 45
                     type: string
+                    x-kubernetes-validations:
+                    - message: must be an IP address
+                      rule: isIP(self)
                   persistentKeepalive:
                     default: 25s
                     description: PersistentKeepalive keeps the path open from the

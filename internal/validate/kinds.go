@@ -2,6 +2,7 @@ package validate
 
 import (
 	"fmt"
+	"net/netip"
 	"regexp"
 	"slices"
 	"time"
@@ -95,13 +96,13 @@ func SiteLink(l *v1alpha1.SiteLink) field.ErrorList {
 	errs = append(errs, between(spec.Child("cost"), s.Cost, 0, 65535)...)
 	errs = append(errs, enum(spec.Child("encryption"), s.Encryption, false, v1alpha1.EncryptionNone, v1alpha1.EncryptionWireGuard)...)
 	if d := s.Direct; d != nil {
-		errs = append(errs, required(spec.Child("direct", "address"), d.Address, 253)...)
+		errs = append(errs, ip(spec.Child("direct", "address"), d.Address)...)
 	}
 	if w := s.WireGuard; w != nil {
 		wp := spec.Child("wireguard")
 		errs = append(errs, port(wp.Child("listenPort"), w.ListenPort)...)
-		errs = append(errs, required(wp.Child("address"), w.Address, 0)...)
-		errs = append(errs, required(wp.Child("peerAddress"), w.PeerAddress, 0)...)
+		errs = append(errs, cidr(wp.Child("address"), w.Address)...)
+		errs = append(errs, ip(wp.Child("peerAddress"), w.PeerAddress)...)
 	}
 
 	direct := s.Transport == v1alpha1.TransportDirect
@@ -238,6 +239,28 @@ func servicePortRef(p *field.Path, r v1alpha1.ServicePortRef) field.ErrorList {
 }
 
 // rule reports a failed XValidation rule at the struct that carries it, as the API server does.
+// ip checks a required IP address, as the CRD's MaxLength and isIP rule do.
+func ip(p *field.Path, v string) field.ErrorList {
+	if errs := required(p, v, 45); errs != nil {
+		return errs
+	}
+	if _, err := netip.ParseAddr(v); err != nil {
+		return field.ErrorList{field.Invalid(p, v, "must be an IP address")}
+	}
+	return nil
+}
+
+// cidr checks a required address in CIDR notation, as the CRD's MaxLength and isCIDR rule do.
+func cidr(p *field.Path, v string) field.ErrorList {
+	if errs := required(p, v, 49); errs != nil {
+		return errs
+	}
+	if _, err := netip.ParsePrefix(v); err != nil {
+		return field.ErrorList{field.Invalid(p, v, "must be an address in CIDR notation")}
+	}
+	return nil
+}
+
 var dns1035 = regexp.MustCompile(`^[a-z]([-a-z0-9]*[a-z0-9])?$`)
 
 func rule(p *field.Path, ok bool, message string) field.ErrorList {

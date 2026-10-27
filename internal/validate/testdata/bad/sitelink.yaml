@@ -130,7 +130,7 @@ spec:
   encryption: None
   direct: {}
 ---
-# want: spec.direct.address: Too long: may not be more than 253 characters
+# want: spec.direct.address: Too long: may not be more than 45 characters
 apiVersion: strait.tako.id/v1alpha1
 kind: SiteLink
 metadata:
@@ -140,7 +140,7 @@ spec:
   transport: direct
   encryption: None
   direct:
-    address: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    address: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ---
 # want: spec.wireguard.listenPort: Invalid value: 70000: must be between 1 and 65535
 apiVersion: strait.tako.id/v1alpha1
@@ -165,3 +165,28 @@ spec:
   peer: b
   transport: wireguard
   wireguard: {}
+---
+# want: spec.direct.address: Invalid value: "gateway.example": must be an IP address
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: direct-address-host
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: gateway.example
+---
+# want: spec.wireguard.address: Invalid value: "100.64.0.1": must be an address in CIDR notation
+# want: spec.wireguard.peerAddress: Invalid value: "100.64.0.2/32": must be an IP address
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: wireguard-addresses
+spec:
+  peer: b
+  transport: wireguard
+  wireguard:
+    address: 100.64.0.1
+    peerAddress: 100.64.0.2/32

@@ -313,9 +313,9 @@ type SiteLinkSpec struct {
 
 // DirectLink holds the settings of a direct link.
 type DirectLink struct {
-	// Address is the peer gateway's address on this link: an IP address or a host name.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=253
+	// Address is the peer gateway's IP address on this link.
+	// +kubebuilder:validation:MaxLength=45
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="must be an IP address"
 	Address string `json:"address"`
 
 	// EndpointDirect points application names straight at the remote member's addresses while this link is the active link, with no gateway hop. Pod addresses must be routable over the link.
@@ -337,11 +337,13 @@ type WireGuardLink struct {
 	Endpoint string `json:"endpoint,omitempty"`
 
 	// Address is this side's tunnel address, in CIDR notation.
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=49
+	// +kubebuilder:validation:XValidation:rule="isCIDR(self)",message="must be an address in CIDR notation"
 	Address string `json:"address"`
 
 	// PeerAddress is the peer's tunnel address.
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=45
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="must be an IP address"
 	PeerAddress string `json:"peerAddress"`
 
 	// PersistentKeepalive keeps the path open from the dialing side.
