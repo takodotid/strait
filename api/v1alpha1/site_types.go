@@ -186,6 +186,13 @@ type SitePeer struct {
 
 // SitePeerSpec holds the peer's identity.
 type SitePeerSpec struct {
+	// ControlPort is the peer gateway's control port, as set in the peer's Site.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:default=30900
+	// +optional
+	ControlPort int32 `json:"controlPort,omitempty"`
+
 	// WireGuard holds the peer's public key. Required when a SiteLink to this peer uses the wireguard transport.
 	// +optional
 	WireGuard *PeerWireGuard `json:"wireguard,omitempty"`

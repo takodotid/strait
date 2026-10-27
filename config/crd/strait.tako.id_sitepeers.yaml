@@ -51,6 +51,14 @@ spec:
             default: {}
             description: SitePeerSpec holds the peer's identity.
             properties:
+              controlPort:
+                default: 30900
+                description: ControlPort is the peer gateway's control port, as set
+                  in the peer's Site.
+                format: int32
+                maximum: 65535
+                minimum: 1
+                type: integer
               wireguard:
                 description: WireGuard holds the peer's public key. Required when
                   a SiteLink to this peer uses the wireguard transport.
