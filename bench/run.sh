@@ -306,7 +306,13 @@ result() { # what got want
   if [ "$2" = "$3" ]; then echo "ok $1 $2"; else echo "fail $1 got '$2' want '$3'"; fi
 }
 
-checks_pass() { ! check "$1" now | grep -q '^fail'; }
+# The checks run to the end before their output is read. A pipe into grep -q would cut them short,
+# and under pipefail the cut would count as a pass.
+checks_pass() {
+  local out
+  out=$(check "$1" now)
+  ! grep -q '^fail' <<<"$out"
+}
 
 # set_state PATH sets b's links for PATH and waits until the traffic takes it.
 set_state() {

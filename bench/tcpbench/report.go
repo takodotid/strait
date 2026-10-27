@@ -177,7 +177,7 @@ const (
 	mLoadP50, mLoadP99, mLoadRPS   = "load_p50_us", "load_p99_us", "load_rps"
 	mCPUa, mCPUb, mCPUsum          = "cpu_a_mcores_per_conn", "cpu_b_mcores_per_conn", "cpu_total_mcores_per_conn"
 	mAddRR50, mAddRR99, mAddSetup  = "added_rr_p50_us", "added_rr_p99_us", "added_setup_p50_us"
-	mHostBusy, mHostOther          = "host_busy_cores", "host_other_cores"
+	mHostBusy, mHostBefore         = "host_busy_cores", "host_busy_before_cores"
 )
 
 type pathResult struct {
@@ -192,8 +192,8 @@ type roundEnv struct {
 	Round int                `json:"round"`
 	Env   map[string]string  `json:"env"`
 	Idle  map[string]float64 `json:"idle_cores"`
-	// Host per path: busy cores in the load window, and other containers' cores just before it.
-	Host map[string][2]float64 `json:"host_busy_and_other_cores"`
+	// Host per path: busy cores during the load window, and over 2 s before it.
+	Host map[string][2]float64 `json:"host_busy_during_and_before_cores"`
 }
 
 func report(args []string) error {
@@ -265,7 +265,7 @@ func report(args []string) error {
 			load := cores(r)
 			m[mHostBusy] = load["host"]
 			if e, _, err := readKV(filepath.Join(dir, "env.txt")); err == nil {
-				m[mHostOther], _ = strconv.ParseFloat(e["other_cores"], 64)
+				m[mHostBefore], _ = strconv.ParseFloat(e["host_busy_cores"], 64)
 			}
 			m[mCPUa], m[mCPUb] = 0, 0
 			if px, ok := pathProxies[p]; ok {
@@ -285,7 +285,7 @@ func report(args []string) error {
 			}
 			m[mCPUsum] = m[mCPUa] + m[mCPUb]
 			round[p] = m
-			envs[len(envs)-1].Host[p] = [2]float64{m[mHostBusy], m[mHostOther]}
+			envs[len(envs)-1].Host[p] = [2]float64{m[mHostBusy], m[mHostBefore]}
 		}
 		for p, m := range round {
 			if vals[p] == nil {
@@ -452,7 +452,7 @@ func markdown(meta map[string]string, metaKeys []string, envs []roundEnv, result
 	}
 
 	w("\n## Host in each load window\n\n")
-	w("Cores busy on the whole host during the load window, then the other containers' cores just before it, in brackets.\n\n")
+	w("Cores busy on the whole host during the load window, which includes the benchmark's own load. In brackets: over 2 s just before the load.\n\n")
 	head := []string{"Round"}
 	for _, r := range results {
 		head = append(head, r.Label)
