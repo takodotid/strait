@@ -1,12 +1,12 @@
 package xds
 
 import (
-	"time"
 	"context"
 	"net"
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	endpoint "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
