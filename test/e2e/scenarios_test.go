@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
@@ -483,10 +484,63 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 	}
 }
 
-// twoWritable: site b comes back with cluster-b still primary. Both members are writable, so both sites route nowhere.
+// twoWritable: site b comes back with cluster-b still primary, still cut off from site a, and its controller restarts.
+// With pg's startupHold, b does not route to its local primary before it has read site a, until the hold ends; then it
+// routes as without the hold. Once the cut is removed, both members are writable, so both sites route nowhere.
 func (e *env) twoWritable(ctx context.Context, t *testing.T) {
+	b := e.b
+	e.unpause(ctx, b)
+	eventually(ctx, t, time.Minute, time.Second, "site b's API answers", func(ctx context.Context) (bool, string) {
+		_, err := siteService(ctx, b, dbNamespace, "pg")
+		return err == nil, fmt.Sprint(err)
+	})
+	hold := fmt.Sprintf(`{"spec":{"policy":{"startupHold":%q}}}`, startupHold)
+	if err := b.c.Patch(ctx, pgService(e), client.RawPatch(types.MergePatchType, []byte(hold))); err != nil {
+		t.Fatal(err)
+	}
+	sp := startSampler(ctx, b, dbNamespace, "pg")
+	defer sp.Stop()
+	restarted := time.Now()
+	if _, err := b.kubectl(ctx, time.Minute, "--namespace", straitNamespace, "delete", "pod", "--selector", "app.kubernetes.io/component=controller", "--wait=false"); err != nil {
+		t.Fatal(err)
+	}
+	d := eventually(ctx, t, 2*time.Minute, 250*time.Millisecond, "site b awaits site a", routeIs(b, dbNamespace, "pg", nil, straitv1.ReasonAwaitingPeers))
+	e.times.record(t, "7/awaiting-"+b.name, d)
+	eventually(ctx, t, startupHold+30*time.Second, 250*time.Millisecond, "site b routes pg-b once the hold ends", routeIs(b, dbNamespace, "pg", []string{memberOf(b)}, straitv1.ReasonActive))
+	ended := time.Now()
+
+	// The new controller starts holding at its first decision. From then, pg-b is never routed until the hold ends:
+	// the hold counts from the first poll, a moment before the first decision.
+	samples := sp.StopAfter(ended)
+	t.Logf("site b routes: %s", summary(samples, restarted))
+	seq, first := "", time.Time{}
+	for _, smp := range samples {
+		switch {
+		case smp.err != nil:
+			seq += "e"
+		case smp.nowhere() && smp.reason == straitv1.ReasonAwaitingPeers:
+			seq += "w"
+			if first.IsZero() {
+				first = smp.start
+			}
+		case smp.nowhere():
+			seq += "n"
+		case smp.names(memberOf(b)):
+			seq += "b"
+			if !first.IsZero() && smp.end.Sub(first) < startupHold-10*time.Second {
+				t.Errorf("site b routes pg-b at %+.1fs, %.1fs after it began to await site a", smp.end.Sub(restarted).Seconds(), smp.end.Sub(first).Seconds())
+			}
+		default:
+			seq += "?"
+		}
+	}
+	// Before the first decision of the new controller, the route is the old controller's, pg-b.
+	if !regexp.MustCompile(`^[ben]*w[wn]*b+$`).MatchString(seq) {
+		t.Errorf("site b routes in the order %q, want pg-b at most until the restart, then AwaitingPeers, then pg-b", seq)
+	}
+
 	up := time.Now()
-	if err := e.siteUp(ctx, e.b); err != nil {
+	if err := e.removeCut(ctx, b.node, cutSite); err != nil {
 		t.Fatal(err)
 	}
 	eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "both sites route nowhere with Multiple", func(ctx context.Context) (bool, string) {

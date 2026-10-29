@@ -61,7 +61,7 @@ They run in this order on one fixture and stop at the first failure.
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |
-| 7 | Two writable members | Site b comes back with `cluster-b` still primary. Within 30s both sites route nowhere and the `Multiple` condition is `True`. |
+| 7 | Two writable members | Site b comes back with `cluster-b` still primary, still cut off from site a, and its controller restarts. With `startupHold: 30s` on `pg`, site b routes nowhere with `AwaitingPeers` and never to `pg-b` until the hold ends, then to `pg-b`. Once the cut is removed, within 30s both sites route nowhere and the `Multiple` condition is `True`. |
 | rbac | Least privilege | No Strait controller or gateway agent logged a `forbidden` request. |
 
 ## Output

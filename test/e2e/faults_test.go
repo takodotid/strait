@@ -114,12 +114,6 @@ func (e *env) siteDown(ctx context.Context, s *site) error {
 	return err
 }
 
-// siteUp unfreezes the site's node, then removes its isolation.
-func (e *env) siteUp(ctx context.Context, s *site) error {
-	e.unpause(ctx, s)
-	return e.removeCut(ctx, s.node, cutSite)
-}
-
 // unpause unpauses every paused node of the site.
 func (e *env) unpause(ctx context.Context, s *site) {
 	nodes, err := e.nodes(ctx, s)

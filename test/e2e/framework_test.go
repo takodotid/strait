@@ -59,6 +59,7 @@ const (
 	pollInterval = time.Second
 	peerTimeout  = 3 * time.Second
 	unknownHold  = 10 * time.Second
+	startupHold  = 30 * time.Second
 	sampleEvery  = 500 * time.Millisecond
 )
 
