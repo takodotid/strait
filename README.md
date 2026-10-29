@@ -209,7 +209,7 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 | `strait --skill` | Prints the skill document for AI agents. |
 | `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 
-Each command reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
+Each command that reads a cluster reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
 
 For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skill that explains how to read Strait's state.
 
