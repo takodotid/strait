@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 const (
@@ -302,29 +302,29 @@ func TestEnvoyADS(t *testing.T) {
 	var objects []client.Object
 	for i, name := range []string{"admin", "empty"} {
 		objects = append(objects,
-			&v1alpha1.Export{
+			&straitv1.Export{
 				ObjectMeta: objectMeta("app", name),
-				Spec:       v1alpha1.ExportSpec{Service: v1alpha1.ServicePortRef{Name: name, Port: AdminPort}},
-				Status:     v1alpha1.ExportStatus{GatewayPort: 30901 + int32(i)},
+				Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: name, Port: AdminPort}},
+				Status:     straitv1.ExportStatus{GatewayPort: 30901 + int32(i)},
 			},
 			&corev1.Service{ObjectMeta: objectMeta("app", name), Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "admin", Port: AdminPort}}}},
-			&v1alpha1.Import{
+			&straitv1.Import{
 				ObjectMeta: objectMeta("app", name+"-b"),
-				Spec:       v1alpha1.ImportSpec{Site: "b", Export: name},
-				Status:     v1alpha1.ImportStatus{GatewayPort: 15000 + int32(i), RemotePort: 30901 + int32(i)},
+				Spec:       straitv1.ImportSpec{Site: "b", Export: name},
+				Status:     straitv1.ImportStatus{GatewayPort: 15000 + int32(i), RemotePort: 30901 + int32(i)},
 			})
 	}
 	objects = append(objects,
-		&v1alpha1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: v1alpha1.SiteSpec{Gateway: v1alpha1.GatewaySpec{ControlPort: 30900, PeerPort: 14999}}},
+		&straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}, Spec: straitv1.SiteSpec{Gateway: straitv1.GatewaySpec{ControlPort: 30900, PeerPort: 14999}}},
 		slice("admin"),
-		&v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Spec: v1alpha1.SitePeerSpec{ControlPort: 30900}},
-		&v1alpha1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "lan"}, Spec: v1alpha1.SiteLinkSpec{
-			Peer: "b", Transport: v1alpha1.TransportDirect, Cost: 10, Encryption: v1alpha1.EncryptionNone,
-			Direct: &v1alpha1.DirectLink{Address: "192.0.2.1"},
+		&straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Spec: straitv1.SitePeerSpec{ControlPort: 30900}},
+		&straitv1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "lan"}, Spec: straitv1.SiteLinkSpec{
+			Peer: "b", Transport: straitv1.TransportDirect, Cost: 10, Encryption: straitv1.EncryptionNone,
+			Direct: &straitv1.DirectLink{Address: "192.0.2.1"},
 		}},
-		&v1alpha1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "wg"}, Spec: v1alpha1.SiteLinkSpec{
-			Peer: "b", Transport: v1alpha1.TransportWireGuard, Cost: 100,
-			WireGuard: &v1alpha1.WireGuardLink{Address: "127.0.0.2/32", PeerAddress: "127.0.0.1"},
+		&straitv1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "wg"}, Spec: straitv1.SiteLinkSpec{
+			Peer: "b", Transport: straitv1.TransportWireGuard, Cost: 100,
+			WireGuard: &straitv1.WireGuardLink{Address: "127.0.0.2/32", PeerAddress: "127.0.0.1"},
 		}},
 	)
 	c := fake.NewClientBuilder().WithScheme(scheme(t)).WithObjects(objects...).Build()

@@ -27,6 +27,7 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 | `NotDeclared` | `Declarations:` and the members table | One member is writable, but a site names another member. Compare each site's declaration with where the primary runs, and fix the workload's configuration. |
 | `MultipleWritable` | The members whose `ROLE` is `primary` and `ELIGIBLE` is true | Two members accept writes, for example after a partition heals. Strait never picks one. Demote one with the workload's own tools, and Strait follows. The `Multiple` condition is True. |
 | `NoEligibleMember` | The `REASON` of each member | No member can take traffic. See [Members that are not eligible](#members-that-are-not-eligible). |
+| `AwaitingPeers` | `strait peers` | `policy.startupHold` is set, and the controller started recently. It has not yet read every site with a member, so it does not route to the local member. The route follows once it reads them, or once the hold ends. |
 
 ## Unknown members
 
@@ -75,7 +76,7 @@ The `Healthy` condition of a `SiteLink`:
 | Reason | Means | Next step |
 |---|---|---|
 | `NotConfigured` | The link's WireGuard interface is not in place. The message says why. | The site's private key: the Secret is missing, or holds no valid key. The `SitePeer`: missing, or no valid public key. A listen port taken by another link. Or the kernel's error when it creates the interface, for example on a node without the `wireguard` module. |
-| `HealthCheckFailed` | The peer's control port does not answer `GET /healthz` over this link. | For `wireguard`: `strait links -o yaml` shows `lastHandshakeTime`. With no handshake, check that each `SitePeer` holds the other site's current public key, and that the waiting side's listen port is reachable over UDP. For `direct`: the link's `direct.address`, and how the peer exposes `directService`. |
+| `HealthCheckFailed` | The peer's control port does not answer `GET /healthz` over this link. | For `wireguard`: `strait links -o yaml` shows `lastHandshakeTime`. With no handshake, check that each `SitePeer` holds the other site's current public key, and that the waiting side's listen port is reachable over UDP. For `direct`: the link's `direct.address`, and how the peer exposes `directService`. With a `NodePort` and `externalTrafficPolicy: Local`, the address must be the node of the peer's active gateway: [RFC0005, Limitations](../rfcs/RFC0005.md#limitations). |
 | `NotInEnvoy` | Envoy has no endpoint at this link's address yet. | Brief after a change. If it stays, the controller's logs. |
 | `EndpointUnhealthy` | Envoy marks the endpoint unhealthy. | The controller's and the gateway agent's logs. |
 | `EnvoyUnreachable` | The gateway agent cannot read Envoy's admin interface. | The `envoy` container of the active gateway pod. |
@@ -91,6 +92,7 @@ The conditions of the `Site`:
 
 | Source | Command or place |
 |---|---|
+| Versions | `strait version` for the CLI. `VERSION` in `strait status` for the site's controller. |
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
 | Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
 | CloudNativePG watch | The controller logs `cloudnative-pg` at start. `watched` false means CloudNativePG's CRDs were missing then: restart the controller. |

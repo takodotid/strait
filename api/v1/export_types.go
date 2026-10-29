@@ -1,4 +1,4 @@
-package v1alpha1
+package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,10 +62,11 @@ type ExportList struct {
 	Items           []Export `json:"items"`
 }
 
-// Import offers a peer's export locally on a gateway port.
+// Import offers a peer's export locally on a gateway port, and on a Service named after it when spec.port is set.
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.port) || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && size(self.metadata.name) <= 63)",message="with port set, the name must be a DNS-1035 label, since it names a Service"
 // +kubebuilder:printcolumn:name="Site",type=string,JSONPath=`.spec.site`
 // +kubebuilder:printcolumn:name="Export",type=string,JSONPath=`.spec.export`
 // +kubebuilder:printcolumn:name="Gateway Port",type=integer,JSONPath=`.status.gatewayPort`
@@ -88,6 +89,11 @@ type ImportSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	Export string `json:"export"`
+
+	// Port, when set, gives the import a Service named after the Import, with this one TCP port.
+	// Its endpoint is the active gateway on the import's gateway port. A SiteService never sets it on the Imports it creates.
+	// +optional
+	Port *ServicePort `json:"port,omitempty"`
 }
 
 // ImportStatus shows the import's local gateway port and the peer's export port.

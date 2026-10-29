@@ -98,8 +98,8 @@ Held                  False   NoHeldUnknown           12m    -
 
 | Item | Value |
 |---|---|
-| Release | v0.1.1 |
-| API | `strait.tako.id/v1alpha1`. It may change. A change that breaks a user comes as a new API version. |
+| Release | v1.0.0 |
+| API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
 
@@ -133,7 +133,7 @@ Each release publishes:
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 0.1.1 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.0.0 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -142,7 +142,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v0.1.1
+v=v1.0.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -157,19 +157,46 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. At each site, apply the new release's CRDs first, then upgrade the chart with the same values:
 
 ```sh
-v=v0.1.1
+v=v1.0.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
 helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
+Upgrade one site at a time. Sites on different releases still read each other's observations.
+
+#### From 0.1 to 1.0
+
+1.0 serves the API as `strait.tako.id/v1`. It still serves `strait.tako.id/v1alpha1`, deprecated, with the same schema ([RFC0001](rfcs/RFC0001.md#api-versions)).
+
+| Step | What to do |
+|---|---|
+| 1. Upgrade each site | As above. Objects that 0.1 stored keep working and keep their identity. |
+| 2. Move your manifests | Change `apiVersion: strait.tako.id/v1alpha1` to `strait.tako.id/v1`. Nothing else changes. `strait validate` warns about each object that still names `v1alpha1`, and `kubectl` prints a deprecation warning. |
+| 3. Store every object as `v1` | Needed before a release that stops serving `v1alpha1`. Run the commands below at each site. |
+
+```sh
+ctx=site-a
+for r in sites sitepeers sitelinks exports imports siteservices; do
+  kubectl --context "$ctx" get "$r.strait.tako.id" --all-namespaces -o json | kubectl --context "$ctx" replace -f -
+done
+for r in sites sitepeers sitelinks exports imports siteservices; do
+  kubectl --context "$ctx" patch crd "$r.strait.tako.id" --subresource=status --type=merge \
+    -p '{"status":{"storedVersions":["v1"]}}'
+done
+```
+
+`replace` writes each object again, in the version the API server stores: `v1`. If it reports a conflict, the controller changed that object in between: run the first loop again. Run the second loop only once the first has replaced every object.
+
+The 1.0 CLI reads `v1`, so it needs a site whose CRDs are 1.0. With the 1.0 CRDs in place, `helm rollback` to 0.1 still works, since they serve `v1alpha1`.
+
 ## A `SiteService`
 
 Apply the same object at every site:
 
 ```yaml
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg
@@ -201,14 +228,15 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 
 | Command | Shows |
 |---|---|
-| `strait status` | The site, its peers, and where every application name points. |
+| `strait status` | The site and its controller's version, its peers, and where every application name points. |
 | `strait explain SITESERVICE` | Why one name points where it does: the reason, every member's observation, every site's declaration. |
 | `strait links` | Every link to a peer, its health, and which link carries the traffic. |
 | `strait peers` | Every peer, and whether its observations can be read. |
 | `strait validate -f PATH` | Checks manifests offline, with the rules of the CRDs and the controller. |
 | `strait --skill` | Prints the skill document for AI agents. |
+| `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 
-Each command reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
+Each command that reads a cluster reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
 
 For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skill that explains how to read Strait's state.
 

@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Names of the gateway's objects in the gateway's namespace.
@@ -41,6 +41,8 @@ type GatewayReconciler struct {
 	Reader client.Reader
 	// Namespace is the gateway's namespace.
 	Namespace string
+	// Version is the controller's version, written into the Site's status.
+	Version string
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -49,12 +51,12 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{RequeueAfter: resync}, err
 	}
-	pod, addr, err := r.activeGateway(ctx)
+	pod, addr, node, err := r.activeGateway(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	var exports v1alpha1.ExportList
+	var exports straitv1.ExportList
 	if err := r.List(ctx, &exports); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -64,13 +66,13 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 			direct = append(direct, tcpPort(fmt.Sprintf("x-%d", p), p))
 		}
 	}
-	var links v1alpha1.SiteLinkList
+	var links straitv1.SiteLinkList
 	if err := r.List(ctx, &links); err != nil {
 		return ctrl.Result{}, err
 	}
 	var wg []corev1.ServicePort
 	for _, l := range links.Items {
-		if l.Spec.Transport == v1alpha1.TransportWireGuard && l.Spec.WireGuard != nil {
+		if l.Spec.Transport == straitv1.TransportWireGuard && l.Spec.WireGuard != nil {
 			p := l.Spec.WireGuard.ListenPort
 			if !slices.ContainsFunc(wg, func(sp corev1.ServicePort) bool { return sp.Port == p }) {
 				wg = append(wg, corev1.ServicePort{Name: fmt.Sprintf("wg-%d", p), Port: p, TargetPort: intstr.FromInt32(p), Protocol: corev1.ProtocolUDP})
@@ -81,15 +83,16 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	sortPorts(wg)
 
 	cond := metav1.Condition{Type: "GatewayServices", Status: metav1.ConditionTrue, Reason: "Synced", ObservedGeneration: site.Generation}
-	if err := r.syncService(ctx, GatewayDirectService, site.Spec.Gateway.DirectService, corev1.ServiceTypeClusterIP, direct, addr); err != nil {
+	if err := r.syncService(ctx, GatewayDirectService, site.Spec.Gateway.DirectService, corev1.ServiceTypeClusterIP, direct, addr, node); err != nil {
 		cond.Status, cond.Reason, cond.Message = metav1.ConditionFalse, "DirectServiceFailed", err.Error()
 	}
-	if err := r.syncService(ctx, GatewayWireGuardService, site.Spec.Gateway.WireGuardService, corev1.ServiceTypeNodePort, wg, addr); err != nil {
+	if err := r.syncService(ctx, GatewayWireGuardService, site.Spec.Gateway.WireGuardService, corev1.ServiceTypeNodePort, wg, addr, node); err != nil {
 		cond.Status, cond.Reason, cond.Message = metav1.ConditionFalse, "WireGuardServiceFailed", err.Error()
 	}
 
 	old := site.Status.DeepCopy()
-	site.Status.Gateway = v1alpha1.GatewayStatus{ActivePod: pod, Address: addr}
+	site.Status.Gateway = straitv1.GatewayStatus{ActivePod: pod, Address: addr}
+	site.Status.ControllerVersion = r.Version
 	meta.SetStatusCondition(&site.Status.Conditions, cond)
 	active := metav1.Condition{Type: "GatewayActive", Status: metav1.ConditionTrue, Reason: "LeaseHeld", ObservedGeneration: site.Generation}
 	if addr == "" {
@@ -104,31 +107,31 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
-// activeGateway returns the pod that holds the gateway lease and its address, when it is running and ready.
-func (r *GatewayReconciler) activeGateway(ctx context.Context) (string, string, error) {
+// activeGateway returns the pod that holds the gateway lease, and its address and node when it is running and ready.
+func (r *GatewayReconciler) activeGateway(ctx context.Context) (name, addr, node string, err error) {
 	var lease coordinationv1.Lease
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.Namespace, Name: GatewayLease}, &lease); err != nil {
-		return "", "", client.IgnoreNotFound(err)
+		return "", "", "", client.IgnoreNotFound(err)
 	}
 	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
-		return "", "", nil
+		return "", "", "", nil
 	}
 	if lease.Spec.RenewTime != nil && lease.Spec.LeaseDurationSeconds != nil &&
 		time.Since(lease.Spec.RenewTime.Time) > time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second {
-		return "", "", nil
+		return "", "", "", nil
 	}
-	name := *lease.Spec.HolderIdentity
+	name = *lease.Spec.HolderIdentity
 	var pod corev1.Pod
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.Namespace, Name: name}, &pod); err != nil {
 		if apierrors.IsNotFound(err) {
-			return name, "", nil
+			return name, "", "", nil
 		}
-		return "", "", err
+		return "", "", "", err
 	}
 	if pod.Status.PodIP == "" || !pod.DeletionTimestamp.IsZero() || !podReady(&pod) {
-		return name, "", nil
+		return name, "", "", nil
 	}
-	return name, pod.Status.PodIP, nil
+	return name, pod.Status.PodIP, pod.Spec.NodeName, nil
 }
 
 func podReady(p *corev1.Pod) bool {
@@ -150,7 +153,8 @@ func sortPorts(ports []corev1.ServicePort) {
 
 // syncService keeps a selector-less gateway Service and its EndpointSlice, which holds the active gateway pod only.
 // A Service with no ports is deleted. An exposure with no type gets def.
-func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1alpha1.ServiceExposure, def corev1.ServiceType, ports []corev1.ServicePort, addr string) error {
+// The endpoint names the pod's node: kube-proxy serves externalTrafficPolicy Local only from endpoints on its own node.
+func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp straitv1.ServiceExposure, def corev1.ServiceType, ports []corev1.ServicePort, addr, node string) error {
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	if len(ports) == 0 {
@@ -170,9 +174,11 @@ func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1
 		svc.Annotations = exp.Annotations
 		svc.Spec.Selector = nil
 		svc.Spec.Type = typ
+		setExposure(&svc.Spec, exp)
 		ps := slices.Clone(ports)
-		for i := range ps {
-			if typ != corev1.ServiceTypeClusterIP {
+		// An explicit node port is allocated even with allocateLoadBalancerNodePorts false.
+		if typ != corev1.ServiceTypeClusterIP && ptr.Deref(svc.Spec.AllocateLoadBalancerNodePorts, true) {
+			for i := range ps {
 				ps[i].NodePort = ps[i].Port
 			}
 		}
@@ -190,11 +196,45 @@ func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1
 		}
 		es.Endpoints = nil
 		if addr != "" {
-			es.Endpoints = []discoveryv1.Endpoint{{Addresses: []string{addr}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}}
+			ep := discoveryv1.Endpoint{Addresses: []string{addr}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}
+			if node != "" {
+				ep.NodeName = ptr.To(node)
+			}
+			es.Endpoints = []discoveryv1.Endpoint{ep}
 		}
 		return nil
 	})
 	return err
+}
+
+// setExposure sets the fields of a Service's spec that depend on its type, from exp.
+// A field that exp leaves unset gets the API server's default, so a field set once and then unset does not stay.
+// A field that does not apply to the type is cleared, since the API server would reject or keep it.
+func setExposure(spec *corev1.ServiceSpec, exp straitv1.ServiceExposure) {
+	lb := spec.Type == corev1.ServiceTypeLoadBalancer
+	spec.LoadBalancerSourceRanges = nil
+	if lb {
+		spec.LoadBalancerSourceRanges = slices.Clone(exp.LoadBalancerSourceRanges)
+	}
+	switch {
+	case !lb:
+		spec.AllocateLoadBalancerNodePorts = nil
+	case exp.AllocateLoadBalancerNodePorts != nil:
+		spec.AllocateLoadBalancerNodePorts = ptr.To(*exp.AllocateLoadBalancerNodePorts)
+	case spec.AllocateLoadBalancerNodePorts != nil:
+		spec.AllocateLoadBalancerNodePorts = ptr.To(true)
+	}
+	switch {
+	case spec.Type == corev1.ServiceTypeClusterIP:
+		spec.ExternalTrafficPolicy = ""
+	case exp.ExternalTrafficPolicy != "":
+		spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicy(exp.ExternalTrafficPolicy)
+	case spec.ExternalTrafficPolicy != "":
+		spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyCluster
+	}
+	if !lb || spec.ExternalTrafficPolicy != corev1.ServiceExternalTrafficPolicyLocal {
+		spec.HealthCheckNodePort = 0
+	}
 }
 
 // SetupWithManager registers the reconciler. Every event maps to one request, since the reconciler handles the one Site.
@@ -207,9 +247,9 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}))
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("gateway").
-		Watches(&v1alpha1.Site{}, one).
-		Watches(&v1alpha1.Export{}, one).
-		Watches(&v1alpha1.SiteLink{}, one).
+		Watches(&straitv1.Site{}, one).
+		Watches(&straitv1.Export{}, one).
+		Watches(&straitv1.SiteLink{}, one).
 		Watches(&coordinationv1.Lease{}, one, inNamespace).
 		Watches(&corev1.Pod{}, one, inNamespace).
 		Watches(&corev1.Service{}, one, inNamespace).

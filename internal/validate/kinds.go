@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // The patterns of the kubebuilder Pattern markers.
@@ -22,7 +22,10 @@ var (
 )
 
 // Site checks a Site.
-func Site(s *v1alpha1.Site) field.ErrorList {
+func Site(s *straitv1.Site) field.ErrorList {
+	// The CRD defaults a gateway Service's type only when the whole Service is absent,
+	// so the rules on the fields that depend on the type read the type as written.
+	written := s.Spec.Gateway
 	s = s.DeepCopy()
 	defaultSite(&s.Spec)
 	errs := objectMeta(&s.ObjectMeta)
@@ -34,7 +37,7 @@ func Site(s *v1alpha1.Site) field.ErrorList {
 	errs = append(errs, portRange(gp.Child("exportPorts"), g.ExportPorts)...)
 	errs = append(errs, portRange(gp.Child("importPorts"), g.ImportPorts)...)
 	errs = append(errs, port(gp.Child("peerPort"), g.PeerPort)...)
-	hasExport, hasImport := g.ExportPorts != v1alpha1.PortRange{}, g.ImportPorts != v1alpha1.PortRange{}
+	hasExport, hasImport := g.ExportPorts != straitv1.PortRange{}, g.ImportPorts != straitv1.PortRange{}
 	errs = append(errs, rule(gp,
 		!hasExport || g.ControlPort == 0 || g.ExportPorts.First > g.ControlPort || g.ExportPorts.Last < g.ControlPort,
 		"controlPort must be outside exportPorts")...)
@@ -46,13 +49,31 @@ func Site(s *v1alpha1.Site) field.ErrorList {
 		"peerPort must be outside importPorts")...)
 
 	for _, e := range []struct {
-		name string
-		v1alpha1.ServiceExposure
-	}{{"directService", g.DirectService}, {"wireGuardService", g.WireGuardService}} {
-		name := e.name
+		name    string
+		written string
+		straitv1.ServiceExposure
+	}{{"directService", written.DirectService.Type, g.DirectService}, {"wireGuardService", written.WireGuardService.Type, g.WireGuardService}} {
+		p := gp.Child(e.name)
 		if e.Type != "ClusterIP" && e.Type != "NodePort" && e.Type != "LoadBalancer" {
-			errs = append(errs, field.NotSupported(gp.Child(name, "type"), e.Type, []string{"ClusterIP", "NodePort", "LoadBalancer"}))
+			errs = append(errs, field.NotSupported(p.Child("type"), e.Type, []string{"ClusterIP", "NodePort", "LoadBalancer"}))
 		}
+		errs = append(errs, enum(p.Child("externalTrafficPolicy"), e.ExternalTrafficPolicy, false, "Cluster", "Local")...)
+		rp := p.Child("loadBalancerSourceRanges")
+		if n := len(e.LoadBalancerSourceRanges); n > 64 {
+			errs = append(errs, field.TooMany(rp, n, 64))
+		}
+		for i, r := range e.LoadBalancerSourceRanges {
+			errs = append(errs, cidr(rp.Index(i), r)...)
+		}
+		errs = append(errs, rule(p,
+			e.LoadBalancerSourceRanges == nil || e.written == "LoadBalancer",
+			"loadBalancerSourceRanges needs type LoadBalancer")...)
+		errs = append(errs, rule(p,
+			e.AllocateLoadBalancerNodePorts == nil || e.written == "LoadBalancer",
+			"allocateLoadBalancerNodePorts needs type LoadBalancer")...)
+		errs = append(errs, rule(p,
+			e.ExternalTrafficPolicy == "" || (e.written != "" && e.written != "ClusterIP"),
+			"externalTrafficPolicy needs type NodePort or LoadBalancer")...)
 	}
 
 	x := s.Spec.Exchange
@@ -67,7 +88,7 @@ func Site(s *v1alpha1.Site) field.ErrorList {
 }
 
 // SitePeer checks a SitePeer.
-func SitePeer(s *v1alpha1.SitePeer) field.ErrorList {
+func SitePeer(s *straitv1.SitePeer) field.ErrorList {
 	s = s.DeepCopy()
 	Default(s)
 	errs := objectMeta(&s.ObjectMeta)
@@ -84,7 +105,7 @@ func SitePeer(s *v1alpha1.SitePeer) field.ErrorList {
 }
 
 // SiteLink checks a SiteLink.
-func SiteLink(l *v1alpha1.SiteLink) field.ErrorList {
+func SiteLink(l *straitv1.SiteLink) field.ErrorList {
 	l = l.DeepCopy()
 	defaultSiteLink(&l.Spec)
 	errs := objectMeta(&l.ObjectMeta)
@@ -92,9 +113,9 @@ func SiteLink(l *v1alpha1.SiteLink) field.ErrorList {
 	spec := field.NewPath("spec")
 
 	errs = append(errs, required(spec.Child("peer"), s.Peer, 63)...)
-	errs = append(errs, enum(spec.Child("transport"), s.Transport, true, v1alpha1.TransportDirect, v1alpha1.TransportWireGuard)...)
+	errs = append(errs, enum(spec.Child("transport"), s.Transport, true, straitv1.TransportDirect, straitv1.TransportWireGuard)...)
 	errs = append(errs, between(spec.Child("cost"), s.Cost, 0, 65535)...)
-	errs = append(errs, enum(spec.Child("encryption"), s.Encryption, false, v1alpha1.EncryptionNone, v1alpha1.EncryptionWireGuard)...)
+	errs = append(errs, enum(spec.Child("encryption"), s.Encryption, false, straitv1.EncryptionNone, straitv1.EncryptionWireGuard)...)
 	if d := s.Direct; d != nil {
 		errs = append(errs, ip(spec.Child("direct", "address"), d.Address)...)
 	}
@@ -105,35 +126,43 @@ func SiteLink(l *v1alpha1.SiteLink) field.ErrorList {
 		errs = append(errs, ip(wp.Child("peerAddress"), w.PeerAddress)...)
 	}
 
-	direct := s.Transport == v1alpha1.TransportDirect
+	direct := s.Transport == straitv1.TransportDirect
 	errs = append(errs, rule(spec,
 		(direct && s.Direct != nil && s.WireGuard == nil) || (!direct && s.WireGuard != nil && s.Direct == nil),
 		"set direct for the direct transport, wireguard for the wireguard transport, and not the other")...)
 	errs = append(errs, rule(spec,
-		!direct || s.Encryption == v1alpha1.EncryptionNone,
+		!direct || s.Encryption == straitv1.EncryptionNone,
 		"a direct link carries traffic in clear: declare encryption: None")...)
 	errs = append(errs, rule(spec,
-		s.Transport != v1alpha1.TransportWireGuard || s.Encryption == "" || s.Encryption == v1alpha1.EncryptionWireGuard,
+		s.Transport != straitv1.TransportWireGuard || s.Encryption == "" || s.Encryption == straitv1.EncryptionWireGuard,
 		"a wireguard link is encrypted by WireGuard")...)
 	return errs
 }
 
 // Export checks an Export.
-func Export(e *v1alpha1.Export) field.ErrorList {
+func Export(e *straitv1.Export) field.ErrorList {
 	errs := objectMeta(&e.ObjectMeta)
 	return append(errs, servicePortRef(field.NewPath("spec", "service"), e.Spec.Service)...)
 }
 
 // Import checks an Import.
-func Import(i *v1alpha1.Import) field.ErrorList {
+func Import(i *straitv1.Import) field.ErrorList {
 	errs := objectMeta(&i.ObjectMeta)
 	spec := field.NewPath("spec")
 	errs = append(errs, required(spec.Child("site"), i.Spec.Site, 63)...)
-	return append(errs, required(spec.Child("export"), i.Spec.Export, 253)...)
+	errs = append(errs, required(spec.Child("export"), i.Spec.Export, 253)...)
+	if p := i.Spec.Port; p != nil {
+		pp := spec.Child("port")
+		errs = append(errs, label(pp.Child("name"), p.Name, 15)...)
+		errs = append(errs, port(pp.Child("port"), p.Port)...)
+	}
+	return append(errs, rule(nil,
+		i.Spec.Port == nil || i.Name == "" || (dns1035.MatchString(i.Name) && len(i.Name) <= 63),
+		"with port set, the name must be a DNS-1035 label, since it names a Service")...)
 }
 
 // SiteService checks a SiteService.
-func SiteService(ss *v1alpha1.SiteService) field.ErrorList {
+func SiteService(ss *straitv1.SiteService) field.ErrorList {
 	ss = ss.DeepCopy()
 	defaultSiteService(&ss.Spec)
 	errs := objectMeta(&ss.ObjectMeta)
@@ -143,8 +172,8 @@ func SiteService(ss *v1alpha1.SiteService) field.ErrorList {
 	s := ss.Spec
 	spec := field.NewPath("spec")
 
-	errs = append(errs, enum(spec.Child("mode"), s.Mode, true, v1alpha1.ModeSingle, v1alpha1.ModeSet)...)
-	errs = append(errs, enum(spec.Child("locality"), s.Locality, false, v1alpha1.LocalFirst, v1alpha1.LocalOnly, v1alpha1.Any)...)
+	errs = append(errs, enum(spec.Child("mode"), s.Mode, true, straitv1.ModeSingle, straitv1.ModeSet)...)
+	errs = append(errs, enum(spec.Child("locality"), s.Locality, false, straitv1.LocalFirst, straitv1.LocalOnly, straitv1.Any)...)
 
 	pp := spec.Child("port")
 	errs = append(errs, label(pp.Child("name"), s.Port.Name, 15)...)
@@ -152,7 +181,7 @@ func SiteService(ss *v1alpha1.SiteService) field.ErrorList {
 
 	pl := spec.Child("plugin")
 	if c := s.Plugin.CNPG; c != nil {
-		errs = append(errs, enum(pl.Child("cnpg", "role"), c.Role, true, v1alpha1.CNPGRolePrimary, v1alpha1.CNPGRoleReplica, v1alpha1.CNPGRoleAny)...)
+		errs = append(errs, enum(pl.Child("cnpg", "role"), c.Role, true, straitv1.CNPGRolePrimary, straitv1.CNPGRoleReplica, straitv1.CNPGRoleAny)...)
 	}
 	errs = append(errs, rule(pl, (s.Plugin.CNPG != nil) != (s.Plugin.Declared != nil), "set exactly one plugin")...)
 
@@ -182,26 +211,32 @@ func SiteService(ss *v1alpha1.SiteService) field.ErrorList {
 	}
 
 	pol := spec.Child("policy")
-	errs = append(errs, enum(pol.Child("multiple"), s.Policy.Multiple, false, v1alpha1.RouteNowhere, v1alpha1.PreferDeclaredIfConsistent)...)
+	errs = append(errs, enum(pol.Child("multiple"), s.Policy.Multiple, false, straitv1.RouteNowhere, straitv1.PreferDeclaredIfConsistent)...)
 	errs = append(errs, rule(pol,
 		s.Policy.UnknownHold.Duration >= 0 && s.Policy.UnknownHold.Duration <= 10*time.Minute,
 		"unknownHold must be between 0s and 10m")...)
+	errs = append(errs, rule(pol,
+		s.Policy.StartupHold.Duration >= 0 && s.Policy.StartupHold.Duration <= 10*time.Minute,
+		"startupHold must be between 0s and 10m")...)
 
 	cnpg, declared := s.Plugin.CNPG, s.Plugin.Declared
 	errs = append(errs, rule(spec,
-		s.Mode == v1alpha1.ModeSet || s.Locality == "",
+		s.Mode == straitv1.ModeSet || s.Locality == "",
 		"locality applies to Set mode only")...)
 	errs = append(errs, rule(spec,
-		cnpg == nil || (cnpg.Role == v1alpha1.CNPGRolePrimary) == (s.Mode == v1alpha1.ModeSingle),
+		s.Mode == straitv1.ModeSingle || s.Policy.StartupHold.Duration == 0,
+		"startupHold applies to Single mode only")...)
+	errs = append(errs, rule(spec,
+		cnpg == nil || (cnpg.Role == straitv1.CNPGRolePrimary) == (s.Mode == straitv1.ModeSingle),
 		"cnpg role primary requires Single mode; replica and any require Set mode")...)
 	errs = append(errs, rule(spec,
-		declared == nil || s.Mode == v1alpha1.ModeSet || declared.Active != "",
+		declared == nil || s.Mode == straitv1.ModeSet || declared.Active != "",
 		"the declared plugin needs active in Single mode")...)
 	errs = append(errs, rule(spec,
-		declared == nil || declared.Active == "" || slices.ContainsFunc(s.Members, func(m v1alpha1.Member) bool { return m.Name == declared.Active }),
+		declared == nil || declared.Active == "" || slices.ContainsFunc(s.Members, func(m straitv1.Member) bool { return m.Name == declared.Active }),
 		"declared.active must name a member")...)
 	errs = append(errs, rule(spec,
-		!slices.ContainsFunc(s.Members, func(m v1alpha1.Member) bool {
+		!slices.ContainsFunc(s.Members, func(m straitv1.Member) bool {
 			if cnpg != nil {
 				return m.CNPG == nil || m.Service != nil
 			}
@@ -233,7 +268,7 @@ func objectMeta(m *metav1.ObjectMeta) field.ErrorList {
 	return errs
 }
 
-func servicePortRef(p *field.Path, r v1alpha1.ServicePortRef) field.ErrorList {
+func servicePortRef(p *field.Path, r straitv1.ServicePortRef) field.ErrorList {
 	errs := required(p.Child("name"), r.Name, 63)
 	return append(errs, port(p.Child("port"), r.Port)...)
 }
@@ -285,7 +320,7 @@ func port(p *field.Path, v int32) field.ErrorList {
 	return between(p, v, 1, 65535)
 }
 
-func portRange(p *field.Path, r v1alpha1.PortRange) field.ErrorList {
+func portRange(p *field.Path, r straitv1.PortRange) field.ErrorList {
 	errs := port(p.Child("first"), r.First)
 	errs = append(errs, port(p.Child("last"), r.Last)...)
 	return append(errs, rule(p, r.First <= r.Last, "first must not exceed last")...)

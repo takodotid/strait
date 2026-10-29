@@ -58,7 +58,7 @@ site:
 | Value | Why |
 |---|---|
 | `site.name` | The site's name. Members and peers refer to it. Required. |
-| `site.spec` | The `Site`'s spec, as in [`api/v1alpha1`](../api/v1alpha1/site_types.go). The chart renders the `Site` from it. |
+| `site.spec` | The `Site`'s spec, as in [`api/v1`](../api/v1/site_types.go). The chart renders the `Site` from it. |
 | `site.spec.wireguard.privateKeySecretRef.name` | The Secret from step 1. The chart lets the gateway agent read this Secret and no other. |
 
 Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its node runs short of CPU ([benchmark](benchmark.md#under-cpu-contention)). Every other value: [`values.yaml`](../deploy/helm/strait/values.yaml).
@@ -66,16 +66,16 @@ Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its 
 Check the rendered `Site`, then install at both sites:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 0.1.1 \
+helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.0.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f -
 
 for s in a b; do
-  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 0.1.1 \
+  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.0.0 \
     --namespace strait-system --values values-$s.yaml --wait
 done
 ```
 
-`strait status` now shows each site, its active gateway pod, and the site's WireGuard public key:
+`strait status` now shows each site, its controller's version, its active gateway pod, and the site's WireGuard public key:
 
 ```sh
 strait --context site-a status
@@ -95,7 +95,7 @@ Site a declares its peer b and a link that waits for b to dial:
 
 ```sh
 cat > site-a.yaml <<EOF
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: b
@@ -103,7 +103,7 @@ spec:
   wireguard:
     publicKey: ${B_KEY}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-wan
@@ -121,7 +121,7 @@ Site b declares its peer a and a link that dials a node of site a:
 
 ```sh
 cat > site-b.yaml <<EOF
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: a
@@ -129,7 +129,7 @@ spec:
   wireguard:
     publicKey: ${A_KEY}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: a-wan
@@ -156,7 +156,7 @@ Check each site's objects together with its `Site`. The output must end with `Er
 
 ```sh
 for s in a b; do
-  helm template strait oci://ghcr.io/takodotid/charts/strait --version 0.1.1 \
+  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.0.0 \
     --namespace strait-system --values values-$s.yaml | strait validate -f - -f site-$s.yaml
 done
 ```
@@ -189,7 +189,7 @@ If not, see [Troubleshooting](troubleshooting.md#unreachable-peers-and-unhealthy
 `pg.yaml`, the same at both sites:
 
 ```yaml
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg
@@ -222,6 +222,7 @@ spec:
 | `spec.plugin.cnpg.role: primary` | Observe CloudNativePG `Cluster`s, and route to the primary. |
 | `spec.members` | One member per `Cluster`, with the site that hosts it. Each site observes only its own members. |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
+| `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. A site that comes back still primary after being lost then does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |
 
 Every field and rule: [RFC0002](../rfcs/RFC0002.md).
 
@@ -258,7 +259,7 @@ A private path between the sites, if there is one, can carry the traffic with no
 At site a:
 
 ```yaml
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-direct
@@ -278,7 +279,7 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 | `encryption: None` | Required on a `direct` link. Traffic crosses it in clear. |
 | `cost: 10` | Lower than the WireGuard link's default, 100. |
 | `direct.address` | The peer gateway's IP address on the private path. |
-| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. |
+| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that admit only them: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
 
 With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)).
 

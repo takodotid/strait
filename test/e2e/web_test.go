@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // webOf is the name of the site's web server, its Service and its member.
@@ -64,43 +64,44 @@ func webFixture(ctx context.Context, s *site) error {
 }
 
 // webService is the SiteService web, with the declared plugin naming active.
-func webService(e *env, active string) *v1alpha1.SiteService {
-	return &v1alpha1.SiteService{
+func webService(e *env, active string) *straitv1.SiteService {
+	return &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: webNamespace},
-		Spec: v1alpha1.SiteServiceSpec{
-			Mode:   v1alpha1.ModeSingle,
-			Port:   v1alpha1.ServicePort{Name: "http", Port: 8080},
-			Plugin: v1alpha1.PluginSpec{Declared: &v1alpha1.DeclaredPlugin{Active: active}},
-			Members: []v1alpha1.Member{
-				{Name: webOf(e.a), Site: e.a.name, Service: &v1alpha1.ServicePortRef{Name: webOf(e.a), Port: 8080}},
-				{Name: webOf(e.b), Site: e.b.name, Service: &v1alpha1.ServicePortRef{Name: webOf(e.b), Port: 8080}},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Port:   straitv1.ServicePort{Name: "http", Port: 8080},
+			Plugin: straitv1.PluginSpec{Declared: &straitv1.DeclaredPlugin{Active: active}},
+			Members: []straitv1.Member{
+				{Name: webOf(e.a), Site: e.a.name, Service: &straitv1.ServicePortRef{Name: webOf(e.a), Port: 8080}},
+				{Name: webOf(e.b), Site: e.b.name, Service: &straitv1.ServicePortRef{Name: webOf(e.b), Port: 8080}},
 			},
 		},
 	}
 }
 
 // pgService is the SiteService pg. Both sites apply the same one.
-func pgService(e *env) *v1alpha1.SiteService {
-	return &v1alpha1.SiteService{
+func pgService(e *env) *straitv1.SiteService {
+	return &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: dbNamespace},
-		Spec: v1alpha1.SiteServiceSpec{
-			Mode:   v1alpha1.ModeSingle,
-			Port:   v1alpha1.ServicePort{Name: "postgres", Port: 5432},
-			Plugin: v1alpha1.PluginSpec{CNPG: &v1alpha1.CNPGPlugin{Role: v1alpha1.CNPGRolePrimary}},
-			Members: []v1alpha1.Member{
-				{Name: memberOf(e.a), Site: e.a.name, CNPG: &v1alpha1.CNPGMember{Cluster: clusterOf(e.a)}},
-				{Name: memberOf(e.b), Site: e.b.name, CNPG: &v1alpha1.CNPGMember{Cluster: clusterOf(e.b)}},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Port:   straitv1.ServicePort{Name: "postgres", Port: 5432},
+			Plugin: straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: straitv1.CNPGRolePrimary}},
+			Members: []straitv1.Member{
+				{Name: memberOf(e.a), Site: e.a.name, CNPG: &straitv1.CNPGMember{Cluster: clusterOf(e.a)}},
+				{Name: memberOf(e.b), Site: e.b.name, CNPG: &straitv1.CNPGMember{Cluster: clusterOf(e.b)}},
 			},
-			Policy: v1alpha1.Policy{UnknownHold: metav1.Duration{Duration: unknownHold}},
+			Policy: straitv1.Policy{UnknownHold: metav1.Duration{Duration: unknownHold}},
 		},
 	}
 }
 
-// requestReaches returns a check that a request from the site's own web server to web.web.svc is answered by the member.
-func requestReaches(s *site, member string) func(ctx context.Context) (bool, string) {
+// requestReaches returns a check that a request from the site's own web server to the Service, in namespace web,
+// is answered by the member.
+func requestReaches(s *site, service, member string) func(ctx context.Context) (bool, string) {
 	return func(ctx context.Context) (bool, string) {
 		out, err := s.kubectl(ctx, 15*time.Second, "-n", webNamespace, "exec", "deploy/"+webOf(s), "--",
-			"curl", "-sS", "--max-time", "3", "http://web.web.svc:8080/hostname")
+			"curl", "-sS", "--max-time", "3", "http://"+service+"."+webNamespace+".svc:8080/hostname")
 		if err != nil {
 			return false, "site " + s.name + ": " + err.Error()
 		}

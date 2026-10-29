@@ -37,7 +37,7 @@ site:
   create: true
   # The site's name. Required when create is true.
   name: ""
-  # Site.spec, as in api/v1alpha1. Example:
+  # Site.spec, as in api/v1. Example:
   # spec:
   #   wireguard:
   #     privateKeySecretRef: {name: strait-wireguard}

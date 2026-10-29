@@ -15,7 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // freeAddress returns host:port of a port that was free a moment ago.
@@ -129,7 +129,7 @@ func TestServer(t *testing.T) {
 	a.request("strait-gateway-0", r.GetVersionInfo(), r.GetNonce())
 
 	// A change and a trigger give a new version within the debounce.
-	if err := c.Delete(context.Background(), &v1alpha1.Export{ObjectMeta: objectMeta("app", "redis")}); err != nil {
+	if err := c.Delete(context.Background(), &straitv1.Export{ObjectMeta: objectMeta("app", "redis")}); err != nil {
 		t.Fatal(err)
 	}
 	s.Trigger()

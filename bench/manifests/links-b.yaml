@@ -1,12 +1,12 @@
 # Site b's peer a and its two links. run.sh replaces PEER_PUBLIC_KEY, PEER_DIRECT_IP and PEER_WAN_IP,
 # and changes endpointDirect and the wireguard cost between paths.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata: {name: a}
 spec:
   wireguard: {publicKey: PEER_PUBLIC_KEY}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata: {name: a-direct}
 spec:
@@ -16,7 +16,7 @@ spec:
   cost: 10
   direct: {address: PEER_DIRECT_IP}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata: {name: a-wireguard}
 spec:

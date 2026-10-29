@@ -3,22 +3,23 @@ package cli
 import (
 	"sort"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // reasons gives the meaning of each route reason. explain and the skill document both use it.
 var reasons = map[string]string{
-	v1alpha1.ReasonActive:               "Single mode. Exactly one member is writable, and no known site declares another. The name points at it.",
-	v1alpha1.ReasonPreferDeclared:       "Single mode. Two or more members are writable. The policy PreferDeclaredIfConsistent is set, every site with a member declares the same primary, and that member is writable. The name points at it.",
-	v1alpha1.ReasonMultipleWritable:     "Single mode. Two or more members are writable. Routed nowhere.",
-	v1alpha1.ReasonDeclarationsDisagree: "Single mode. Two known sites declare different primaries. Routed nowhere. No policy relaxes this.",
-	v1alpha1.ReasonNotDeclared:          "Single mode. Exactly one member is writable, but a known site declares another member. Routed nowhere.",
-	v1alpha1.ReasonTransitioning:        "Single mode. No member is confirmed writable and a member is moving, for example during a switchover. Routed nowhere.",
-	v1alpha1.ReasonHeldUnknown:          "The routed members are Unknown, but each was confirmed less than policy.unknownHold ago. The previous route is kept.",
-	v1alpha1.ReasonUnknownTimeout:       "A member of the previous route has been Unknown for longer than policy.unknownHold, and no other member can be routed. Routed nowhere.",
-	v1alpha1.ReasonMemberUnknown:        "No member is writable and a member cannot be read. It may be writable. Routed nowhere.",
-	v1alpha1.ReasonNoEligibleMember:     "No member is writable in Single mode, or eligible for the locality in Set mode. Routed nowhere.",
-	v1alpha1.ReasonEligible:             "Set mode. The name points at every Stable and eligible member that the locality allows. Members of the previous route that are Transitioning, or Unknown within policy.unknownHold, stay.",
+	straitv1.ReasonActive:               "Single mode. Exactly one member is writable, and no known site declares another. The name points at it.",
+	straitv1.ReasonPreferDeclared:       "Single mode. Two or more members are writable. The policy PreferDeclaredIfConsistent is set, every site with a member declares the same primary, and that member is writable. The name points at it.",
+	straitv1.ReasonMultipleWritable:     "Single mode. Two or more members are writable. Routed nowhere.",
+	straitv1.ReasonDeclarationsDisagree: "Single mode. Two known sites declare different primaries. Routed nowhere. No policy relaxes this.",
+	straitv1.ReasonNotDeclared:          "Single mode. Exactly one member is writable, but a known site declares another member. Routed nowhere.",
+	straitv1.ReasonTransitioning:        "Single mode. No member is confirmed writable and a member is moving, for example during a switchover. Routed nowhere.",
+	straitv1.ReasonHeldUnknown:          "The routed members are Unknown, but each was confirmed less than policy.unknownHold ago. The previous route is kept.",
+	straitv1.ReasonUnknownTimeout:       "A member of the previous route has been Unknown for longer than policy.unknownHold, and no other member can be routed. Routed nowhere.",
+	straitv1.ReasonMemberUnknown:        "No member is writable and a member cannot be read. It may be writable. Routed nowhere.",
+	straitv1.ReasonNoEligibleMember:     "No member is writable in Single mode, or eligible for the locality in Set mode. Routed nowhere.",
+	straitv1.ReasonEligible:             "Set mode. The name points at every Stable and eligible member that the locality allows. Members of the previous route that are Transitioning, or Unknown within policy.unknownHold, stay.",
+	straitv1.ReasonAwaitingPeers:        "Single mode, with policy.startupHold. The decision picks a local member, but the controller started less than startupHold ago and has not yet read every site with a member. Routed nowhere until it has, or until the hold ends.",
 }
 
 type reason struct {

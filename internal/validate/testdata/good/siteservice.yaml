@@ -1,5 +1,5 @@
 # The example of RFC#0002.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg
@@ -25,7 +25,7 @@ spec:
     multiple: RouteNowhere
     unknownHold: 30s
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: cache
@@ -50,7 +50,7 @@ spec:
         name: cache
         port: 6379
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: queue
@@ -78,7 +78,7 @@ spec:
     multiple: PreferDeclaredIfConsistent
     unknownHold: 10m
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg-ro

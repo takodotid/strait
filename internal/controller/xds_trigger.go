@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // XDSTrigger asks the xDS server to rebuild when an input of the gateway's configuration changes.
@@ -39,11 +39,11 @@ func (t *XDSTrigger) SetupWithManager(mgr ctrl.Manager) error {
 	}))
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("xds").
-		Watches(&v1alpha1.Site{}, one).
-		Watches(&v1alpha1.SitePeer{}, one).
-		Watches(&v1alpha1.SiteLink{}, one).
-		Watches(&v1alpha1.Export{}, one).
-		Watches(&v1alpha1.Import{}, one).
+		Watches(&straitv1.Site{}, one).
+		Watches(&straitv1.SitePeer{}, one).
+		Watches(&straitv1.SiteLink{}, one).
+		Watches(&straitv1.Export{}, one).
+		Watches(&straitv1.Import{}, one).
 		Watches(&discoveryv1.EndpointSlice{}, one).
 		Watches(&corev1.Pod{}, one, inNamespace).
 		Watches(&coordinationv1.Lease{}, one, inNamespace).

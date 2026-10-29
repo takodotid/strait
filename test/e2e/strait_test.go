@@ -17,11 +17,13 @@ import (
 	eventsv1 "k8s.io/api/events/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 const (
@@ -68,6 +70,8 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	if i < 0 || strings.Contains(e.image[i:], "/") {
 		return fmt.Errorf("STRAIT_IMAGE %q has no tag", e.image)
 	}
+	// With externalTrafficPolicy Local, kube-proxy serves the direct Service only from an endpoint that names its node.
+	// The peer dials the one node of the site, which hosts the gateway.
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
 envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}}
 controller: {logLevel: debug}
@@ -76,7 +80,7 @@ site:
   spec:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
-    gateway: {directService: {type: NodePort}}
+    gateway: {directService: {type: NodePort, externalTrafficPolicy: Local}}
 `, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {
@@ -97,29 +101,39 @@ site:
 func (e *env) connectSites(ctx context.Context) error {
 	for _, s := range e.sites() {
 		p := e.peer(s)
-		peer := &v1alpha1.SitePeer{
+		peer := &straitv1.SitePeer{
 			ObjectMeta: metav1.ObjectMeta{Name: p.name},
-			Spec:       v1alpha1.SitePeerSpec{WireGuard: &v1alpha1.PeerWireGuard{PublicKey: p.wgPublicKey}},
+			Spec:       straitv1.SitePeerSpec{WireGuard: &straitv1.PeerWireGuard{PublicKey: p.wgPublicKey}},
 		}
-		direct := &v1alpha1.SiteLink{
+		direct := &straitv1.SiteLink{
 			ObjectMeta: metav1.ObjectMeta{Name: p.name + "-direct"},
-			Spec: v1alpha1.SiteLinkSpec{
-				Peer: p.name, Transport: v1alpha1.TransportDirect, Cost: 10, Encryption: v1alpha1.EncryptionNone,
-				Direct: &v1alpha1.DirectLink{Address: p.directIP},
+			Spec: straitv1.SiteLinkSpec{
+				Peer: p.name, Transport: straitv1.TransportDirect, Cost: 10, Encryption: straitv1.EncryptionNone,
+				Direct: &straitv1.DirectLink{Address: p.directIP},
 			},
 		}
 		peerAddress, _, _ := strings.Cut(p.wgAddress, "/")
-		wan := &v1alpha1.SiteLink{
+		wan := &straitv1.SiteLink{
 			ObjectMeta: metav1.ObjectMeta{Name: p.name + "-wan"},
-			Spec: v1alpha1.SiteLinkSpec{
-				Peer: p.name, Transport: v1alpha1.TransportWireGuard, Cost: 100,
-				WireGuard: &v1alpha1.WireGuardLink{ListenPort: wireGuardPort, Address: s.wgAddress, PeerAddress: peerAddress},
+			Spec: straitv1.SiteLinkSpec{
+				Peer: p.name, Transport: straitv1.TransportWireGuard, Cost: 100,
+				WireGuard: &straitv1.WireGuardLink{ListenPort: wireGuardPort, Address: s.wgAddress, PeerAddress: peerAddress},
 			},
 		}
 		if s == e.b {
 			wan.Spec.WireGuard.Endpoint = fmt.Sprintf("%s:%d", e.a.wanIP, wireGuardPort)
 		}
-		for _, o := range []client.Object{peer, direct, wan} {
+		objs := []client.Object{peer, direct, wan}
+		if s == e.b {
+			// Site b's SitePeer goes through the deprecated version, as a manifest written for v0.1 would.
+			// The controller, the gateway and the CLI read it as v1.
+			old, err := deprecated(peer)
+			if err != nil {
+				return err
+			}
+			objs[0] = old
+		}
+		for _, o := range objs {
 			if err := s.c.Create(ctx, o); err != nil {
 				return fmt.Errorf("site %s: create %s: %w", s.name, o.GetName(), err)
 			}
@@ -128,20 +142,35 @@ func (e *env) connectSites(ctx context.Context) error {
 	return nil
 }
 
+// deprecated returns the object as an unstructured object of strait.tako.id/v1alpha1.
+func deprecated(o client.Object) (*unstructured.Unstructured, error) {
+	gvks, _, err := scheme().ObjectKinds(o)
+	if err != nil {
+		return nil, err
+	}
+	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(o)
+	if err != nil {
+		return nil, err
+	}
+	u := &unstructured.Unstructured{Object: m}
+	u.SetGroupVersionKind(straitv1.DeprecatedGroupVersion.WithKind(gvks[0].Kind))
+	return u, nil
+}
+
 // linkState returns a site's SiteLinks by name.
-func linkState(ctx context.Context, s *site) (map[string]v1alpha1.SiteLinkStatus, error) {
-	var list v1alpha1.SiteLinkList
+func linkState(ctx context.Context, s *site) (map[string]straitv1.SiteLinkStatus, error) {
+	var list straitv1.SiteLinkList
 	if err := s.c.List(ctx, &list); err != nil {
 		return nil, err
 	}
-	out := map[string]v1alpha1.SiteLinkStatus{}
+	out := map[string]straitv1.SiteLinkStatus{}
 	for _, l := range list.Items {
 		out[l.Name] = l.Status
 	}
 	return out, nil
 }
 
-func linkString(links map[string]v1alpha1.SiteLinkStatus) string {
+func linkString(links map[string]straitv1.SiteLinkStatus) string {
 	var parts []string
 	for name, st := range links {
 		parts = append(parts, fmt.Sprintf("%s healthy=%t active=%t", name, st.Healthy, st.Active))
@@ -162,8 +191,8 @@ func (e *env) linksSteady(ctx context.Context, s *site) (bool, string) {
 }
 
 // siteService reads a SiteService straight from the API server.
-func siteService(ctx context.Context, s *site, namespace, name string) (*v1alpha1.SiteService, error) {
-	var ss v1alpha1.SiteService
+func siteService(ctx context.Context, s *site, namespace, name string) (*straitv1.SiteService, error) {
+	var ss straitv1.SiteService
 	if err := s.c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &ss); err != nil {
 		return nil, err
 	}
@@ -179,7 +208,7 @@ func routeString(members []string) string {
 }
 
 // describe is a one-line view of a SiteService's decision.
-func describe(ss *v1alpha1.SiteService) string {
+func describe(ss *straitv1.SiteService) string {
 	var conds []string
 	for _, c := range ss.Status.Conditions {
 		conds = append(conds, fmt.Sprintf("%s=%s", c.Type, c.Status))
@@ -210,15 +239,15 @@ func routeIs(s *site, namespace, name string, members []string, reasons ...strin
 
 // pathsAsExpected reports whether every routed member shows path Local at its own site and Gateway elsewhere,
 // and every other member shows none. The fixture has no endpoint-direct link.
-func pathsAsExpected(s *site, ss *v1alpha1.SiteService) bool {
+func pathsAsExpected(s *site, ss *straitv1.SiteService) bool {
 	for _, m := range ss.Status.Members {
-		var want v1alpha1.Path
+		var want straitv1.Path
 		switch {
 		case !slices.Contains(ss.Status.Route.Members, m.Name):
 		case m.Site == s.name:
-			want = v1alpha1.PathLocal
+			want = straitv1.PathLocal
 		default:
-			want = v1alpha1.PathGateway
+			want = straitv1.PathGateway
 		}
 		if m.Path != want {
 			return false
@@ -228,7 +257,7 @@ func pathsAsExpected(s *site, ss *v1alpha1.SiteService) bool {
 }
 
 // conditionTrue reports whether the SiteService's condition is True.
-func conditionTrue(ss *v1alpha1.SiteService, t string) bool {
+func conditionTrue(ss *straitv1.SiteService, t string) bool {
 	return meta.IsStatusConditionTrue(ss.Status.Conditions, t)
 }
 

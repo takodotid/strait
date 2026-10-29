@@ -4,12 +4,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
 func obs(member, site string) observe.Observation {
-	return observe.Observation{Member: member, Site: site, Role: v1alpha1.RoleReplica, State: v1alpha1.StateStable, Eligible: true, ObservedAt: at}
+	return observe.Observation{Member: member, Site: site, Role: straitv1.RoleReplica, State: straitv1.StateStable, Eligible: true, ObservedAt: at}
 }
 
 func TestLocalDocument(t *testing.T) {
@@ -58,9 +58,9 @@ func TestLocalCopiesInput(t *testing.T) {
 	members := []observe.Observation{o}
 	l.SetService("app", "pg", "pg-a", members)
 	members[0].Endpoint.Addresses[0] = "10.0.0.9"
-	members[0].State = v1alpha1.StateUnknown
+	members[0].State = straitv1.StateUnknown
 	m := l.Document("a", at).Services[0].Members[0]
-	if m.Addresses[0] != "10.0.0.1" || m.State != v1alpha1.StateStable {
+	if m.Addresses[0] != "10.0.0.1" || m.State != straitv1.StateStable {
 		t.Errorf("document follows a change of the input: %+v", m)
 	}
 }

@@ -13,7 +13,7 @@ import (
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
 )
 
@@ -53,8 +53,8 @@ type Inputs struct {
 	// Key is the site's private key. It is nil when there is none, and NoKey says why.
 	Key   *wgtypes.Key
 	NoKey string
-	Peers []v1alpha1.SitePeer
-	Links []v1alpha1.SiteLink
+	Peers []straitv1.SitePeer
+	Links []straitv1.SiteLink
 	// Resolve turns an endpoint's host:port into an address.
 	Resolve func(hostport string) (*net.UDPAddr, error)
 }
@@ -63,15 +63,15 @@ type Inputs struct {
 // Problems holds, per link, why it has no interface or why its endpoint is unset.
 func Desired(in Inputs) (want []Interface, problems map[string]string) {
 	problems = map[string]string{}
-	peers := map[string]v1alpha1.SitePeer{}
+	peers := map[string]straitv1.SitePeer{}
 	for _, p := range in.Peers {
 		peers[p.Name] = p
 	}
 	ls := slices.Clone(in.Links)
-	slices.SortFunc(ls, func(a, b v1alpha1.SiteLink) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(ls, func(a, b straitv1.SiteLink) int { return strings.Compare(a.Name, b.Name) })
 	ports := map[int]string{}
 	for _, l := range ls {
-		if l.Spec.Transport != v1alpha1.TransportWireGuard || l.Spec.WireGuard == nil {
+		if l.Spec.Transport != straitv1.TransportWireGuard || l.Spec.WireGuard == nil {
 			continue
 		}
 		w, problem := desired(l, in, peers)
@@ -92,7 +92,7 @@ func Desired(in Inputs) (want []Interface, problems map[string]string) {
 	return want, problems
 }
 
-func desired(l v1alpha1.SiteLink, in Inputs, peers map[string]v1alpha1.SitePeer) (Interface, string) {
+func desired(l straitv1.SiteLink, in Inputs, peers map[string]straitv1.SitePeer) (Interface, string) {
 	spec := l.Spec.WireGuard
 	if in.Key == nil {
 		return Interface{}, cmp.Or(in.NoKey, "the Site has no WireGuard private key")

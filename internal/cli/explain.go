@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 type routeView struct {
@@ -25,7 +25,7 @@ type routeView struct {
 }
 
 type memberView struct {
-	v1alpha1.MemberStatus
+	straitv1.MemberStatus
 	// Observed is false when the status holds nothing about a member of the spec.
 	Observed bool `json:"observed"`
 	Routed   bool `json:"routed"`
@@ -36,13 +36,13 @@ type explainView struct {
 	Name               string                 `json:"name"`
 	Generation         int64                  `json:"generation"`
 	ObservedGeneration int64                  `json:"observedGeneration"`
-	Mode               v1alpha1.Mode          `json:"mode"`
-	Locality           v1alpha1.Locality      `json:"locality,omitempty"`
-	Plugin             v1alpha1.PluginSpec    `json:"plugin"`
-	Policy             v1alpha1.Policy        `json:"policy"`
+	Mode               straitv1.Mode          `json:"mode"`
+	Locality           straitv1.Locality      `json:"locality,omitempty"`
+	Plugin             straitv1.PluginSpec    `json:"plugin"`
+	Policy             straitv1.Policy        `json:"policy"`
 	Route              routeView              `json:"route"`
 	Members            []memberView           `json:"members"`
-	Declarations       []v1alpha1.Declaration `json:"declarations"`
+	Declarations       []straitv1.Declaration `json:"declarations"`
 	Conditions         []metav1.Condition     `json:"conditions"`
 }
 
@@ -78,20 +78,20 @@ With -A, explain looks for the name in every namespace. It fails if more than on
 	}
 }
 
-func getSiteService(cmd *cobra.Command, r client.Reader, ns, name string) (*v1alpha1.SiteService, error) {
+func getSiteService(cmd *cobra.Command, r client.Reader, ns, name string) (*straitv1.SiteService, error) {
 	if ns != "" {
-		var ss v1alpha1.SiteService
+		var ss straitv1.SiteService
 		err := r.Get(cmd.Context(), client.ObjectKey{Namespace: ns, Name: name}, &ss)
 		if apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("SiteService %q not found in namespace %q", name, ns)
 		}
 		return &ss, err
 	}
-	var all v1alpha1.SiteServiceList
+	var all straitv1.SiteServiceList
 	if err := r.List(cmd.Context(), &all); err != nil {
 		return nil, fmt.Errorf("list SiteServices: %w", err)
 	}
-	var found []v1alpha1.SiteService
+	var found []straitv1.SiteService
 	var namespaces []string
 	for _, ss := range all.Items {
 		if ss.Name == name {
@@ -109,7 +109,7 @@ func getSiteService(cmd *cobra.Command, r client.Reader, ns, name string) (*v1al
 	return nil, usageError{fmt.Errorf("SiteService %q is in namespaces %s: pick one with -n", name, strings.Join(namespaces, ", "))}
 }
 
-func explain(ss *v1alpha1.SiteService) explainView {
+func explain(ss *straitv1.SiteService) explainView {
 	st := ss.Status
 	v := explainView{
 		Namespace:          ss.Namespace,
@@ -129,18 +129,18 @@ func explain(ss *v1alpha1.SiteService) explainView {
 			Endpoints:      st.Route.Endpoints,
 		},
 		Members:      []memberView{},
-		Declarations: append([]v1alpha1.Declaration{}, st.Declarations...),
+		Declarations: append([]straitv1.Declaration{}, st.Declarations...),
 		Conditions:   append([]metav1.Condition{}, st.Conditions...),
 	}
 	// Members of the spec first, in spec order, then any the status still holds.
-	statuses := map[string]v1alpha1.MemberStatus{}
+	statuses := map[string]straitv1.MemberStatus{}
 	for _, m := range st.Members {
 		statuses[m.Name] = m
 	}
 	for _, m := range ss.Spec.Members {
 		s, ok := statuses[m.Name]
 		if !ok {
-			s = v1alpha1.MemberStatus{Name: m.Name, Site: m.Site}
+			s = straitv1.MemberStatus{Name: m.Name, Site: m.Site}
 		}
 		delete(statuses, m.Name)
 		v.Members = append(v.Members, memberView{MemberStatus: s, Observed: ok, Routed: slices.Contains(st.Route.Members, m.Name)})
@@ -153,7 +153,7 @@ func explain(ss *v1alpha1.SiteService) explainView {
 	return v
 }
 
-func pluginText(p v1alpha1.PluginSpec) string {
+func pluginText(p straitv1.PluginSpec) string {
 	switch {
 	case p.CNPG != nil:
 		return "cnpg, role " + string(p.CNPG.Role)
@@ -170,16 +170,20 @@ func (o *options) explainTable(w io.Writer, v explainView) {
 		{"SiteService", v.Namespace + "/" + v.Name},
 		{"Mode", string(v.Mode)},
 	}
-	if v.Mode == v1alpha1.ModeSet {
+	if v.Mode == straitv1.ModeSet {
 		locality := v.Locality
 		if locality == "" {
-			locality = v1alpha1.LocalFirst
+			locality = straitv1.LocalFirst
 		}
 		pairs = append(pairs, [2]string{"Locality", string(locality)})
 	}
+	policy := fmt.Sprintf("multiple %s, unknownHold %s", dash(string(v.Policy.Multiple)), v.Policy.UnknownHold.Duration)
+	if d := v.Policy.StartupHold.Duration; d > 0 {
+		policy += fmt.Sprintf(", startupHold %s", d)
+	}
 	pairs = append(pairs,
 		[2]string{"Plugin", pluginText(v.Plugin)},
-		[2]string{"Policy", fmt.Sprintf("multiple %s, unknownHold %s", dash(string(v.Policy.Multiple)), v.Policy.UnknownHold.Duration)},
+		[2]string{"Policy", policy},
 	)
 	switch {
 	case v.ObservedGeneration == 0 && v.Route.Reason == "":

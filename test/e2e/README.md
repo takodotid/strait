@@ -39,6 +39,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | Address on `strait-direct` | `172.31.0.11` | `172.31.0.21` |
 | CloudNativePG Cluster | `cluster-a`, primary at start | `cluster-b`, replica cluster at start |
 | SiteLinks | `b-direct` (cost 10), `b-wan` (wireguard, cost 100, waits) | `a-direct` (cost 10), `a-wan` (wireguard, cost 100, dials) |
+| `directService` | `NodePort`, `externalTrafficPolicy: Local` | same |
 
 | Docker network | Subnet | Carries |
 |---|---|---|
@@ -56,12 +57,13 @@ They run in this order on one fixture and stop at the first failure.
 | # | Scenario | Checks |
 |---|---|---|
 | 1 | Baseline | Both sites route `pg` to `pg-a`. A write from each site lands on `cluster-a`. |
+| import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Without `port`, site b deletes the Service. |
 | 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. |
 | 3 | Switchover with tokens | Site a stops naming `pg-a` within one 500ms sample of the demotion patch, site b within `peerTimeout`. `pg-b` never shows before the promotion patch. Both sites pass through nowhere, then route `pg-b`. |
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |
-| 7 | Two writable members | Site b comes back with `cluster-b` still primary. Within 30s both sites route nowhere and the `Multiple` condition is `True`. |
+| 7 | Two writable members | Site b comes back with `cluster-b` still primary, still cut off from site a, and its controller restarts. With `startupHold: 30s` on `pg`, site b routes nowhere with `AwaitingPeers` and never to `pg-b` until the hold ends, then to `pg-b`. Once the cut is removed, within 30s both sites route nowhere and the `Multiple` condition is `True`. |
 | rbac | Least privilege | No Strait controller or gateway agent logged a `forbidden` request. |
 
 ## Output

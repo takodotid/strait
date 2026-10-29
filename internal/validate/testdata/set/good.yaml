@@ -1,5 +1,5 @@
 # One site with two peers. Two wireguard links to b use different listen ports.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: a
@@ -8,7 +8,7 @@ spec:
     privateKeySecretRef:
       name: strait-wireguard
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: b
@@ -16,12 +16,12 @@ spec:
   wireguard:
     publicKey: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: c
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-direct
@@ -33,7 +33,7 @@ spec:
   direct:
     address: 192.0.2.10
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-wireguard
@@ -45,7 +45,7 @@ spec:
     address: 10.200.0.1/30
     peerAddress: 10.200.0.2
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-wireguard-backup
@@ -59,7 +59,7 @@ spec:
     address: 10.200.0.5/30
     peerAddress: 10.200.0.6
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: c-direct

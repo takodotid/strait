@@ -9,17 +9,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 func TestCollect(t *testing.T) {
 	scheme := runtime.NewScheme()
-	_ = v1alpha1.AddToScheme(scheme)
-	ss := &v1alpha1.SiteService{ObjectMeta: metav1.ObjectMeta{Namespace: "db", Name: "pg"}}
-	ss.Status.Route = v1alpha1.Route{Reason: v1alpha1.ReasonMultipleWritable}
-	ss.Status.Conditions = []metav1.Condition{{Type: v1alpha1.ConditionMultiple, Status: metav1.ConditionTrue}}
-	peer := &v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Status: v1alpha1.SitePeerStatus{Reachable: true}}
-	link := &v1alpha1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "b-direct"}, Spec: v1alpha1.SiteLinkSpec{Peer: "b", Transport: v1alpha1.TransportDirect}, Status: v1alpha1.SiteLinkStatus{Healthy: true}}
+	_ = straitv1.AddToScheme(scheme)
+	ss := &straitv1.SiteService{ObjectMeta: metav1.ObjectMeta{Namespace: "db", Name: "pg"}}
+	ss.Status.Route = straitv1.Route{Reason: straitv1.ReasonMultipleWritable}
+	ss.Status.Conditions = []metav1.Condition{{Type: straitv1.ConditionMultiple, Status: metav1.ConditionTrue}}
+	peer := &straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Status: straitv1.SitePeerStatus{Reachable: true}}
+	link := &straitv1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "b-direct"}, Spec: straitv1.SiteLinkSpec{Peer: "b", Transport: straitv1.TransportDirect}, Status: straitv1.SiteLinkStatus{Healthy: true}}
 	r := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ss, peer, link).Build()
 	want := `
 # HELP strait_siteservice_condition 1 while the condition is True.

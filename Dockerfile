@@ -7,10 +7,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
+# The build context holds no .git, so the commit comes in as a build argument.
+ARG COMMIT=unknown
 ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     go run ./hack/gendocs /out/man/man1 \
- && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=${VERSION}" -o /out/ ./cmd/...
+ && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=${VERSION} -X github.com/takodotid/strait/internal/version.Commit=${COMMIT}" -o /out/ ./cmd/...
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 LABEL org.opencontainers.image.source=https://github.com/takodotid/strait \

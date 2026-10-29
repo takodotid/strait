@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Condition type and reasons of a SitePeer.
@@ -55,7 +55,7 @@ func (w *StatusWriter) Start(ctx context.Context) error {
 
 // sync writes the status of every SitePeer whose status changed.
 func (w *StatusWriter) sync(ctx context.Context, now time.Time) error {
-	var list v1alpha1.SitePeerList
+	var list straitv1.SitePeerList
 	if err := w.Client.List(ctx, &list); err != nil {
 		return err
 	}
@@ -78,8 +78,8 @@ func (w *StatusWriter) sync(ctx context.Context, now time.Time) error {
 }
 
 // peerStatus returns a SitePeer's status from its poll state, keeping the current conditions' transition times.
-func peerStatus(current v1alpha1.SitePeerStatus, generation int64, doc Document, state PeerState, now time.Time, timeout time.Duration) v1alpha1.SitePeerStatus {
-	out := v1alpha1.SitePeerStatus{
+func peerStatus(current straitv1.SitePeerStatus, generation int64, doc Document, state PeerState, now time.Time, timeout time.Duration) straitv1.SitePeerStatus {
+	out := straitv1.SitePeerStatus{
 		Reachable:  state.Fresh(now, timeout),
 		LastError:  state.LastError,
 		Services:   int32(len(doc.Services)),

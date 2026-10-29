@@ -1,5 +1,5 @@
 # want: spec.gateway: Invalid value: "object": controlPort must be outside exportPorts
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: control-port-in-export-ports
@@ -8,7 +8,7 @@ spec:
     controlPort: 31000
 ---
 # want: spec.gateway: Invalid value: "object": importPorts must not overlap exportPorts
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: import-ports-overlap
@@ -19,7 +19,7 @@ spec:
       last: 30950
 ---
 # want: spec.gateway: Invalid value: "object": peerPort must be outside importPorts
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: peer-port-in-import-ports
@@ -28,7 +28,7 @@ spec:
     peerPort: 15500
 ---
 # want: spec.gateway.exportPorts: Invalid value: "object": first must not exceed last
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: range-reversed
@@ -39,7 +39,7 @@ spec:
       last: 30901
 ---
 # want: spec.gateway.controlPort: Invalid value: 70000: must be between 1 and 65535
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: control-port-range
@@ -48,7 +48,7 @@ spec:
     controlPort: 70000
 ---
 # want: spec.gateway.importPorts.first: Invalid value: -1: must be between 1 and 65535
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: range-first
@@ -60,7 +60,7 @@ spec:
 ---
 # want: spec.gateway.exportPorts.last: Required value
 # want: spec.gateway.exportPorts: Invalid value: "object": first must not exceed last
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: range-last-missing
@@ -70,7 +70,7 @@ spec:
       first: 31000
 ---
 # want: spec.gateway.peerPort: Invalid value: 65536: must be between 1 and 65535
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: peer-port-range
@@ -80,7 +80,7 @@ spec:
 ---
 # The default peerTimeout of 6s is less than twice 5s.
 # want: spec.exchange: Invalid value: "object": peerTimeout must be at least twice pollInterval
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: poll-interval-only
@@ -90,7 +90,7 @@ spec:
 ---
 # The default pollInterval of 2s is more than half of 3s.
 # want: spec.exchange: Invalid value: "object": peerTimeout must be at least twice pollInterval
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: peer-timeout-only
@@ -99,7 +99,7 @@ spec:
     peerTimeout: 3s
 ---
 # want: spec.wireguard.privateKeySecretRef.name: Required value
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: secret-name-missing
@@ -109,7 +109,56 @@ spec:
       key: key
 ---
 # want: metadata.name: Invalid value: "Site_A": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: Site_A
+---
+# want: spec.gateway.directService: Invalid value: "object": loadBalancerSourceRanges needs type LoadBalancer
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: source-ranges-on-node-port
+spec:
+  gateway:
+    directService:
+      type: NodePort
+      loadBalancerSourceRanges: [192.0.2.21/32]
+---
+# The default type of a Service that is written applies only when the whole Service is absent.
+# want: spec.gateway.directService: Invalid value: "object": allocateLoadBalancerNodePorts needs type LoadBalancer
+# want: spec.gateway.wireGuardService: Invalid value: "object": externalTrafficPolicy needs type NodePort or LoadBalancer
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: type-not-written
+spec:
+  gateway:
+    directService:
+      allocateLoadBalancerNodePorts: false
+    wireGuardService:
+      externalTrafficPolicy: Local
+---
+# want: spec.gateway.directService: Invalid value: "object": externalTrafficPolicy needs type NodePort or LoadBalancer
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: traffic-policy-on-cluster-ip
+spec:
+  gateway:
+    directService:
+      type: ClusterIP
+      externalTrafficPolicy: Local
+---
+# want: spec.gateway.directService.loadBalancerSourceRanges[1]: Invalid value: "192.0.2.21": must be an address in CIDR notation
+# want: spec.gateway.directService.externalTrafficPolicy: Unsupported value: "Remote": supported values: "Cluster", "Local"
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: exposure-values
+spec:
+  gateway:
+    directService:
+      type: LoadBalancer
+      loadBalancerSourceRanges: [192.0.2.0/24, 192.0.2.21]
+      externalTrafficPolicy: Remote

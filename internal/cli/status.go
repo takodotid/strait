@@ -9,11 +9,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 type siteView struct {
 	Name               string `json:"name"`
+	ControllerVersion  string `json:"controllerVersion,omitempty"`
 	GatewayPod         string `json:"gatewayPod,omitempty"`
 	GatewayAddress     string `json:"gatewayAddress,omitempty"`
 	WireGuardPublicKey string `json:"wireGuardPublicKey,omitempty"`
@@ -22,7 +23,7 @@ type siteView struct {
 type serviceView struct {
 	Namespace string        `json:"namespace"`
 	Name      string        `json:"name"`
-	Mode      v1alpha1.Mode `json:"mode"`
+	Mode      straitv1.Mode `json:"mode"`
 	// Route are the routed members. Empty with a reason means nowhere.
 	Route     []string     `json:"route"`
 	Reason    string       `json:"reason,omitempty"`
@@ -42,7 +43,7 @@ func newStatus(o *options) *cobra.Command {
 		Short: "Show the site, its peers and where every application name points",
 		Long: `status shows the state of one site in three parts.
 
-The site: its name, the active gateway pod and its address, and the site's WireGuard public key.
+The site: its name, the version of its controller, the active gateway pod and its address, and the site's WireGuard public key. VERSION reads "-" when the controller has not written its version. strait version shows the version of this CLI.
 
 The peers: one line each, with whether the peer's observations can be read and when they last were.
 
@@ -71,13 +72,14 @@ func readStatus(cmd *cobra.Command, r client.Reader, ns string) (statusView, err
 	ctx := cmd.Context()
 	v := statusView{Sites: []siteView{}, SiteServices: []serviceView{}}
 
-	var sites v1alpha1.SiteList
+	var sites straitv1.SiteList
 	if err := r.List(ctx, &sites); err != nil {
 		return v, fmt.Errorf("list Sites: %w", err)
 	}
 	for _, s := range sites.Items {
 		v.Sites = append(v.Sites, siteView{
 			Name:               s.Name,
+			ControllerVersion:  s.Status.ControllerVersion,
 			GatewayPod:         s.Status.Gateway.ActivePod,
 			GatewayAddress:     s.Status.Gateway.Address,
 			WireGuardPublicKey: s.Status.WireGuardPublicKey,
@@ -90,7 +92,7 @@ func readStatus(cmd *cobra.Command, r client.Reader, ns string) (statusView, err
 	}
 	v.Peers = peers
 
-	var services v1alpha1.SiteServiceList
+	var services straitv1.SiteServiceList
 	if err := r.List(ctx, &services, client.InNamespace(ns)); err != nil {
 		return v, fmt.Errorf("list SiteServices: %w", err)
 	}
@@ -129,9 +131,9 @@ func (o *options) statusTable(w io.Writer, v statusView) {
 	} else {
 		var rows [][]string
 		for _, s := range v.Sites {
-			rows = append(rows, []string{s.Name, dash(s.GatewayPod), dash(s.GatewayAddress), dash(s.WireGuardPublicKey)})
+			rows = append(rows, []string{s.Name, dash(s.ControllerVersion), dash(s.GatewayPod), dash(s.GatewayAddress), dash(s.WireGuardPublicKey)})
 		}
-		table(w, []string{"SITE", "GATEWAY", "ADDRESS", "WIREGUARD PUBLIC KEY"}, rows)
+		table(w, []string{"SITE", "VERSION", "GATEWAY", "ADDRESS", "WIREGUARD PUBLIC KEY"}, rows)
 	}
 	fmt.Fprintln(w)
 
