@@ -17,6 +17,7 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/version"
 )
 
 var outputs = []string{"table", "json", "yaml"}
@@ -28,6 +29,7 @@ type options struct {
 	allNamespaces bool
 	output        string
 	skill         bool
+	version       bool
 
 	// connect returns a reader of the cluster and the namespace of the context. Tests replace it.
 	connect func(o *options) (client.Reader, string, error)
@@ -122,6 +124,10 @@ strait is read-only. It never creates, updates, patches or deletes an object. Ea
 				}
 				return errDone
 			}
+			if o.version {
+				fmt.Fprintf(cmd.OutOrStdout(), "strait version %s, commit %s\n", version.Version, version.Commit)
+				return errDone
+			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -142,8 +148,9 @@ strait is read-only. It never creates, updates, patches or deletes an object. Ea
 	f.BoolVarP(&o.allNamespaces, "all-namespaces", "A", false, "Read namespaced objects in every namespace.")
 	f.StringVarP(&o.output, "output", "o", "table", "The output format: table, json or yaml.")
 	f.BoolVar(&o.skill, "skill", false, "Print the skill document for AI agents and exit.")
+	f.BoolVar(&o.version, "version", false, "Print the version of this CLI and the commit it was built from, and exit.")
 
-	root.AddCommand(newStatus(o), newExplain(o), newLinks(o), newPeers(o), newValidate(o))
+	root.AddCommand(newStatus(o), newExplain(o), newLinks(o), newPeers(o), newValidate(o), newVersion(o))
 	return root
 }
 

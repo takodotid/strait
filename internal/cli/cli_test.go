@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/version"
 )
 
 var now = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
@@ -35,6 +36,7 @@ func cluster() []client.Object {
 			Status: straitv1.SiteStatus{
 				Gateway:            straitv1.GatewayStatus{ActivePod: "strait-gateway-0", Address: "10.0.0.15"},
 				WireGuardPublicKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+				ControllerVersion:  "v1.0.0",
 			},
 		},
 		&straitv1.SitePeer{
@@ -150,8 +152,8 @@ func diff(t *testing.T, got, want string) {
 
 func TestStatus(t *testing.T) {
 	r := cli(t, fakeReader(cluster()...), "", "status").ok(t)
-	diff(t, r.stdout, `SITE  GATEWAY           ADDRESS    WIREGUARD PUBLIC KEY
-a     strait-gateway-0  10.0.0.15  AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+	diff(t, r.stdout, `SITE  VERSION  GATEWAY           ADDRESS    WIREGUARD PUBLIC KEY
+a     v1.0.0   strait-gateway-0  10.0.0.15  AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
 PEER  REACHABLE  LAST SEEN  SERVICES  EXPORTS  LAST ERROR
 b     true       2s         2         1        -
@@ -183,7 +185,7 @@ func TestStatusNamespaces(t *testing.T) {
 	if len(v.SiteServices) != 1 || v.SiteServices[0].Route[0] != "pg-b" {
 		t.Errorf("-n other: got %+v", v.SiteServices)
 	}
-	if len(v.Sites) != 1 || v.Sites[0].GatewayAddress != "10.0.0.15" || len(v.Peers) != 3 {
+	if len(v.Sites) != 1 || v.Sites[0].GatewayAddress != "10.0.0.15" || v.Sites[0].ControllerVersion != "v1.0.0" || len(v.Peers) != 3 {
 		t.Errorf("got %+v", v)
 	}
 }
@@ -364,6 +366,7 @@ func TestUsageErrors(t *testing.T) {
 		{"explain", "a", "b"},
 		{"validate"},
 		{"links", "-n"},
+		{"version", "extra"},
 	} {
 		res := cli(t, r, "", args...)
 		if res.code != 2 || !strings.HasPrefix(res.stderr, "error: ") || !strings.Contains(res.stderr, "--help' for usage.") {
@@ -466,7 +469,45 @@ func TestReadOnly(t *testing.T) {
 	}
 }
 
-// validate and --skill need no cluster.
+// A site whose controller has not written its version shows -.
+func TestStatusNoControllerVersion(t *testing.T) {
+	r := cli(t, fakeReader(&straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}}), "", "status").ok(t)
+	if !strings.HasPrefix(r.stdout, "SITE  VERSION  GATEWAY  ADDRESS  WIREGUARD PUBLIC KEY\na     -        -        -        -\n") {
+		t.Errorf("got:\n%s", r.stdout)
+	}
+}
+
+// setVersion sets the version and the commit of the build until the test ends.
+func setVersion(t *testing.T, v, commit string) {
+	t.Helper()
+	oldVersion, oldCommit := version.Version, version.Commit
+	t.Cleanup(func() { version.Version, version.Commit = oldVersion, oldCommit })
+	version.Version, version.Commit = v, commit
+}
+
+func TestVersion(t *testing.T) {
+	setVersion(t, "v1.0.0", "e76a8cdd00f51eb4d84c9dbb300a546952d46b05")
+	r := cli(t, nil, "", "version").ok(t)
+	diff(t, r.stdout, "Version:  v1.0.0\nCommit:   e76a8cdd00f51eb4d84c9dbb300a546952d46b05\n")
+
+	for _, format := range []string{"json", "yaml"} {
+		r = cli(t, nil, "", "version", "-o", format).ok(t)
+		var v versionView
+		if err := yaml.UnmarshalStrict([]byte(r.stdout), &v); err != nil {
+			t.Fatalf("%s: %v", format, err)
+		}
+		if v.Version != "v1.0.0" || v.Commit != "e76a8cdd00f51eb4d84c9dbb300a546952d46b05" {
+			t.Errorf("%s: got %+v", format, v)
+		}
+	}
+
+	for _, args := range [][]string{{"--version"}, {"status", "--version"}} {
+		r = cli(t, nil, "", args...).ok(t)
+		diff(t, r.stdout, "strait version v1.0.0, commit e76a8cdd00f51eb4d84c9dbb300a546952d46b05\n")
+	}
+}
+
+// validate, --skill, version and --version need no cluster.
 func TestNoCluster(t *testing.T) {
 	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "missing"))
 	var out, errOut bytes.Buffer
@@ -476,5 +517,19 @@ func TestNoCluster(t *testing.T) {
 	out.Reset()
 	if code := Main("strait", []string{"--skill"}, nil, &out, &errOut); code != 0 || !strings.HasPrefix(out.String(), "---\n") {
 		t.Errorf("--skill: exit %d, stderr %q", code, errOut.String())
+	}
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"version"}, "Version:  " + version.Version + "\nCommit:   " + version.Commit + "\n"},
+		{[]string{"version", "-o", "json"}, "{\n  \"version\": \"" + version.Version + "\",\n  \"commit\": \"" + version.Commit + "\"\n}\n"},
+		{[]string{"--version"}, "strait version " + version.Version + ", commit " + version.Commit + "\n"},
+	} {
+		out.Reset()
+		errOut.Reset()
+		if code := Main("strait", c.args, nil, &out, &errOut); code != 0 || out.String() != c.want {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q", c.args, code, out.String(), errOut.String())
+		}
 	}
 }

@@ -2,10 +2,13 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -euo pipefail -c
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 IMAGE ?= ghcr.io/takodotid/strait
 TAG ?= dev
 
 CONTROLLER_GEN := go tool controller-gen
+# Sets the version and the commit that every binary reports.
+VERSION_LDFLAGS = -X github.com/takodotid/strait/internal/version.Version=$(VERSION) -X github.com/takodotid/strait/internal/version.Commit=$(COMMIT)
 
 .PHONY: all
 all: generate build test
@@ -27,7 +30,7 @@ verify: generate ## Fail if generated files are out of date.
 
 .PHONY: build
 build: ## Build every binary into bin/.
-	CGO_ENABLED=0 go build -trimpath -ldflags "-X github.com/takodotid/strait/internal/version.Version=$(VERSION)" -o bin/ ./cmd/...
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(VERSION_LDFLAGS)" -o bin/ ./cmd/...
 
 .PHONY: docs
 docs: ## Write the man pages into bin/man and the skill document into bin/SKILL.md.
@@ -40,7 +43,7 @@ DIST := dist/strait_$(VERSION)_$(GOOS)_$(GOARCH)
 .PHONY: dist
 dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill document.
 	rm -rf $(DIST) && mkdir -p $(DIST)/man/man1
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=$(VERSION)" -o $(DIST)/strait ./cmd/strait
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w $(VERSION_LDFLAGS)" -o $(DIST)/strait ./cmd/strait
 	cp $(DIST)/strait $(DIST)/kubectl-strait
 	GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) go run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
 	cp LICENSE README.md $(DIST)/
@@ -52,7 +55,7 @@ test: ## Run unit tests.
 
 .PHONY: images
 images: ## Build the container image.
-	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(TAG) .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(IMAGE):$(TAG) .
 
 .PHONY: e2e
 e2e: images ## Run the end-to-end tests on kind (test/e2e/README.md). Creates and deletes strait-e2e-* clusters.

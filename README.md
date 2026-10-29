@@ -201,12 +201,13 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 
 | Command | Shows |
 |---|---|
-| `strait status` | The site, its peers, and where every application name points. |
+| `strait status` | The site and its controller's version, its peers, and where every application name points. |
 | `strait explain SITESERVICE` | Why one name points where it does: the reason, every member's observation, every site's declaration. |
 | `strait links` | Every link to a peer, its health, and which link carries the traffic. |
 | `strait peers` | Every peer, and whether its observations can be read. |
 | `strait validate -f PATH` | Checks manifests offline, with the rules of the CRDs and the controller. |
 | `strait --skill` | Prints the skill document for AI agents. |
+| `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 
 Each command reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
 

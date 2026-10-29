@@ -14,6 +14,7 @@ import (
 
 type siteView struct {
 	Name               string `json:"name"`
+	ControllerVersion  string `json:"controllerVersion,omitempty"`
 	GatewayPod         string `json:"gatewayPod,omitempty"`
 	GatewayAddress     string `json:"gatewayAddress,omitempty"`
 	WireGuardPublicKey string `json:"wireGuardPublicKey,omitempty"`
@@ -42,7 +43,7 @@ func newStatus(o *options) *cobra.Command {
 		Short: "Show the site, its peers and where every application name points",
 		Long: `status shows the state of one site in three parts.
 
-The site: its name, the active gateway pod and its address, and the site's WireGuard public key.
+The site: its name, the version of its controller, the active gateway pod and its address, and the site's WireGuard public key. VERSION reads "-" when the controller has not written its version. strait version shows the version of this CLI.
 
 The peers: one line each, with whether the peer's observations can be read and when they last were.
 
@@ -78,6 +79,7 @@ func readStatus(cmd *cobra.Command, r client.Reader, ns string) (statusView, err
 	for _, s := range sites.Items {
 		v.Sites = append(v.Sites, siteView{
 			Name:               s.Name,
+			ControllerVersion:  s.Status.ControllerVersion,
 			GatewayPod:         s.Status.Gateway.ActivePod,
 			GatewayAddress:     s.Status.Gateway.Address,
 			WireGuardPublicKey: s.Status.WireGuardPublicKey,
@@ -129,9 +131,9 @@ func (o *options) statusTable(w io.Writer, v statusView) {
 	} else {
 		var rows [][]string
 		for _, s := range v.Sites {
-			rows = append(rows, []string{s.Name, dash(s.GatewayPod), dash(s.GatewayAddress), dash(s.WireGuardPublicKey)})
+			rows = append(rows, []string{s.Name, dash(s.ControllerVersion), dash(s.GatewayPod), dash(s.GatewayAddress), dash(s.WireGuardPublicKey)})
 		}
-		table(w, []string{"SITE", "GATEWAY", "ADDRESS", "WIREGUARD PUBLIC KEY"}, rows)
+		table(w, []string{"SITE", "VERSION", "GATEWAY", "ADDRESS", "WIREGUARD PUBLIC KEY"}, rows)
 	}
 	fmt.Fprintln(w)
 

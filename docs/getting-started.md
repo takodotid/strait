@@ -75,7 +75,7 @@ for s in a b; do
 done
 ```
 
-`strait status` now shows each site, its active gateway pod, and the site's WireGuard public key:
+`strait status` now shows each site, its controller's version, its active gateway pod, and the site's WireGuard public key:
 
 ```sh
 strait --context site-a status
