@@ -21,16 +21,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
 )
 
 const ns = "strait"
 
-func testSite() *v1alpha1.Site {
-	return &v1alpha1.Site{
+func testSite() *straitv1.Site {
+	return &straitv1.Site{
 		ObjectMeta: metav1.ObjectMeta{Name: "a"},
-		Spec:       v1alpha1.SiteSpec{WireGuard: &v1alpha1.SiteWireGuard{PrivateKeySecretRef: v1alpha1.SecretKeyRef{Name: "wg"}}},
+		Spec:       straitv1.SiteSpec{WireGuard: &straitv1.SiteWireGuard{PrivateKeySecretRef: straitv1.SecretKeyRef{Name: "wg"}}},
 	}
 }
 
@@ -45,12 +45,12 @@ func newAgent(t *testing.T, objs ...client.Object) (a *Agent, k *fakeKernel, pat
 	if err := corev1.AddToScheme(s); err != nil {
 		t.Fatal(err)
 	}
-	if err := v1alpha1.AddToScheme(s); err != nil {
+	if err := straitv1.AddToScheme(s); err != nil {
 		t.Fatal(err)
 	}
 	patches = &atomic.Int32{}
 	c := fake.NewClientBuilder().WithScheme(s).WithObjects(objs...).
-		WithStatusSubresource(&v1alpha1.Site{}, &v1alpha1.SiteLink{}).
+		WithStatusSubresource(&straitv1.Site{}, &straitv1.SiteLink{}).
 		WithInterceptorFuncs(interceptor.Funcs{
 			SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, p client.Patch, opts ...client.SubResourcePatchOption) error {
 				patches.Add(1)
@@ -92,7 +92,7 @@ func TestPublishKey(t *testing.T) {
 	ctx := context.Background()
 
 	a.syncWireGuard(ctx)
-	var site v1alpha1.Site
+	var site straitv1.Site
 	if err := a.Client.Get(ctx, client.ObjectKey{Name: "a"}, &site); err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +148,8 @@ func TestReportHealthWritesOnChange(t *testing.T) {
 	a.setLinks(map[string]string{"b-wg": links.Interface("b-wg")}, nil)
 	ctx := context.Background()
 
-	get := func(name string) v1alpha1.SiteLink {
-		var l v1alpha1.SiteLink
+	get := func(name string) straitv1.SiteLink {
+		var l straitv1.SiteLink
 		if err := a.Client.Get(ctx, client.ObjectKey{Name: name}, &l); err != nil {
 			t.Fatal(err)
 		}

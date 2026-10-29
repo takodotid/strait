@@ -21,7 +21,7 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: Site names the local site. A cluster holds exactly one Site.
@@ -291,5 +291,286 @@ spec:
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}
+  - additionalPrinterColumns:
+    - jsonPath: .status.gateway.activePod
+      name: Gateway
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    deprecated: true
+    deprecationWarning: strait.tako.id/v1alpha1 Site is deprecated; use strait.tako.id/v1
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Site names the local site. A cluster holds exactly one Site.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            default: {}
+            description: SiteSpec sets the gateway's ports, the exchange's timing
+              and the site's WireGuard identity.
+            properties:
+              exchange:
+                default: {}
+                description: Exchange sets how peers are polled.
+                properties:
+                  peerTimeout:
+                    default: 6s
+                    description: PeerTimeout is the age after which a peer's last
+                      document is stale and its members are Unknown.
+                    type: string
+                  pollInterval:
+                    default: 2s
+                    description: PollInterval is the time between two polls of a peer.
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: peerTimeout must be at least twice pollInterval
+                  rule: '!has(self.peerTimeout) || !has(self.pollInterval) || duration(self.peerTimeout)
+                    >= duration(self.pollInterval) + duration(self.pollInterval)'
+              gateway:
+                default: {}
+                description: Gateway sets the ports of the site's gateway.
+                properties:
+                  controlPort:
+                    default: 30900
+                    description: ControlPort serves the observation document and export
+                      health to peers.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  directService:
+                    default:
+                      type: ClusterIP
+                    description: |-
+                      DirectService sets how peers reach the control port and the export ports over direct links.
+                      It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
+                      A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations are added to the Service, for example
+                          to make a load balancer internal.
+                        type: object
+                      type:
+                        description: Type is ClusterIP, NodePort or LoadBalancer.
+                          Empty means the default of the Service it sets.
+                        enum:
+                        - ClusterIP
+                        - NodePort
+                        - LoadBalancer
+                        type: string
+                    type: object
+                  exportPorts:
+                    default:
+                      first: 30901
+                      last: 31899
+                    description: ExportPorts is the range that export ports are allocated
+                      from. Peers reach exports on these ports.
+                    properties:
+                      first:
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      last:
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    required:
+                    - first
+                    - last
+                    type: object
+                    x-kubernetes-validations:
+                    - message: first must not exceed last
+                      rule: self.first <= self.last
+                  importPorts:
+                    default:
+                      first: 15000
+                      last: 15999
+                    description: ImportPorts is the range that local import listeners
+                      are allocated from. Peers never reach them.
+                    properties:
+                      first:
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      last:
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    required:
+                    - first
+                    - last
+                    type: object
+                    x-kubernetes-validations:
+                    - message: first must not exceed last
+                      rule: self.first <= self.last
+                  peerPort:
+                    default: 14999
+                    description: PeerPort is the local listener that the controller
+                      polls peers through. Peers never reach it.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  wireGuardService:
+                    default:
+                      type: NodePort
+                    description: WireGuardService sets how peers reach the UDP ports
+                      of wireguard links. It is NodePort unless set.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations are added to the Service, for example
+                          to make a load balancer internal.
+                        type: object
+                      type:
+                        description: Type is ClusterIP, NodePort or LoadBalancer.
+                          Empty means the default of the Service it sets.
+                        enum:
+                        - ClusterIP
+                        - NodePort
+                        - LoadBalancer
+                        type: string
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: controlPort must be outside exportPorts
+                  rule: '!has(self.exportPorts) || !has(self.controlPort) || self.exportPorts.first
+                    > self.controlPort || self.exportPorts.last < self.controlPort'
+                - message: importPorts must not overlap exportPorts
+                  rule: '!has(self.importPorts) || !has(self.exportPorts) || self.importPorts.first
+                    > self.exportPorts.last || self.importPorts.last < self.exportPorts.first'
+                - message: peerPort must be outside importPorts
+                  rule: '!has(self.importPorts) || !has(self.peerPort) || self.importPorts.first
+                    > self.peerPort || self.importPorts.last < self.peerPort'
+              wireguard:
+                description: WireGuard is the site's WireGuard identity. Required
+                  when a SiteLink uses the wireguard transport.
+                properties:
+                  privateKeySecretRef:
+                    description: PrivateKeySecretRef names the Secret, in the gateway's
+                      namespace, that holds the private key.
+                    properties:
+                      key:
+                        default: privateKey
+                        type: string
+                      name:
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - privateKeySecretRef
+                type: object
+            type: object
+          status:
+            description: SiteStatus shows the gateway and the site's public key.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              gateway:
+                description: Gateway shows the active gateway replica.
+                properties:
+                  activePod:
+                    description: ActivePod is the gateway pod that holds the gateway
+                      lease.
+                    type: string
+                  address:
+                    description: Address is the active pod's address.
+                    type: string
+                type: object
+              wireGuardPublicKey:
+                description: WireGuardPublicKey is the public key of the site's private
+                  key. Peers put it in their SitePeer.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: false
     subresources:
       status: {}

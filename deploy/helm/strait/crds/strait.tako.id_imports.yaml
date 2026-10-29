@@ -27,7 +27,7 @@ spec:
     - jsonPath: .status.remotePort
       name: Remote Port
       type: integer
-    name: v1alpha1
+    name: v1
     schema:
       openAPIV3Schema:
         description: Import offers a peer's export locally on a gateway port.
@@ -150,5 +150,145 @@ spec:
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}
+  - additionalPrinterColumns:
+    - jsonPath: .spec.site
+      name: Site
+      type: string
+    - jsonPath: .spec.export
+      name: Export
+      type: string
+    - jsonPath: .status.gatewayPort
+      name: Gateway Port
+      type: integer
+    - jsonPath: .status.remotePort
+      name: Remote Port
+      type: integer
+    deprecated: true
+    deprecationWarning: strait.tako.id/v1alpha1 Import is deprecated; use strait.tako.id/v1
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Import offers a peer's export locally on a gateway port.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ImportSpec names a peer's export.
+            properties:
+              export:
+                description: Export is the name of the Export at that site, in the
+                  same namespace as this Import.
+                maxLength: 253
+                minLength: 1
+                type: string
+              site:
+                description: Site is the SitePeer that holds the export.
+                maxLength: 63
+                minLength: 1
+                type: string
+            required:
+            - export
+            - site
+            type: object
+          status:
+            description: ImportStatus shows the import's local gateway port and the
+              peer's export port.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              gatewayPort:
+                description: GatewayPort is the local gateway port of this import.
+                  Allocated from the Site's importPorts and kept.
+                format: int32
+                type: integer
+              remotePort:
+                description: RemotePort is the export's gateway port at the peer,
+                  from the peer's last document.
+                format: int32
+                type: integer
+              remoteReady:
+                description: RemoteReady is the export's readiness at the peer, from
+                  the peer's last document.
+                type: boolean
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: false
     subresources:
       status: {}

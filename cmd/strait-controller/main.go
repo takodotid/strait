@@ -31,7 +31,7 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/controller"
 	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/metrics"
@@ -74,7 +74,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := straitv1.AddToScheme(scheme); err != nil {
 		return err
 	}
 	inGateway := cache.ByObject{Namespaces: map[string]cache.Config{gatewayNamespace: {}}}
@@ -112,7 +112,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	impChanges := make(chan event.GenericEvent, 1)
 	poller := &exchange.Poller{
 		Peers: func() []string {
-			var peers v1alpha1.SitePeerList
+			var peers straitv1.SitePeerList
 			if err := reader.List(context.Background(), &peers); err != nil {
 				return nil
 			}
@@ -132,10 +132,10 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 			}
 			return fmt.Sprintf("http://%s/peers/%s", net.JoinHostPort(site.Status.Gateway.Address, strconv.Itoa(int(site.Spec.Gateway.PeerPort))), peer), nil
 		},
-		Exchange: func() v1alpha1.ExchangeSpec {
+		Exchange: func() straitv1.ExchangeSpec {
 			site, err := controller.LocalSite(context.Background(), reader)
 			if err != nil {
-				return v1alpha1.ExchangeSpec{}
+				return straitv1.ExchangeSpec{}
 			}
 			return site.Spec.Exchange
 		},
@@ -232,7 +232,7 @@ func leaderLock(cfg *rest.Config, namespace string) (resourcelock.Interface, err
 
 func notify(ch chan event.GenericEvent) {
 	select {
-	case ch <- event.GenericEvent{Object: &v1alpha1.Site{}}:
+	case ch <- event.GenericEvent{Object: &straitv1.Site{}}:
 	default:
 	}
 }

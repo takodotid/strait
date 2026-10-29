@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Names of the gateway's objects in the gateway's namespace.
@@ -54,7 +54,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 
-	var exports v1alpha1.ExportList
+	var exports straitv1.ExportList
 	if err := r.List(ctx, &exports); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -64,13 +64,13 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 			direct = append(direct, tcpPort(fmt.Sprintf("x-%d", p), p))
 		}
 	}
-	var links v1alpha1.SiteLinkList
+	var links straitv1.SiteLinkList
 	if err := r.List(ctx, &links); err != nil {
 		return ctrl.Result{}, err
 	}
 	var wg []corev1.ServicePort
 	for _, l := range links.Items {
-		if l.Spec.Transport == v1alpha1.TransportWireGuard && l.Spec.WireGuard != nil {
+		if l.Spec.Transport == straitv1.TransportWireGuard && l.Spec.WireGuard != nil {
 			p := l.Spec.WireGuard.ListenPort
 			if !slices.ContainsFunc(wg, func(sp corev1.ServicePort) bool { return sp.Port == p }) {
 				wg = append(wg, corev1.ServicePort{Name: fmt.Sprintf("wg-%d", p), Port: p, TargetPort: intstr.FromInt32(p), Protocol: corev1.ProtocolUDP})
@@ -89,7 +89,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	}
 
 	old := site.Status.DeepCopy()
-	site.Status.Gateway = v1alpha1.GatewayStatus{ActivePod: pod, Address: addr}
+	site.Status.Gateway = straitv1.GatewayStatus{ActivePod: pod, Address: addr}
 	meta.SetStatusCondition(&site.Status.Conditions, cond)
 	active := metav1.Condition{Type: "GatewayActive", Status: metav1.ConditionTrue, Reason: "LeaseHeld", ObservedGeneration: site.Generation}
 	if addr == "" {
@@ -150,7 +150,7 @@ func sortPorts(ports []corev1.ServicePort) {
 
 // syncService keeps a selector-less gateway Service and its EndpointSlice, which holds the active gateway pod only.
 // A Service with no ports is deleted. An exposure with no type gets def.
-func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp v1alpha1.ServiceExposure, def corev1.ServiceType, ports []corev1.ServicePort, addr string) error {
+func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp straitv1.ServiceExposure, def corev1.ServiceType, ports []corev1.ServicePort, addr string) error {
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	if len(ports) == 0 {
@@ -207,9 +207,9 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}))
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("gateway").
-		Watches(&v1alpha1.Site{}, one).
-		Watches(&v1alpha1.Export{}, one).
-		Watches(&v1alpha1.SiteLink{}, one).
+		Watches(&straitv1.Site{}, one).
+		Watches(&straitv1.Export{}, one).
+		Watches(&straitv1.SiteLink{}, one).
 		Watches(&coordinationv1.Lease{}, one, inNamespace).
 		Watches(&corev1.Pod{}, one, inNamespace).
 		Watches(&corev1.Service{}, one, inNamespace).

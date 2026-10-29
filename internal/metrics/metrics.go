@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 var (
@@ -44,7 +44,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var services v1alpha1.SiteServiceList
+	var services straitv1.SiteServiceList
 	if err := c.Reader.List(ctx, &services); err == nil {
 		for _, s := range services.Items {
 			ch <- prometheus.MustNewConstMetric(endpoints, prometheus.GaugeValue, float64(s.Status.Route.Endpoints), s.Namespace, s.Name)
@@ -56,13 +56,13 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			}
 		}
 	}
-	var peers v1alpha1.SitePeerList
+	var peers straitv1.SitePeerList
 	if err := c.Reader.List(ctx, &peers); err == nil {
 		for _, p := range peers.Items {
 			ch <- prometheus.MustNewConstMetric(reachable, prometheus.GaugeValue, value(p.Status.Reachable), p.Name)
 		}
 	}
-	var links v1alpha1.SiteLinkList
+	var links straitv1.SiteLinkList
 	if err := c.Reader.List(ctx, &links); err == nil {
 		for _, l := range links.Items {
 			t := string(l.Spec.Transport)

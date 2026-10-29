@@ -1,4 +1,4 @@
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Export
 metadata:
   name: pg-pg-a
@@ -8,7 +8,7 @@ spec:
     name: pg-a-rw
     port: 5432
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Import
 metadata:
   name: pg-pg-b

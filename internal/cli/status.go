@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 type siteView struct {
@@ -22,7 +22,7 @@ type siteView struct {
 type serviceView struct {
 	Namespace string        `json:"namespace"`
 	Name      string        `json:"name"`
-	Mode      v1alpha1.Mode `json:"mode"`
+	Mode      straitv1.Mode `json:"mode"`
 	// Route are the routed members. Empty with a reason means nowhere.
 	Route     []string     `json:"route"`
 	Reason    string       `json:"reason,omitempty"`
@@ -71,7 +71,7 @@ func readStatus(cmd *cobra.Command, r client.Reader, ns string) (statusView, err
 	ctx := cmd.Context()
 	v := statusView{Sites: []siteView{}, SiteServices: []serviceView{}}
 
-	var sites v1alpha1.SiteList
+	var sites straitv1.SiteList
 	if err := r.List(ctx, &sites); err != nil {
 		return v, fmt.Errorf("list Sites: %w", err)
 	}
@@ -90,7 +90,7 @@ func readStatus(cmd *cobra.Command, r client.Reader, ns string) (statusView, err
 	}
 	v.Peers = peers
 
-	var services v1alpha1.SiteServiceList
+	var services straitv1.SiteServiceList
 	if err := r.List(ctx, &services, client.InNamespace(ns)); err != nil {
 		return v, fmt.Errorf("list SiteServices: %w", err)
 	}

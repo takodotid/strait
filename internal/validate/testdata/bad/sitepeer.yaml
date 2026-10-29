@@ -1,5 +1,5 @@
 # want: spec.wireguard.publicKey: Invalid value: "not-a-key": must be a base64 WireGuard key, matching ^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw480]=$
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: key-pattern
@@ -8,7 +8,7 @@ spec:
     publicKey: not-a-key
 ---
 # want: spec.wireguard.publicKey: Required value
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: key-missing

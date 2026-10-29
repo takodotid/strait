@@ -117,9 +117,9 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 	}
 }
 
-// reasons explains every route reason of api/v1alpha1, and no other.
+// reasons explains every route reason of api/v1, and no other.
 func TestReasonsCoverAPI(t *testing.T) {
-	f, err := parser.ParseFile(token.NewFileSet(), "../../api/v1alpha1/siteservice_types.go", nil, 0)
+	f, err := parser.ParseFile(token.NewFileSet(), "../../api/v1/siteservice_types.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +149,6 @@ func TestReasonsCoverAPI(t *testing.T) {
 		have = append(have, r.Name)
 	}
 	if !slices.Equal(api, have) {
-		t.Errorf("api/v1alpha1 has reasons %v, the CLI explains %v", api, have)
+		t.Errorf("api/v1 has reasons %v, the CLI explains %v", api, have)
 	}
 }

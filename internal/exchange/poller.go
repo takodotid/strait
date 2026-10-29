@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -53,7 +53,7 @@ type Poller struct {
 	// URL returns a peer's base URL. Path is appended to it.
 	URL func(peer string) (string, error)
 	// Exchange returns the poll interval and the peer timeout. Read every round.
-	Exchange func() v1alpha1.ExchangeSpec
+	Exchange func() straitv1.ExchangeSpec
 	// Changed is called when a peer's document changes, apart from generatedAt, or its freshness flips.
 	// It runs on the poller's goroutine and must not block.
 	Changed func(peer string)
@@ -274,7 +274,7 @@ func (p *Poller) Snapshot(peer string) (Document, PeerState) {
 // View returns what every fresh peer reports about one SiteService, by peer name. now must come from time.Now.
 // A peer's report holds only the observations of members that the spec places at that peer.
 // A stale peer is left out, so its members count as Unknown and its declaration as unknown.
-func (p *Poller) View(namespace, name string, members []v1alpha1.Member, now time.Time, timeout time.Duration) map[string]observe.Report {
+func (p *Poller) View(namespace, name string, members []straitv1.Member, now time.Time, timeout time.Duration) map[string]observe.Report {
 	site := map[string]string{}
 	for _, m := range members {
 		site[m.Name] = m.Site

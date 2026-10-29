@@ -8,7 +8,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/observe"
 )
@@ -22,8 +22,8 @@ const (
 )
 
 // LocalSite returns the cluster's one Site.
-func LocalSite(ctx context.Context, r client.Reader) (*v1alpha1.Site, error) {
-	var sites v1alpha1.SiteList
+func LocalSite(ctx context.Context, r client.Reader) (*straitv1.Site, error) {
+	var sites straitv1.SiteList
 	if err := r.List(ctx, &sites); err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ type Peers interface {
 	// Fresh reports whether the peer's last document is fresh.
 	Fresh(peer string, now time.Time, timeout time.Duration) bool
 	// View returns, for each fresh peer, its declaration and the observations of its own members of one SiteService.
-	View(namespace, name string, members []v1alpha1.Member, now time.Time, timeout time.Duration) map[string]observe.Report
+	View(namespace, name string, members []straitv1.Member, now time.Time, timeout time.Duration) map[string]observe.Report
 	// Snapshot returns the peer's last good document, fresh or not.
 	Snapshot(peer string) (exchange.Document, exchange.PeerState)
 }

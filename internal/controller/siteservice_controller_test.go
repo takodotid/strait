@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/observe"
 )
@@ -33,7 +33,7 @@ type peers struct {
 
 func (p peers) Fresh(peer string, _ time.Time, _ time.Duration) bool { return p.fresh[peer] }
 
-func (p peers) View(_, _ string, _ []v1alpha1.Member, _ time.Time, _ time.Duration) map[string]observe.Report {
+func (p peers) View(_, _ string, _ []straitv1.Member, _ time.Time, _ time.Duration) map[string]observe.Report {
 	return p.view
 }
 
@@ -41,8 +41,8 @@ func (p peers) Snapshot(string) (exchange.Document, exchange.PeerState) {
 	return exchange.Document{}, exchange.PeerState{}
 }
 
-func site(name, gateway string) *v1alpha1.Site {
-	s := &v1alpha1.Site{ObjectMeta: metav1.ObjectMeta{Name: name}}
+func site(name, gateway string) *straitv1.Site {
+	s := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: name}}
 	s.Spec.Exchange.PeerTimeout = metav1.Duration{Duration: 6 * time.Second}
 	s.Status.Gateway.Address = gateway
 	return s
@@ -64,18 +64,18 @@ func appService(name string, addresses ...string) []client.Object {
 	return []client.Object{svc, es}
 }
 
-func webService(active string) *v1alpha1.SiteService {
-	return &v1alpha1.SiteService{
+func webService(active string) *straitv1.SiteService {
+	return &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web", UID: "uid-web"},
-		Spec: v1alpha1.SiteServiceSpec{
-			Mode:   v1alpha1.ModeSingle,
-			Port:   v1alpha1.ServicePort{Name: "http", Port: 8080},
-			Plugin: v1alpha1.PluginSpec{Declared: &v1alpha1.DeclaredPlugin{Active: active}},
-			Members: []v1alpha1.Member{
-				{Name: "web-a", Site: "a", Service: &v1alpha1.ServicePortRef{Name: "web-a", Port: 8080}},
-				{Name: "web-b", Site: "b", Service: &v1alpha1.ServicePortRef{Name: "web-b", Port: 8080}},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Port:   straitv1.ServicePort{Name: "http", Port: 8080},
+			Plugin: straitv1.PluginSpec{Declared: &straitv1.DeclaredPlugin{Active: active}},
+			Members: []straitv1.Member{
+				{Name: "web-a", Site: "a", Service: &straitv1.ServicePortRef{Name: "web-a", Port: 8080}},
+				{Name: "web-b", Site: "b", Service: &straitv1.ServicePortRef{Name: "web-b", Port: 8080}},
 			},
-			Policy: v1alpha1.Policy{Multiple: v1alpha1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 10 * time.Second}},
+			Policy: straitv1.Policy{Multiple: straitv1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 10 * time.Second}},
 		},
 	}
 }
@@ -86,11 +86,11 @@ func reconciler(t *testing.T, p peers, objs ...client.Object) (*SiteServiceRecon
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := straitv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
-		WithStatusSubresource(&v1alpha1.SiteService{}, &v1alpha1.Import{}).Build()
+		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Import{}).Build()
 	return &SiteServiceReconciler{
 		Client:   c,
 		Reader:   c,
@@ -121,9 +121,9 @@ func endpointSlices(t *testing.T, c client.Client) map[string]discoveryv1.Endpoi
 	return out
 }
 
-func status(t *testing.T, c client.Client) v1alpha1.SiteServiceStatus {
+func status(t *testing.T, c client.Client) straitv1.SiteServiceStatus {
 	t.Helper()
-	var ss v1alpha1.SiteService
+	var ss straitv1.SiteService
 	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &ss); err != nil {
 		t.Fatal(err)
 	}
@@ -147,32 +147,32 @@ func TestLocalActiveMember(t *testing.T) {
 		t.Fatalf("slice = %+v", es)
 	}
 	st := status(t, c)
-	if st.Route.Reason != v1alpha1.ReasonActive || len(st.Route.Members) != 1 || st.Route.Members[0] != "web-a" || st.Route.Endpoints != 2 {
+	if st.Route.Reason != straitv1.ReasonActive || len(st.Route.Members) != 1 || st.Route.Members[0] != "web-a" || st.Route.Endpoints != 2 {
 		t.Fatalf("route = %+v", st.Route)
 	}
-	if !meta.IsStatusConditionTrue(st.Conditions, v1alpha1.ConditionRouted) {
+	if !meta.IsStatusConditionTrue(st.Conditions, straitv1.ConditionRouted) {
 		t.Fatalf("conditions = %+v", st.Conditions)
 	}
-	if st.Members[0].Path != v1alpha1.PathLocal || st.Members[1].Path != "" {
+	if st.Members[0].Path != straitv1.PathLocal || st.Members[1].Path != "" {
 		t.Fatalf("members = %+v", st.Members)
 	}
-	var exp v1alpha1.Export
+	var exp straitv1.Export
 	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &exp); err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	var imp v1alpha1.Import
+	var imp straitv1.Import
 	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-b"}, &imp); err != nil || imp.Spec.Site != "b" || imp.Spec.Export != "web-web-b" {
 		t.Fatalf("import: %v %+v", err, imp.Spec)
 	}
 }
 
 func TestRemoteActiveMemberThroughGateway(t *testing.T) {
-	imp := &v1alpha1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: v1alpha1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
 	imp.Status.GatewayPort = 15001
 	p := peers{
 		fresh: map[string]bool{"b": true},
 		view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
-			"web-b": {Member: "web-b", Site: "b", Role: v1alpha1.RolePrimary, Eligible: true, State: v1alpha1.StateStable, ObservedAt: now},
+			"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, ObservedAt: now},
 		}}},
 	}
 	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-b"), imp)
@@ -187,23 +187,23 @@ func TestRemoteActiveMemberThroughGateway(t *testing.T) {
 	if len(got.Endpoints) != 1 || got.Endpoints[0].Addresses[0] != "10.0.9.9" || *got.Ports[0].Port != 15001 {
 		t.Fatalf("slice = %+v", got)
 	}
-	if st := status(t, c); st.Route.Reason != v1alpha1.ReasonActive || st.Route.Members[0] != "web-b" || st.Members[1].Path != v1alpha1.PathGateway {
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || st.Route.Members[0] != "web-b" || st.Members[1].Path != straitv1.PathGateway {
 		t.Fatalf("status = %+v", st)
 	}
 }
 
 func TestRemoteActiveMemberEndpointDirect(t *testing.T) {
-	imp := &v1alpha1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: v1alpha1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
 	imp.Status.GatewayPort = 15001
-	link := &v1alpha1.SiteLink{
+	link := &straitv1.SiteLink{
 		ObjectMeta: metav1.ObjectMeta{Name: "b-direct"},
-		Spec:       v1alpha1.SiteLinkSpec{Peer: "b", Transport: v1alpha1.TransportDirect, Direct: &v1alpha1.DirectLink{Address: "172.31.0.22", EndpointDirect: true}},
+		Spec:       straitv1.SiteLinkSpec{Peer: "b", Transport: straitv1.TransportDirect, Direct: &straitv1.DirectLink{Address: "172.31.0.22", EndpointDirect: true}},
 	}
 	link.Status.Active, link.Status.Healthy = true, true
 	p := peers{
 		fresh: map[string]bool{"b": true},
 		view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
-			"web-b": {Member: "web-b", Site: "b", Role: v1alpha1.RolePrimary, Eligible: true, State: v1alpha1.StateStable, ObservedAt: now,
+			"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, ObservedAt: now,
 				Endpoint: observe.Endpoint{Addresses: []string{"10.1.0.7"}, Port: 9090}},
 		}}},
 	}
@@ -215,7 +215,7 @@ func TestRemoteActiveMemberEndpointDirect(t *testing.T) {
 	if len(got.Endpoints) != 1 || got.Endpoints[0].Addresses[0] != "10.1.0.7" || *got.Ports[0].Port != 9090 {
 		t.Fatalf("slice = %+v", got)
 	}
-	if st := status(t, c); st.Members[1].Path != v1alpha1.PathEndpointDirect {
+	if st := status(t, c); st.Members[1].Path != straitv1.PathEndpointDirect {
 		t.Fatalf("members = %+v", st.Members)
 	}
 }
@@ -232,9 +232,9 @@ func TestDisagreeRoutesNowhere(t *testing.T) {
 		t.Fatalf("slices = %v", es)
 	}
 	st := status(t, c)
-	if st.Route.Reason != v1alpha1.ReasonDeclarationsDisagree || len(st.Route.Members) != 0 ||
-		!meta.IsStatusConditionTrue(st.Conditions, v1alpha1.ConditionDeclarationsDisagree) ||
-		meta.IsStatusConditionTrue(st.Conditions, v1alpha1.ConditionRouted) {
+	if st.Route.Reason != straitv1.ReasonDeclarationsDisagree || len(st.Route.Members) != 0 ||
+		!meta.IsStatusConditionTrue(st.Conditions, straitv1.ConditionDeclarationsDisagree) ||
+		meta.IsStatusConditionTrue(st.Conditions, straitv1.ConditionRouted) {
 		t.Fatalf("status = %+v", st)
 	}
 }
@@ -242,19 +242,19 @@ func TestDisagreeRoutesNowhere(t *testing.T) {
 func TestUnknownHeldThenNowhere(t *testing.T) {
 	ss := webService("web-b")
 	ss.Status.Route.Members = []string{"web-b"}
-	ss.Status.Members = []v1alpha1.MemberStatus{{Name: "web-b", Site: "b", LastConfirmedTime: &metav1.Time{Time: now.Add(-5 * time.Second)}}}
-	imp := &v1alpha1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: v1alpha1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	ss.Status.Members = []straitv1.MemberStatus{{Name: "web-b", Site: "b", LastConfirmedTime: &metav1.Time{Time: now.Add(-5 * time.Second)}}}
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
 	imp.Status.GatewayPort = 15001
 	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss, imp)
 	r, c := reconciler(t, peers{}, objs...)
 	run(t, r)
-	if st := status(t, c); st.Route.Reason != v1alpha1.ReasonHeldUnknown || len(endpointSlices(t, c)) != 1 {
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonHeldUnknown || len(endpointSlices(t, c)) != 1 {
 		t.Fatalf("route = %+v", st.Route)
 	}
 
 	r.Now = func() time.Time { return now.Add(6 * time.Second) }
 	run(t, r)
-	if st := status(t, c); st.Route.Reason != v1alpha1.ReasonUnknownTimeout || len(endpointSlices(t, c)) != 0 {
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonUnknownTimeout || len(endpointSlices(t, c)) != 0 {
 		t.Fatalf("route = %+v", st.Route)
 	}
 }
@@ -267,7 +267,7 @@ func TestServiceConflict(t *testing.T) {
 	if es := endpointSlices(t, c); len(es) != 0 {
 		t.Fatalf("slices = %v", es)
 	}
-	cond := meta.FindStatusCondition(status(t, c).Conditions, v1alpha1.ConditionRouted)
+	cond := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "ServiceConflict" {
 		t.Fatalf("routed = %+v", cond)
 	}

@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/yaml"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 var now = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
@@ -30,82 +30,82 @@ func ago(d time.Duration) *metav1.Time {
 // cluster is the state of site a that most tests read.
 func cluster() []client.Object {
 	return []client.Object{
-		&v1alpha1.Site{
+		&straitv1.Site{
 			ObjectMeta: metav1.ObjectMeta{Name: "a"},
-			Status: v1alpha1.SiteStatus{
-				Gateway:            v1alpha1.GatewayStatus{ActivePod: "strait-gateway-0", Address: "10.0.0.15"},
+			Status: straitv1.SiteStatus{
+				Gateway:            straitv1.GatewayStatus{ActivePod: "strait-gateway-0", Address: "10.0.0.15"},
 				WireGuardPublicKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 			},
 		},
-		&v1alpha1.SitePeer{
+		&straitv1.SitePeer{
 			ObjectMeta: metav1.ObjectMeta{Name: "c"},
-			Status:     v1alpha1.SitePeerStatus{LastSeenTime: ago(5 * time.Minute), LastError: "poll: context deadline exceeded"},
+			Status:     straitv1.SitePeerStatus{LastSeenTime: ago(5 * time.Minute), LastError: "poll: context deadline exceeded"},
 		},
-		&v1alpha1.SitePeer{
+		&straitv1.SitePeer{
 			ObjectMeta: metav1.ObjectMeta{Name: "b"},
-			Status:     v1alpha1.SitePeerStatus{Reachable: true, LastSeenTime: ago(2 * time.Second), Services: 2, Exports: 1},
+			Status:     straitv1.SitePeerStatus{Reachable: true, LastSeenTime: ago(2 * time.Second), Services: 2, Exports: 1},
 		},
-		&v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "d"}},
-		&v1alpha1.SiteLink{
+		&straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "d"}},
+		&straitv1.SiteLink{
 			ObjectMeta: metav1.ObjectMeta{Name: "b-wireguard"},
-			Spec: v1alpha1.SiteLinkSpec{Peer: "b", Transport: v1alpha1.TransportWireGuard, Cost: 100,
-				WireGuard: &v1alpha1.WireGuardLink{ListenPort: 51820, Address: "10.200.0.1/30", PeerAddress: "10.200.0.2"}},
-			Status: v1alpha1.SiteLinkStatus{Healthy: true, LastTransitionTime: ago(time.Hour), Interface: "wg0"},
+			Spec: straitv1.SiteLinkSpec{Peer: "b", Transport: straitv1.TransportWireGuard, Cost: 100,
+				WireGuard: &straitv1.WireGuardLink{ListenPort: 51820, Address: "10.200.0.1/30", PeerAddress: "10.200.0.2"}},
+			Status: straitv1.SiteLinkStatus{Healthy: true, LastTransitionTime: ago(time.Hour), Interface: "wg0"},
 		},
-		&v1alpha1.SiteLink{
+		&straitv1.SiteLink{
 			ObjectMeta: metav1.ObjectMeta{Name: "b-direct"},
-			Spec: v1alpha1.SiteLinkSpec{Peer: "b", Transport: v1alpha1.TransportDirect, Encryption: v1alpha1.EncryptionNone, Cost: 10,
-				Direct: &v1alpha1.DirectLink{Address: "192.0.2.10"}},
-			Status: v1alpha1.SiteLinkStatus{Healthy: true, Active: true, LastTransitionTime: ago(2 * time.Hour)},
+			Spec: straitv1.SiteLinkSpec{Peer: "b", Transport: straitv1.TransportDirect, Encryption: straitv1.EncryptionNone, Cost: 10,
+				Direct: &straitv1.DirectLink{Address: "192.0.2.10"}},
+			Status: straitv1.SiteLinkStatus{Healthy: true, Active: true, LastTransitionTime: ago(2 * time.Hour)},
 		},
 		pg(),
-		&v1alpha1.SiteService{
+		&straitv1.SiteService{
 			ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "app", Generation: 1},
-			Spec: v1alpha1.SiteServiceSpec{Mode: v1alpha1.ModeSet,
-				Members: []v1alpha1.Member{{Name: "cache-a", Site: "a"}, {Name: "cache-b", Site: "b"}}},
-			Status: v1alpha1.SiteServiceStatus{
+			Spec: straitv1.SiteServiceSpec{Mode: straitv1.ModeSet,
+				Members: []straitv1.Member{{Name: "cache-a", Site: "a"}, {Name: "cache-b", Site: "b"}}},
+			Status: straitv1.SiteServiceStatus{
 				ObservedGeneration: 1,
-				Route:              v1alpha1.Route{Reason: v1alpha1.ReasonNoEligibleMember, Message: "no eligible member for locality LocalFirst", LastChangeTime: ago(30 * time.Second)},
+				Route:              straitv1.Route{Reason: straitv1.ReasonNoEligibleMember, Message: "no eligible member for locality LocalFirst", LastChangeTime: ago(30 * time.Second)},
 			},
 		},
-		&v1alpha1.SiteService{
+		&straitv1.SiteService{
 			ObjectMeta: metav1.ObjectMeta{Name: "fresh", Namespace: "app", Generation: 1},
-			Spec: v1alpha1.SiteServiceSpec{Mode: v1alpha1.ModeSingle,
-				Members: []v1alpha1.Member{{Name: "fresh-a", Site: "a"}}},
+			Spec: straitv1.SiteServiceSpec{Mode: straitv1.ModeSingle,
+				Members: []straitv1.Member{{Name: "fresh-a", Site: "a"}}},
 		},
-		&v1alpha1.SiteService{
+		&straitv1.SiteService{
 			ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "other", Generation: 1},
-			Spec:       v1alpha1.SiteServiceSpec{Mode: v1alpha1.ModeSingle},
-			Status: v1alpha1.SiteServiceStatus{ObservedGeneration: 1,
-				Route: v1alpha1.Route{Members: []string{"pg-b"}, Reason: v1alpha1.ReasonActive, LastChangeTime: ago(time.Minute)}},
+			Spec:       straitv1.SiteServiceSpec{Mode: straitv1.ModeSingle},
+			Status: straitv1.SiteServiceStatus{ObservedGeneration: 1,
+				Route: straitv1.Route{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive, LastChangeTime: ago(time.Minute)}},
 		},
 	}
 }
 
-func pg() *v1alpha1.SiteService {
-	return &v1alpha1.SiteService{
+func pg() *straitv1.SiteService {
+	return &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "app", Generation: 3},
-		Spec: v1alpha1.SiteServiceSpec{
-			Mode:    v1alpha1.ModeSingle,
-			Port:    v1alpha1.ServicePort{Name: "postgres", Port: 5432},
-			Plugin:  v1alpha1.PluginSpec{CNPG: &v1alpha1.CNPGPlugin{Role: v1alpha1.CNPGRolePrimary}},
-			Members: []v1alpha1.Member{{Name: "pg-a", Site: "a"}, {Name: "pg-b", Site: "b"}, {Name: "pg-c", Site: "c"}},
-			Policy:  v1alpha1.Policy{Multiple: v1alpha1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 30 * time.Second}},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:    straitv1.ModeSingle,
+			Port:    straitv1.ServicePort{Name: "postgres", Port: 5432},
+			Plugin:  straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: straitv1.CNPGRolePrimary}},
+			Members: []straitv1.Member{{Name: "pg-a", Site: "a"}, {Name: "pg-b", Site: "b"}, {Name: "pg-c", Site: "c"}},
+			Policy:  straitv1.Policy{Multiple: straitv1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 30 * time.Second}},
 		},
-		Status: v1alpha1.SiteServiceStatus{
+		Status: straitv1.SiteServiceStatus{
 			ObservedGeneration: 3,
-			Route: v1alpha1.Route{Members: []string{"pg-a"}, Reason: v1alpha1.ReasonActive, Message: "pg-a is the only writable member",
+			Route: straitv1.Route{Members: []string{"pg-a"}, Reason: straitv1.ReasonActive, Message: "pg-a is the only writable member",
 				LastChangeTime: ago(5 * time.Minute), Endpoints: 1},
-			Members: []v1alpha1.MemberStatus{
-				{Name: "pg-a", Site: "a", Role: v1alpha1.RolePrimary, Eligible: true, State: v1alpha1.StateStable, Reason: "ClusterPrimary",
-					ObservedTime: ago(time.Second), LastConfirmedTime: ago(time.Second), Path: v1alpha1.PathLocal},
-				{Name: "pg-b", Site: "b", Role: v1alpha1.RoleReplica, Eligible: true, State: v1alpha1.StateStable, Reason: "ClusterReplica",
+			Members: []straitv1.MemberStatus{
+				{Name: "pg-a", Site: "a", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, Reason: "ClusterPrimary",
+					ObservedTime: ago(time.Second), LastConfirmedTime: ago(time.Second), Path: straitv1.PathLocal},
+				{Name: "pg-b", Site: "b", Role: straitv1.RoleReplica, Eligible: true, State: straitv1.StateStable, Reason: "ClusterReplica",
 					ObservedTime: ago(3 * time.Second), LastConfirmedTime: ago(3 * time.Second)},
 			},
-			Declarations: []v1alpha1.Declaration{{Site: "a", Primary: "pg-a"}, {Site: "b", Primary: "pg-a"}},
+			Declarations: []straitv1.Declaration{{Site: "a", Primary: "pg-a"}, {Site: "b", Primary: "pg-a"}},
 			Conditions: []metav1.Condition{
-				{Type: v1alpha1.ConditionRouted, Status: metav1.ConditionTrue, Reason: v1alpha1.ReasonActive, Message: "1 endpoint", LastTransitionTime: *ago(5 * time.Minute)},
-				{Type: v1alpha1.ConditionMultiple, Status: metav1.ConditionFalse, Reason: "OneWritable", LastTransitionTime: *ago(time.Hour)},
+				{Type: straitv1.ConditionRouted, Status: metav1.ConditionTrue, Reason: straitv1.ReasonActive, Message: "1 endpoint", LastTransitionTime: *ago(5 * time.Minute)},
+				{Type: straitv1.ConditionMultiple, Status: metav1.ConditionFalse, Reason: "OneWritable", LastTransitionTime: *ago(time.Hour)},
 			},
 		},
 	}
@@ -204,7 +204,7 @@ Plugin:       cnpg, role primary
 Policy:       multiple RouteNowhere, unknownHold 30s
 Route:        pg-a
 Reason:       Active
-Meaning:      `+reasons[v1alpha1.ReasonActive]+`
+Meaning:      `+reasons[straitv1.ReasonActive]+`
 Message:      pg-a is the only writable member
 Since:        2026-10-27T09:55:00Z (5m ago)
 Endpoints:    1
@@ -232,7 +232,7 @@ func TestExplainStates(t *testing.T) {
 	for _, want := range []string{
 		"Locality:     LocalFirst\n",
 		"Route:        nowhere. The name has no endpoints, and new connections are refused.\n",
-		"Meaning:      " + reasons[v1alpha1.ReasonNoEligibleMember] + "\n",
+		"Meaning:      " + reasons[straitv1.ReasonNoEligibleMember] + "\n",
 		"Declarations:\nNone.\n",
 	} {
 		if !strings.Contains(r.stdout, want) {
@@ -262,8 +262,8 @@ func TestExplainOutput(t *testing.T) {
 		if err := yaml.Unmarshal([]byte(r.stdout), &v); err != nil {
 			t.Fatalf("%s: %v", format, err)
 		}
-		if v.Route.Reason != v1alpha1.ReasonActive || v.Route.Meaning != reasons[v1alpha1.ReasonActive] ||
-			len(v.Members) != 3 || !v.Members[0].Routed || v.Members[2].Observed || v.Members[0].Role != v1alpha1.RolePrimary ||
+		if v.Route.Reason != straitv1.ReasonActive || v.Route.Meaning != reasons[straitv1.ReasonActive] ||
+			len(v.Members) != 3 || !v.Members[0].Routed || v.Members[2].Observed || v.Members[0].Role != straitv1.RolePrimary ||
 			v.Policy.UnknownHold.Duration != 30*time.Second || len(v.Declarations) != 2 || len(v.Conditions) != 2 {
 			t.Errorf("%s: got %+v", format, v)
 		}

@@ -58,7 +58,7 @@ site:
 | Value | Why |
 |---|---|
 | `site.name` | The site's name. Members and peers refer to it. Required. |
-| `site.spec` | The `Site`'s spec, as in [`api/v1alpha1`](../api/v1alpha1/site_types.go). The chart renders the `Site` from it. |
+| `site.spec` | The `Site`'s spec, as in [`api/v1`](../api/v1/site_types.go). The chart renders the `Site` from it. |
 | `site.spec.wireguard.privateKeySecretRef.name` | The Secret from step 1. The chart lets the gateway agent read this Secret and no other. |
 
 Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its node runs short of CPU ([benchmark](benchmark.md#under-cpu-contention)). Every other value: [`values.yaml`](../deploy/helm/strait/values.yaml).
@@ -95,7 +95,7 @@ Site a declares its peer b and a link that waits for b to dial:
 
 ```sh
 cat > site-a.yaml <<EOF
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: b
@@ -103,7 +103,7 @@ spec:
   wireguard:
     publicKey: ${B_KEY}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-wan
@@ -121,7 +121,7 @@ Site b declares its peer a and a link that dials a node of site a:
 
 ```sh
 cat > site-b.yaml <<EOF
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata:
   name: a
@@ -129,7 +129,7 @@ spec:
   wireguard:
     publicKey: ${A_KEY}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: a-wan
@@ -189,7 +189,7 @@ If not, see [Troubleshooting](troubleshooting.md#unreachable-peers-and-unhealthy
 `pg.yaml`, the same at both sites:
 
 ```yaml
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg
@@ -258,7 +258,7 @@ A private path between the sites, if there is one, can carry the traffic with no
 At site a:
 
 ```yaml
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-direct

@@ -1,10 +1,10 @@
 # Every default left unset.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: a
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: b

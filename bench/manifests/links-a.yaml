@@ -1,11 +1,11 @@
 # Site a's peer b and its two links. run.sh replaces PEER_PUBLIC_KEY and PEER_DIRECT_IP.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SitePeer
 metadata: {name: b}
 spec:
   wireguard: {publicKey: PEER_PUBLIC_KEY}
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata: {name: b-direct}
 spec:
@@ -16,7 +16,7 @@ spec:
   direct: {address: PEER_DIRECT_IP}
 ---
 # Waits for b to dial. The listen port is a valid NodePort, since the gateway Service's node port equals it.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata: {name: b-wireguard}
 spec:

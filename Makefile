@@ -11,9 +11,10 @@ CONTROLLER_GEN := go tool controller-gen
 all: generate build test
 
 .PHONY: generate
-generate: ## Generate deepcopy code and CRDs from api/.
+generate: ## Generate deepcopy code and CRDs from api/, with v1alpha1 served as a deprecated copy of v1.
 	$(CONTROLLER_GEN) object paths=./api/...
 	$(CONTROLLER_GEN) crd paths=./api/... output:crd:artifacts:config=config/crd
+	go run ./hack/crdversions config/crd
 	rm -rf deploy/helm/strait/crds && mkdir -p deploy/helm/strait/crds && cp config/crd/*.yaml deploy/helm/strait/crds/
 	cp deploy/envoy-bootstrap.yaml deploy/helm/strait/files/envoy-bootstrap.yaml
 

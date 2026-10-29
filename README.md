@@ -99,7 +99,7 @@ Held                  False   NoHeldUnknown           12m    -
 | Item | Value |
 |---|---|
 | Release | v0.1.1 |
-| API | `strait.tako.id/v1alpha1`. It may change. A change that breaks a user comes as a new API version. |
+| API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
 
@@ -169,7 +169,7 @@ helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait 
 Apply the same object at every site:
 
 ```yaml
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg

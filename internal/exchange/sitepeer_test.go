@@ -11,18 +11,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 func TestStatusWriter(t *testing.T) {
 	scheme := runtime.NewScheme()
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := straitv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(&v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}}, &v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "c"}}).
-		WithStatusSubresource(&v1alpha1.SitePeer{}).
+		WithObjects(&straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}}, &straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "c"}}).
+		WithStatusSubresource(&straitv1.SitePeer{}).
 		Build()
 	timeout := 6 * time.Second
 	polled := time.Now()
@@ -32,9 +32,9 @@ func TestStatusWriter(t *testing.T) {
 	}
 	w := &StatusWriter{Client: c, Poller: p}
 	ctx := context.Background()
-	get := func(name string) v1alpha1.SitePeer {
+	get := func(name string) straitv1.SitePeer {
 		t.Helper()
-		var sp v1alpha1.SitePeer
+		var sp straitv1.SitePeer
 		if err := c.Get(ctx, types.NamespacedName{Name: name}, &sp); err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +88,7 @@ func TestStatusWriter(t *testing.T) {
 
 func TestPeerStatusMismatch(t *testing.T) {
 	now := time.Now()
-	st := peerStatus(v1alpha1.SitePeerStatus{}, 3, Document{}, PeerState{LastSuccess: now, LastError: "site mismatch: document is from \"c\"", Mismatch: true}, now, time.Minute)
+	st := peerStatus(straitv1.SitePeerStatus{}, 3, Document{}, PeerState{LastSuccess: now, LastError: "site mismatch: document is from \"c\"", Mismatch: true}, now, time.Minute)
 	cond := meta.FindStatusCondition(st.Conditions, ConditionReachable)
 	if st.Reachable || cond == nil || cond.Reason != ReasonSiteMismatch || cond.ObservedGeneration != 3 {
 		t.Errorf("status: %+v", st)

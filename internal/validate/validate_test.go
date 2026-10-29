@@ -19,7 +19,7 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 type doc struct {
@@ -29,7 +29,7 @@ type doc struct {
 
 var scheme = func() *runtime.Scheme {
 	s := runtime.NewScheme()
-	if err := v1alpha1.AddToScheme(s); err != nil {
+	if err := straitv1.AddToScheme(s); err != nil {
 		panic(err)
 	}
 	return s
@@ -63,7 +63,7 @@ func readDocs(t *testing.T, path string) []doc {
 			t.Fatalf("%s: %v", path, err)
 		}
 		gvk := schema.FromAPIVersionAndKind(tm.APIVersion, tm.Kind)
-		if gvk.Group != v1alpha1.GroupVersion.Group {
+		if gvk.Group != straitv1.GroupVersion.Group {
 			if len(d.wants) > 0 {
 				t.Fatalf("%s: wants on a document that is not a Strait object", path)
 			}
@@ -170,14 +170,14 @@ func TestSet(t *testing.T) {
 }
 
 func TestObjectUnknownKind(t *testing.T) {
-	errs := Object(&v1alpha1.SiteList{})
+	errs := Object(&straitv1.SiteList{})
 	if len(errs) != 1 || errs[0].Field != "kind" {
 		t.Errorf("got %v", errs)
 	}
 }
 
 func TestDefaultLeavesSetValues(t *testing.T) {
-	l := &v1alpha1.SiteLink{Spec: v1alpha1.SiteLinkSpec{Cost: 7, WireGuard: &v1alpha1.WireGuardLink{ListenPort: 51900}}}
+	l := &straitv1.SiteLink{Spec: straitv1.SiteLinkSpec{Cost: 7, WireGuard: &straitv1.WireGuardLink{ListenPort: 51900}}}
 	Default(l)
 	if l.Spec.Cost != 7 || l.Spec.WireGuard.ListenPort != 51900 || l.Spec.WireGuard.PersistentKeepalive.Duration.String() != "25s" {
 		t.Errorf("got %+v", l.Spec)
@@ -278,12 +278,12 @@ func TestPatterns(t *testing.T) {
 func TestDefaultsMatchCRDs(t *testing.T) {
 	// Every optional struct is set, so that the defaults inside them apply.
 	objs := map[string]runtime.Object{
-		"Site":        &v1alpha1.Site{Spec: v1alpha1.SiteSpec{WireGuard: &v1alpha1.SiteWireGuard{}}},
-		"SitePeer":    &v1alpha1.SitePeer{},
-		"SiteLink":    &v1alpha1.SiteLink{Spec: v1alpha1.SiteLinkSpec{WireGuard: &v1alpha1.WireGuardLink{}}},
-		"Export":      &v1alpha1.Export{},
-		"Import":      &v1alpha1.Import{},
-		"SiteService": &v1alpha1.SiteService{},
+		"Site":        &straitv1.Site{Spec: straitv1.SiteSpec{WireGuard: &straitv1.SiteWireGuard{}}},
+		"SitePeer":    &straitv1.SitePeer{},
+		"SiteLink":    &straitv1.SiteLink{Spec: straitv1.SiteLinkSpec{WireGuard: &straitv1.WireGuardLink{}}},
+		"Export":      &straitv1.Export{},
+		"Import":      &straitv1.Import{},
+		"SiteService": &straitv1.SiteService{},
 	}
 	n := 0
 	for _, c := range readCRDs(t) {

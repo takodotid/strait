@@ -8,7 +8,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
 )
 
@@ -57,8 +57,8 @@ func TestParseClusters(t *testing.T) {
 	}
 }
 
-func fixtureLinks() []v1alpha1.SiteLink {
-	return []v1alpha1.SiteLink{
+func fixtureLinks() []straitv1.SiteLink {
+	return []straitv1.SiteLink{
 		directLink("b-direct", "b", 10, "192.0.2.99"),
 		wgLink("b-wg", "b", 100, 51820, "", "100.64.0.1/32", "192.0.2.2"),
 		directLink("b-spare", "b", 200, "192.0.2.50"),
@@ -94,7 +94,7 @@ func TestObserve(t *testing.T) {
 }
 
 func TestActiveLink(t *testing.T) {
-	ls := []v1alpha1.SiteLink{
+	ls := []straitv1.SiteLink{
 		directLink("lan-2", "b", 10, "198.51.100.2"),
 		directLink("lan-1", "b", 10, "198.51.100.1"),
 		directLink("wan", "b", 5, "192.0.2.1"),

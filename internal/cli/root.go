@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 var outputs = []string{"table", "json", "yaml"}
@@ -188,7 +188,7 @@ func connect(o *options) (client.Reader, string, error) {
 		return nil, "", err
 	}
 	scheme := runtime.NewScheme()
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := straitv1.AddToScheme(scheme); err != nil {
 		return nil, "", err
 	}
 	c, err := client.New(cfg, client.Options{Scheme: scheme})

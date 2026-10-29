@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/decide"
 	"github.com/takodotid/strait/internal/observe"
 	"github.com/takodotid/strait/internal/plugin"
@@ -51,7 +51,7 @@ type SiteServiceReconciler struct {
 // Reconcile implements reconcile.Reconciler.
 func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	var svc v1alpha1.SiteService
+	var svc straitv1.SiteService
 	if err := r.Get(ctx, req.NamespacedName, &svc); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Local.DeleteService(req.Namespace, req.Name)
@@ -118,7 +118,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 	endpoints := 0
-	var paths map[string]v1alpha1.Path
+	var paths map[string]straitv1.Path
 	if !conflict {
 		endpoints, paths, err = r.syncSlices(ctx, &svc, site, result.Members, observations)
 		if err != nil {
@@ -134,7 +134,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 }
 
 // lastConfirmed returns each member's last confirmed time, from memory or else from status.
-func (r *SiteServiceReconciler) lastConfirmed(svc *v1alpha1.SiteService) map[string]time.Time {
+func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService) map[string]time.Time {
 	if r.confirmed == nil {
 		r.confirmed = map[types.NamespacedName]map[string]time.Time{}
 	}
@@ -153,7 +153,7 @@ func (r *SiteServiceReconciler) lastConfirmed(svc *v1alpha1.SiteService) map[str
 }
 
 // next returns when to decide again: at the next resync, or when a hold expires, whichever is first.
-func (r *SiteServiceReconciler) next(svc *v1alpha1.SiteService, result decide.Result, confirmed map[string]time.Time, now time.Time) time.Duration {
+func (r *SiteServiceReconciler) next(svc *straitv1.SiteService, result decide.Result, confirmed map[string]time.Time, now time.Time) time.Duration {
 	d := resync
 	for _, m := range result.Held {
 		left := confirmed[m].Add(svc.Spec.Policy.UnknownHold.Duration).Sub(now)
@@ -164,12 +164,12 @@ func (r *SiteServiceReconciler) next(svc *v1alpha1.SiteService, result decide.Re
 	return d
 }
 
-func memberObjectName(svc *v1alpha1.SiteService, member string) string {
+func memberObjectName(svc *straitv1.SiteService, member string) string {
 	return svc.Name + "-" + member
 }
 
 // syncExportsImports keeps one Export per local member and one Import per remote member.
-func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *v1alpha1.SiteService, site string, report observe.Report) error {
+func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *straitv1.SiteService, site string, report observe.Report) error {
 	wantExports := map[string]bool{}
 	wantImports := map[string]bool{}
 	for _, m := range svc.Spec.Members {
@@ -180,10 +180,10 @@ func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *v1a
 			if ep.Service == "" || ep.ServicePort == 0 {
 				continue
 			}
-			exp := &v1alpha1.Export{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
+			exp := &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
 			if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, exp, func() error {
 				exp.Labels = map[string]string{LabelSiteService: svc.Name, LabelMember: m.Name}
-				exp.Spec.Service = v1alpha1.ServicePortRef{Name: ep.Service, Port: ep.ServicePort}
+				exp.Spec.Service = straitv1.ServicePortRef{Name: ep.Service, Port: ep.ServicePort}
 				return controllerutil.SetControllerReference(svc, exp, r.Scheme())
 			}); err != nil {
 				return fmt.Errorf("export %s: %w", name, err)
@@ -191,17 +191,17 @@ func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *v1a
 			continue
 		}
 		wantImports[name] = true
-		imp := &v1alpha1.Import{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
+		imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, imp, func() error {
 			imp.Labels = map[string]string{LabelSiteService: svc.Name, LabelMember: m.Name}
-			imp.Spec = v1alpha1.ImportSpec{Site: m.Site, Export: name}
+			imp.Spec = straitv1.ImportSpec{Site: m.Site, Export: name}
 			return controllerutil.SetControllerReference(svc, imp, r.Scheme())
 		}); err != nil {
 			return fmt.Errorf("import %s: %w", name, err)
 		}
 	}
 
-	var exports v1alpha1.ExportList
+	var exports straitv1.ExportList
 	if err := r.List(ctx, &exports, client.InNamespace(svc.Namespace), client.MatchingLabels{LabelSiteService: svc.Name}); err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *v1a
 			}
 		}
 	}
-	var imports v1alpha1.ImportList
+	var imports straitv1.ImportList
 	if err := r.List(ctx, &imports, client.InNamespace(svc.Namespace), client.MatchingLabels{LabelSiteService: svc.Name}); err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *v1a
 }
 
 // syncService keeps the application name's Service. It reports a conflict when another owner holds the name.
-func (r *SiteServiceReconciler) syncService(ctx context.Context, svc *v1alpha1.SiteService) (bool, error) {
+func (r *SiteServiceReconciler) syncService(ctx context.Context, svc *straitv1.SiteService) (bool, error) {
 	var existing corev1.Service
 	err := r.Get(ctx, client.ObjectKeyFromObject(svc), &existing)
 	switch {
@@ -260,18 +260,18 @@ func (r *SiteServiceReconciler) syncService(ctx context.Context, svc *v1alpha1.S
 type target struct {
 	addresses []string
 	port      int32
-	path      v1alpha1.Path
+	path      straitv1.Path
 }
 
 // targets returns where each routed member takes traffic. A member with no target is left out.
-func (r *SiteServiceReconciler) targets(ctx context.Context, svc *v1alpha1.SiteService, site *v1alpha1.Site, members []string, observations map[string]observe.Observation) (map[string]target, error) {
+func (r *SiteServiceReconciler) targets(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (map[string]target, error) {
 	direct, err := endpointDirectPeers(ctx, r.Reader)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]target{}
 	for _, name := range members {
-		var m v1alpha1.Member
+		var m straitv1.Member
 		for _, sm := range svc.Spec.Members {
 			if sm.Name == name {
 				m = sm
@@ -281,12 +281,12 @@ func (r *SiteServiceReconciler) targets(ctx context.Context, svc *v1alpha1.SiteS
 		switch {
 		case m.Site == site.Name:
 			if len(o.Endpoint.Addresses) > 0 && o.Endpoint.Port > 0 {
-				out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, v1alpha1.PathLocal}
+				out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, straitv1.PathLocal}
 			}
 		case direct[m.Site] && len(o.Endpoint.Addresses) > 0 && o.Endpoint.Port > 0:
-			out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, v1alpha1.PathEndpointDirect}
+			out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, straitv1.PathEndpointDirect}
 		default:
-			var imp v1alpha1.Import
+			var imp straitv1.Import
 			if err := r.Reader.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: memberObjectName(svc, name)}, &imp); err != nil {
 				if apierrors.IsNotFound(err) {
 					continue
@@ -294,7 +294,7 @@ func (r *SiteServiceReconciler) targets(ctx context.Context, svc *v1alpha1.SiteS
 				return nil, err
 			}
 			if imp.Status.GatewayPort > 0 && site.Status.Gateway.Address != "" {
-				out[name] = target{[]string{site.Status.Gateway.Address}, imp.Status.GatewayPort, v1alpha1.PathGateway}
+				out[name] = target{[]string{site.Status.Gateway.Address}, imp.Status.GatewayPort, straitv1.PathGateway}
 			}
 		}
 	}
@@ -303,13 +303,13 @@ func (r *SiteServiceReconciler) targets(ctx context.Context, svc *v1alpha1.SiteS
 
 // endpointDirectPeers returns the peers whose active link is a healthy direct link with endpointDirect.
 func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]bool, error) {
-	var links v1alpha1.SiteLinkList
+	var links straitv1.SiteLinkList
 	if err := r.List(ctx, &links); err != nil {
 		return nil, err
 	}
 	out := map[string]bool{}
 	for _, l := range links.Items {
-		if l.Spec.Transport == v1alpha1.TransportDirect && l.Spec.Direct != nil && l.Spec.Direct.EndpointDirect && l.Status.Active && l.Status.Healthy {
+		if l.Spec.Transport == straitv1.TransportDirect && l.Spec.Direct != nil && l.Spec.Direct.EndpointDirect && l.Status.Active && l.Status.Healthy {
 			out[l.Spec.Peer] = true
 		}
 	}
@@ -318,13 +318,13 @@ func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]bool,
 
 // syncSlices writes one EndpointSlice per routed member that has a target and deletes the rest.
 // It returns the number of endpoints written, and the path of each member that has endpoints.
-func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *v1alpha1.SiteService, site *v1alpha1.Site, members []string, observations map[string]observe.Observation) (int, map[string]v1alpha1.Path, error) {
+func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (int, map[string]straitv1.Path, error) {
 	targets, err := r.targets(ctx, svc, site, members, observations)
 	if err != nil {
 		return 0, nil, err
 	}
 	count := 0
-	paths := map[string]v1alpha1.Path{}
+	paths := map[string]straitv1.Path{}
 	for member, t := range targets {
 		name := memberObjectName(svc, member)
 		es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
@@ -386,12 +386,12 @@ func addressType(addresses []string) discoveryv1.AddressType {
 	return discoveryv1.AddressTypeIPv4
 }
 
-func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, endpoints int, paths map[string]v1alpha1.Path, conflict bool, now time.Time) error {
+func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, endpoints int, paths map[string]straitv1.Path, conflict bool, now time.Time) error {
 	old := svc.Status.DeepCopy()
 	st := &svc.Status
 	st.ObservedGeneration = svc.Generation
 
-	previous := map[string]v1alpha1.MemberStatus{}
+	previous := map[string]straitv1.MemberStatus{}
 	for _, m := range old.Members {
 		previous[m.Name] = m
 	}
@@ -401,7 +401,7 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.S
 		if !ok {
 			o = observe.Unknown(m.Name, m.Site, "NotObserved", now)
 		}
-		ms := v1alpha1.MemberStatus{
+		ms := straitv1.MemberStatus{
 			Name: m.Name, Site: m.Site, Role: o.Role, Eligible: o.Eligible, State: o.State, Reason: o.Reason,
 			ObservedTime: previous[m.Name].ObservedTime, Path: paths[m.Name],
 		}
@@ -421,7 +421,7 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.S
 	}
 	slices.Sort(names)
 	for _, s := range names {
-		st.Declarations = append(st.Declarations, v1alpha1.Declaration{Site: s, Primary: sites[s].Declared})
+		st.Declarations = append(st.Declarations, straitv1.Declaration{Site: s, Primary: sites[s].Declared})
 	}
 
 	if !slices.Equal(old.Route.Members, result.Members) || old.Route.LastChangeTime == nil {
@@ -435,7 +435,7 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.S
 	st.Route.Message = result.Message
 	st.Route.Endpoints = int32(endpoints)
 
-	routed := metav1.Condition{Type: v1alpha1.ConditionRouted, Status: metav1.ConditionTrue, Reason: result.Reason, Message: result.Message, ObservedGeneration: svc.Generation}
+	routed := metav1.Condition{Type: straitv1.ConditionRouted, Status: metav1.ConditionTrue, Reason: result.Reason, Message: result.Message, ObservedGeneration: svc.Generation}
 	switch {
 	case conflict:
 		routed.Status, routed.Reason, routed.Message = metav1.ConditionFalse, "ServiceConflict", fmt.Sprintf("a Service named %s exists and Strait does not own it", svc.Name)
@@ -445,18 +445,18 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *v1alpha1.S
 		routed.Status = metav1.ConditionFalse
 	}
 	meta.SetStatusCondition(&st.Conditions, routed)
-	setFlag(&st.Conditions, v1alpha1.ConditionMultiple, result.Multiple, v1alpha1.ReasonMultipleWritable, svc.Generation)
-	setFlag(&st.Conditions, v1alpha1.ConditionDeclarationsDisagree, result.Disagree, v1alpha1.ReasonDeclarationsDisagree, svc.Generation)
-	setFlag(&st.Conditions, v1alpha1.ConditionHeld, len(result.Held) > 0, v1alpha1.ReasonHeldUnknown, svc.Generation)
+	setFlag(&st.Conditions, straitv1.ConditionMultiple, result.Multiple, straitv1.ReasonMultipleWritable, svc.Generation)
+	setFlag(&st.Conditions, straitv1.ConditionDeclarationsDisagree, result.Disagree, straitv1.ReasonDeclarationsDisagree, svc.Generation)
+	setFlag(&st.Conditions, straitv1.ConditionHeld, len(result.Held) > 0, straitv1.ReasonHeldUnknown, svc.Generation)
 
-	if result.Multiple && !meta.IsStatusConditionTrue(old.Conditions, v1alpha1.ConditionMultiple) {
-		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, v1alpha1.ReasonMultipleWritable, "Decide", "%s", result.Message)
+	if result.Multiple && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionMultiple) {
+		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, straitv1.ReasonMultipleWritable, "Decide", "%s", result.Message)
 	}
-	if result.Disagree && !meta.IsStatusConditionTrue(old.Conditions, v1alpha1.ConditionDeclarationsDisagree) {
-		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, v1alpha1.ReasonDeclarationsDisagree, "Decide", "%s", result.Message)
+	if result.Disagree && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionDeclarationsDisagree) {
+		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, straitv1.ReasonDeclarationsDisagree, "Decide", "%s", result.Message)
 	}
-	if result.Reason == v1alpha1.ReasonUnknownTimeout && old.Route.Reason != v1alpha1.ReasonUnknownTimeout {
-		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, v1alpha1.ReasonUnknownTimeout, "Decide", "%s", result.Message)
+	if result.Reason == straitv1.ReasonUnknownTimeout && old.Route.Reason != straitv1.ReasonUnknownTimeout {
+		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, straitv1.ReasonUnknownTimeout, "Decide", "%s", result.Message)
 	}
 
 	if !statusChanged(old, st, now) {
@@ -474,9 +474,9 @@ func setFlag(conds *[]metav1.Condition, t string, on bool, reason string, gen in
 }
 
 // statusChanged ignores timestamps that moved by less than statusRefresh, so a steady state does not write every resync.
-func statusChanged(old, cur *v1alpha1.SiteServiceStatus, now time.Time) bool {
+func statusChanged(old, cur *straitv1.SiteServiceStatus, now time.Time) bool {
 	a, b := old.DeepCopy(), cur.DeepCopy()
-	for _, s := range []*v1alpha1.SiteServiceStatus{a, b} {
+	for _, s := range []*straitv1.SiteServiceStatus{a, b} {
 		for i := range s.Members {
 			s.Members[i].ObservedTime, s.Members[i].LastConfirmedTime = nil, nil
 		}

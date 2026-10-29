@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/plugin"
 )
 
@@ -39,7 +39,7 @@ type ExportReconciler struct {
 
 // Reconcile implements reconcile.Reconciler.
 func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var exp v1alpha1.Export
+	var exp straitv1.Export
 	if err := r.Get(ctx, req.NamespacedName, &exp); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Local.DeleteExport(req.Namespace, req.Name)
@@ -59,7 +59,7 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	rng := site.Spec.Gateway.ExportPorts
 	if p := exp.Status.GatewayPort; p < rng.First || p > rng.Last {
-		var list v1alpha1.ExportList
+		var list straitv1.ExportList
 		if err := r.List(ctx, &list); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -100,7 +100,7 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 // allocate returns the lowest port of rng that is not used, or 0.
-func allocate(rng v1alpha1.PortRange, used map[int32]bool) int32 {
+func allocate(rng straitv1.PortRange, used map[int32]bool) int32 {
 	for p := rng.First; p <= rng.Last; p++ {
 		if !used[p] {
 			return p
@@ -116,7 +116,7 @@ func equalStatus[T any](a, b *T) bool {
 // SetupWithManager registers the reconciler.
 func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	inNamespace := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		var list v1alpha1.ExportList
+		var list straitv1.ExportList
 		if err := r.List(ctx, &list, client.InNamespace(o.GetNamespace())); err != nil {
 			return nil
 		}
@@ -130,7 +130,7 @@ func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("export").
-		For(&v1alpha1.Export{}).
+		For(&straitv1.Export{}).
 		Watches(&discoveryv1.EndpointSlice{}, inNamespace).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
@@ -146,7 +146,7 @@ type ImportReconciler struct {
 
 // Reconcile implements reconcile.Reconciler.
 func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	var imp v1alpha1.Import
+	var imp straitv1.Import
 	if err := r.Get(ctx, req.NamespacedName, &imp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -158,7 +158,7 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	rng := site.Spec.Gateway.ImportPorts
 	if p := imp.Status.GatewayPort; p < rng.First || p > rng.Last {
-		var list v1alpha1.ImportList
+		var list straitv1.ImportList
 		if err := r.List(ctx, &list); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -204,7 +204,7 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 // SetupWithManager registers the reconciler. Any value on changes requeues every Import.
 func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan event.GenericEvent) error {
 	all := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
-		var list v1alpha1.ImportList
+		var list straitv1.ImportList
 		if err := r.List(ctx, &list); err != nil {
 			return nil
 		}
@@ -216,7 +216,7 @@ func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan eve
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("import").
-		For(&v1alpha1.Import{}).
+		For(&straitv1.Import{}).
 		WatchesRawSource(source.Channel(changes, all)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)

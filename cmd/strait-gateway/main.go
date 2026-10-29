@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/gateway"
 	"github.com/takodotid/strait/internal/version"
 )
@@ -82,7 +82,7 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := v1alpha1.AddToScheme(scheme); err != nil {
+	if err := straitv1.AddToScheme(scheme); err != nil {
 		return err
 	}
 	c, err := cache.New(cfg, cache.Options{Scheme: scheme})
@@ -90,7 +90,7 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 		return err
 	}
 	changed := make(chan struct{}, 1)
-	for _, obj := range []client.Object{&v1alpha1.Site{}, &v1alpha1.SitePeer{}, &v1alpha1.SiteLink{}} {
+	for _, obj := range []client.Object{&straitv1.Site{}, &straitv1.SitePeer{}, &straitv1.SiteLink{}} {
 		inf, err := c.GetInformer(ctx, obj)
 		if err != nil {
 			return err

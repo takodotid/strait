@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 type peerView struct {
@@ -54,7 +54,7 @@ SitePeers are cluster-scoped, so -n and -A do not apply.`,
 }
 
 func readPeers(cmd *cobra.Command, r client.Reader) ([]peerView, error) {
-	var peers v1alpha1.SitePeerList
+	var peers straitv1.SitePeerList
 	if err := r.List(cmd.Context(), &peers); err != nil {
 		return nil, fmt.Errorf("list SitePeers: %w", err)
 	}
