@@ -222,6 +222,7 @@ spec:
 | `spec.plugin.cnpg.role: primary` | Observe CloudNativePG `Cluster`s, and route to the primary. |
 | `spec.members` | One member per `Cluster`, with the site that hosts it. Each site observes only its own members. |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
+| `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. A site that comes back still primary after being lost then does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |
 
 Every field and rule: [RFC0002](../rfcs/RFC0002.md).
 

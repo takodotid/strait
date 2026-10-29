@@ -748,3 +748,100 @@ func TestSet(t *testing.T) {
 		})
 	}
 }
+
+// The startup hold keeps Single mode from routing to a local member until every site with a member has been read once
+// since the controller started, or until the hold ends.
+func TestStartupHold(t *testing.T) {
+	spec := func(startup time.Duration, sites ...string) straitv1.SiteServiceSpec {
+		s := pgSpec(straitv1.RouteNowhere, hold, sites...)
+		s.Policy.StartupHold = metav1.Duration{Duration: startup}
+		return s
+	}
+	const startup = time.Minute
+	tests := []struct {
+		name string
+		in   decide.Input
+		want decide.Result
+	}{
+		{
+			name: "a site comes back still primary, before it reads its peer",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b"), LocalSite: "b", Started: ago(5 * time.Second),
+				Sites:        map[string]decide.SiteView{"b": declares("pg-b")},
+				Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonAwaitingPeers},
+		},
+		{
+			name: "once the peer is read, the table decides",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b"), LocalSite: "b", Started: ago(5 * time.Second), Read: map[string]bool{"a": true},
+				Sites:        map[string]decide.SiteView{"a": declares("pg-a"), "b": declares("pg-b")},
+				Observations: observations(writable("pg-a", "a"), writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonDeclarationsDisagree, Multiple: true, Disagree: true},
+		},
+		{
+			name: "a partition that begins after the peer was read keeps the local primary",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b"), LocalSite: "b", Started: ago(5 * time.Second), Read: map[string]bool{"a": true},
+				Sites:        map[string]decide.SiteView{"b": declares("pg-b")},
+				Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "past the hold, the local primary is routed as before",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b"), LocalSite: "b", Started: ago(startup),
+				Sites:        map[string]decide.SiteView{"b": declares("pg-b")},
+				Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "off by default",
+			in: decide.Input{
+				Spec: spec(0, "a", "b"), LocalSite: "b", Started: now,
+				Sites:        map[string]decide.SiteView{"b": declares("pg-b")},
+				Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "a held local member is not routed either",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b"), LocalSite: "b", Started: ago(5 * time.Second),
+				Sites:         map[string]decide.SiteView{"b": declares("")},
+				Observations:  observations(unknown("pg-b", "b")),
+				Previous:      []string{"pg-b"},
+				LastConfirmed: map[string]time.Time{"pg-b": ago(time.Second)},
+			},
+			want: decide.Result{Reason: straitv1.ReasonAwaitingPeers},
+		},
+		{
+			name: "a remote member is routed while another site is unread",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b", "c"), LocalSite: "a", Started: ago(5 * time.Second), Read: map[string]bool{"b": true},
+				Sites:        map[string]decide.SiteView{"a": declares("pg-b"), "b": declares("pg-b")},
+				Observations: observations(replica("pg-a", "a"), writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "every site with a member must be read, not only one",
+			in: decide.Input{
+				Spec: spec(startup, "a", "b", "c"), LocalSite: "a", Started: ago(5 * time.Second), Read: map[string]bool{"b": true},
+				Sites:        map[string]decide.SiteView{"a": declares("pg-a"), "b": declares("pg-a")},
+				Observations: observations(writable("pg-a", "a"), replica("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonAwaitingPeers},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.in.Now = now
+			check(t, decide.Decide(tt.in), tt.want)
+		})
+	}
+}

@@ -172,6 +172,11 @@ spec:
                     - RouteNowhere
                     - PreferDeclaredIfConsistent
                     type: string
+                  startupHold:
+                    description: |-
+                      StartupHold keeps Single mode from routing to a local member after the controller starts, until every site
+                      with a member has been read once, or until this much time has passed. Unset or 0s turns it off.
+                    type: string
                   unknownHold:
                     default: 30s
                     description: UnknownHold is how long an Unknown member stays in
@@ -182,6 +187,9 @@ spec:
                 - message: unknownHold must be between 0s and 10m
                   rule: '!has(self.unknownHold) || (duration(self.unknownHold) >=
                     duration(''0s'') && duration(self.unknownHold) <= duration(''10m''))'
+                - message: startupHold must be between 0s and 10m
+                  rule: '!has(self.startupHold) || (duration(self.startupHold) >=
+                    duration(''0s'') && duration(self.startupHold) <= duration(''10m''))'
               port:
                 description: Port is the port of the application name.
                 properties:
@@ -224,6 +232,9 @@ spec:
                 : (has(m.service) && !has(m.cnpg)))'
             - message: member names must be unique
               rule: self.members.all(m, self.members.exists_one(n, n.name == m.name))
+            - message: startupHold applies to Single mode only
+              rule: self.mode == 'Single' || !has(self.policy.startupHold) || duration(self.policy.startupHold)
+                == duration('0s')
           status:
             description: SiteServiceStatus shows the route and every input of the
               decision.
@@ -549,6 +560,11 @@ spec:
                     - RouteNowhere
                     - PreferDeclaredIfConsistent
                     type: string
+                  startupHold:
+                    description: |-
+                      StartupHold keeps Single mode from routing to a local member after the controller starts, until every site
+                      with a member has been read once, or until this much time has passed. Unset or 0s turns it off.
+                    type: string
                   unknownHold:
                     default: 30s
                     description: UnknownHold is how long an Unknown member stays in
@@ -559,6 +575,9 @@ spec:
                 - message: unknownHold must be between 0s and 10m
                   rule: '!has(self.unknownHold) || (duration(self.unknownHold) >=
                     duration(''0s'') && duration(self.unknownHold) <= duration(''10m''))'
+                - message: startupHold must be between 0s and 10m
+                  rule: '!has(self.startupHold) || (duration(self.startupHold) >=
+                    duration(''0s'') && duration(self.startupHold) <= duration(''10m''))'
               port:
                 description: Port is the port of the application name.
                 properties:
@@ -601,6 +620,9 @@ spec:
                 : (has(m.service) && !has(m.cnpg)))'
             - message: member names must be unique
               rule: self.members.all(m, self.members.exists_one(n, n.name == m.name))
+            - message: startupHold applies to Single mode only
+              rule: self.mode == 'Single' || !has(self.policy.startupHold) || duration(self.policy.startupHold)
+                == duration('0s')
           status:
             description: SiteServiceStatus shows the route and every input of the
               decision.

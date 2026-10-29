@@ -177,9 +177,13 @@ func (o *options) explainTable(w io.Writer, v explainView) {
 		}
 		pairs = append(pairs, [2]string{"Locality", string(locality)})
 	}
+	policy := fmt.Sprintf("multiple %s, unknownHold %s", dash(string(v.Policy.Multiple)), v.Policy.UnknownHold.Duration)
+	if d := v.Policy.StartupHold.Duration; d > 0 {
+		policy += fmt.Sprintf(", startupHold %s", d)
+	}
 	pairs = append(pairs,
 		[2]string{"Plugin", pluginText(v.Plugin)},
-		[2]string{"Policy", fmt.Sprintf("multiple %s, unknownHold %s", dash(string(v.Policy.Multiple)), v.Policy.UnknownHold.Duration)},
+		[2]string{"Policy", policy},
 	)
 	switch {
 	case v.ObservedGeneration == 0 && v.Route.Reason == "":

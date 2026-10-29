@@ -60,8 +60,9 @@ type Poller struct {
 	// Client sends the polls. When nil, a client with no proxy, no keep-alive and no redirect is used.
 	Client *http.Client
 
-	mu    sync.Mutex
-	peers map[string]*peer
+	mu      sync.Mutex
+	peers   map[string]*peer
+	started time.Time
 }
 
 // Start polls every peer until ctx is cancelled.
@@ -72,6 +73,9 @@ func (p *Poller) Start(ctx context.Context) error {
 	if p.Client == nil {
 		p.Client = newClient()
 	}
+	p.mu.Lock()
+	p.started = time.Now()
+	p.mu.Unlock()
 	for {
 		start := time.Now()
 		ex := p.Exchange()
@@ -257,6 +261,13 @@ func (p *Poller) Fresh(peer string, now time.Time, timeout time.Duration) bool {
 	defer p.mu.Unlock()
 	s, ok := p.peers[peer]
 	return ok && s.state.Fresh(now, timeout)
+}
+
+// Started returns when Start began, from time.Now. Zero before. A peer's state counts from then.
+func (p *Poller) Started() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.started
 }
 
 // Snapshot returns a peer's last good document, which may be stale, and its poll state.

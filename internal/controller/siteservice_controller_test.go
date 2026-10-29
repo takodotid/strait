@@ -29,6 +29,9 @@ var now = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 type peers struct {
 	fresh map[string]bool
 	view  map[string]observe.Report
+	// read holds the peers read since started.
+	read    map[string]bool
+	started time.Time
 }
 
 func (p peers) Fresh(peer string, _ time.Time, _ time.Duration) bool { return p.fresh[peer] }
@@ -37,9 +40,14 @@ func (p peers) View(_, _ string, _ []straitv1.Member, _ time.Time, _ time.Durati
 	return p.view
 }
 
-func (p peers) Snapshot(string) (exchange.Document, exchange.PeerState) {
+func (p peers) Snapshot(peer string) (exchange.Document, exchange.PeerState) {
+	if p.read[peer] {
+		return exchange.Document{}, exchange.PeerState{LastSuccess: p.started}
+	}
 	return exchange.Document{}, exchange.PeerState{}
 }
+
+func (p peers) Started() time.Time { return p.started }
 
 func site(name, gateway string) *straitv1.Site {
 	s := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: name}}
@@ -270,5 +278,35 @@ func TestServiceConflict(t *testing.T) {
 	cond := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "ServiceConflict" {
 		t.Fatalf("routed = %+v", cond)
+	}
+}
+
+// With a startup hold, a local member is routed only once the peer has been read since polling began, or once the
+// hold ends.
+func TestStartupHold(t *testing.T) {
+	ss := webService("web-a")
+	ss.Spec.Policy.StartupHold = metav1.Duration{Duration: time.Minute}
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss)
+	r, c := reconciler(t, peers{started: now.Add(-5 * time.Second)}, objs...)
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonAwaitingPeers || len(st.Route.Members) != 0 || len(endpointSlices(t, c)) != 0 {
+		t.Fatalf("before b is read: route = %+v", st.Route)
+	}
+
+	r.Peers = peers{
+		started: now.Add(-5 * time.Second),
+		read:    map[string]bool{"b": true},
+		fresh:   map[string]bool{"b": true},
+		view:    map[string]observe.Report{"b": {Declared: "web-a", Members: map[string]observe.Observation{}}},
+	}
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || len(endpointSlices(t, c)) != 1 {
+		t.Fatalf("once b is read: route = %+v", st.Route)
+	}
+
+	r, c = reconciler(t, peers{started: now.Add(-time.Minute)}, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss.DeepCopy())...)
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || len(endpointSlices(t, c)) != 1 {
+		t.Fatalf("after the hold: route = %+v", st.Route)
 	}
 }

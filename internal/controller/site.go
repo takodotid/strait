@@ -41,6 +41,8 @@ type Peers interface {
 	View(namespace, name string, members []straitv1.Member, now time.Time, timeout time.Duration) map[string]observe.Report
 	// Snapshot returns the peer's last good document, fresh or not.
 	Snapshot(peer string) (exchange.Document, exchange.PeerState)
+	// Started returns when polling began. Zero before.
+	Started() time.Time
 }
 
 // Local is where the controller publishes the local site's observations.

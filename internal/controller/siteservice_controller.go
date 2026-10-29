@@ -100,6 +100,17 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			confirmed[name] = now
 		}
 	}
+	// The startup hold counts from the first poll. Before it, polling has not begun, and the hold has just begun.
+	started := r.Peers.Started()
+	if started.IsZero() {
+		started = now
+	}
+	read := map[string]bool{}
+	for _, m := range svc.Spec.Members {
+		if _, st := r.Peers.Snapshot(m.Site); m.Site != site.Name && !st.LastSuccess.IsZero() {
+			read[m.Site] = true
+		}
+	}
 	result := decide.Decide(decide.Input{
 		Spec:          svc.Spec,
 		LocalSite:     site.Name,
@@ -108,6 +119,8 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Previous:      svc.Status.Route.Members,
 		LastConfirmed: confirmed,
 		Now:           now,
+		Started:       started,
+		Read:          read,
 	})
 
 	if err := r.syncExportsImports(ctx, &svc, site.Name, report); err != nil {
@@ -130,7 +143,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", endpoints)
-	return ctrl.Result{RequeueAfter: r.next(&svc, result, confirmed, now)}, nil
+	return ctrl.Result{RequeueAfter: r.next(&svc, result, confirmed, started, now)}, nil
 }
 
 // lastConfirmed returns each member's last confirmed time, from memory or else from status.
@@ -153,11 +166,17 @@ func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService) map[str
 }
 
 // next returns when to decide again: at the next resync, or when a hold expires, whichever is first.
-func (r *SiteServiceReconciler) next(svc *straitv1.SiteService, result decide.Result, confirmed map[string]time.Time, now time.Time) time.Duration {
-	d := resync
+func (r *SiteServiceReconciler) next(svc *straitv1.SiteService, result decide.Result, confirmed map[string]time.Time, started, now time.Time) time.Duration {
+	ends := make([]time.Time, 0, len(result.Held)+1)
 	for _, m := range result.Held {
-		left := confirmed[m].Add(svc.Spec.Policy.UnknownHold.Duration).Sub(now)
-		if left > 0 && left < d {
+		ends = append(ends, confirmed[m].Add(svc.Spec.Policy.UnknownHold.Duration))
+	}
+	if result.Reason == straitv1.ReasonAwaitingPeers {
+		ends = append(ends, started.Add(svc.Spec.Policy.StartupHold.Duration))
+	}
+	d := resync
+	for _, end := range ends {
+		if left := end.Sub(now); left > 0 && left < d {
 			d = left + 10*time.Millisecond
 		}
 	}

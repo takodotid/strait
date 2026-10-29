@@ -27,6 +27,7 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 | `NotDeclared` | `Declarations:` and the members table | One member is writable, but a site names another member. Compare each site's declaration with where the primary runs, and fix the workload's configuration. |
 | `MultipleWritable` | The members whose `ROLE` is `primary` and `ELIGIBLE` is true | Two members accept writes, for example after a partition heals. Strait never picks one. Demote one with the workload's own tools, and Strait follows. The `Multiple` condition is True. |
 | `NoEligibleMember` | The `REASON` of each member | No member can take traffic. See [Members that are not eligible](#members-that-are-not-eligible). |
+| `AwaitingPeers` | `strait peers` | `policy.startupHold` is set, and the controller started recently. It has not yet read every site with a member, so it does not route to the local member. The route follows once it reads them, or once the hold ends. |
 
 ## Unknown members
 

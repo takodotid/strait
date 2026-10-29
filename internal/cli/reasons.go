@@ -19,6 +19,7 @@ var reasons = map[string]string{
 	straitv1.ReasonMemberUnknown:        "No member is writable and a member cannot be read. It may be writable. Routed nowhere.",
 	straitv1.ReasonNoEligibleMember:     "No member is writable in Single mode, or eligible for the locality in Set mode. Routed nowhere.",
 	straitv1.ReasonEligible:             "Set mode. The name points at every Stable and eligible member that the locality allows. Members of the previous route that are Transitioning, or Unknown within policy.unknownHold, stay.",
+	straitv1.ReasonAwaitingPeers:        "Single mode, with policy.startupHold. The decision picks a local member, but the controller started less than startupHold ago and has not yet read every site with a member. Routed nowhere until it has, or until the hold ends.",
 }
 
 type reason struct {

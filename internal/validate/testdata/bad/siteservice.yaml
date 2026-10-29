@@ -451,3 +451,33 @@ spec:
   members:
     - {name: a, site: a, cnpg: {cluster: pg-a}}
   policy: {unknownHold: -5s}
+---
+# want: spec.policy: Invalid value: "object": startupHold must be between 0s and 10m
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: startup-hold-range
+  namespace: app
+spec:
+  mode: Single
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: a}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    startupHold: 11m
+---
+# want: spec: Invalid value: "object": startupHold applies to Single mode only
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: startup-hold-set
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    startupHold: 30s

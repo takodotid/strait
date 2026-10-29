@@ -32,6 +32,10 @@ type Input struct {
 	// LastConfirmed is the last time each member was Stable and eligible.
 	LastConfirmed map[string]time.Time
 	Now           time.Time
+	// Started is when the controller started to poll peers. The startup hold counts from it.
+	Started time.Time
+	// Read holds the peers whose document was read at least once since Started.
+	Read map[string]bool
 }
 
 // Result is a route and the facts that the status reports.
@@ -114,7 +118,51 @@ func (in Input) unanimous() string {
 	return declared
 }
 
+// awaiting returns the sites with a member that have not been read since the controller started, sorted, while the
+// startup hold lasts. Empty when the hold does not apply.
+func (in Input) awaiting() []string {
+	hold := in.Spec.Policy.StartupHold.Duration
+	if hold <= 0 || in.Now.Sub(in.Started) >= hold {
+		return nil
+	}
+	var out []string
+	for _, m := range in.Spec.Members {
+		if m.Site != in.LocalSite && !in.Read[m.Site] && !contains(out, m.Site) {
+			out = append(out, m.Site)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// decideSingle applies the startup hold to the route that the table picks: it never routes to a local member while
+// the hold lasts.
 func decideSingle(in Input) Result {
+	r := singleTable(in)
+	if len(r.Members) != 1 || !in.local(r.Members[0]) {
+		return r
+	}
+	if sites := in.awaiting(); len(sites) > 0 {
+		r.Message = fmt.Sprintf("%s would be routed (%s), but it is local and site %s has not been read since the controller started; startupHold %s",
+			r.Members[0], r.Reason, strings.Join(sites, ", "), in.Spec.Policy.StartupHold.Duration)
+		r.Reason = straitv1.ReasonAwaitingPeers
+		r.Members, r.Held = nil, nil
+	}
+	return r
+}
+
+// local reports whether the member is at the local site.
+func (in Input) local(member string) bool {
+	for _, m := range in.Spec.Members {
+		if m.Name == member {
+			return m.Site == in.LocalSite
+		}
+	}
+	return false
+}
+
+// singleTable picks the route of Single mode by the table of RFC#0002, requirement 18.
+func singleTable(in Input) Result {
 	var writable []string
 	transitioning := false
 	for _, m := range in.Spec.Members {
