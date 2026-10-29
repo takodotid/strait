@@ -41,6 +41,8 @@ type GatewayReconciler struct {
 	Reader client.Reader
 	// Namespace is the gateway's namespace.
 	Namespace string
+	// Version is the controller's version, written into the Site's status.
+	Version string
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -90,6 +92,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 
 	old := site.Status.DeepCopy()
 	site.Status.Gateway = straitv1.GatewayStatus{ActivePod: pod, Address: addr}
+	site.Status.ControllerVersion = r.Version
 	meta.SetStatusCondition(&site.Status.Conditions, cond)
 	active := metav1.Condition{Type: "GatewayActive", Status: metav1.ConditionTrue, Reason: "LeaseHeld", ObservedGeneration: site.Generation}
 	if addr == "" {

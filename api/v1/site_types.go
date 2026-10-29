@@ -132,7 +132,7 @@ type SecretKeyRef struct {
 	Key string `json:"key,omitempty"`
 }
 
-// SiteStatus shows the gateway and the site's public key.
+// SiteStatus shows the gateway, the site's public key and the controller's version.
 type SiteStatus struct {
 	// Gateway shows the active gateway replica.
 	// +optional
@@ -141,6 +141,10 @@ type SiteStatus struct {
 	// WireGuardPublicKey is the public key of the site's private key. Peers put it in their SitePeer.
 	// +optional
 	WireGuardPublicKey string `json:"wireGuardPublicKey,omitempty"`
+
+	// ControllerVersion is the version of the elected controller.
+	// +optional
+	ControllerVersion string `json:"controllerVersion,omitempty"`
 
 	// +listType=map
 	// +listMapKey=type
