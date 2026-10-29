@@ -6,15 +6,19 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -24,10 +28,11 @@ import (
 	"github.com/takodotid/strait/internal/plugin"
 )
 
-// Condition types of Exports and Imports.
+// Condition types of Exports and Imports. An Import has ConditionService only while it sets spec.port.
 const (
 	ConditionReady     = "Ready"
 	ConditionAllocated = "Allocated"
+	ConditionService   = "Service"
 )
 
 // ExportReconciler allocates each Export's gateway port and reports its readiness.
@@ -136,7 +141,8 @@ func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// ImportReconciler allocates each Import's gateway port and reads the peer's export port.
+// ImportReconciler allocates each Import's gateway port, reads the peer's export port,
+// and keeps the Service of an Import that sets spec.port.
 type ImportReconciler struct {
 	client.Client
 	Reader client.Reader
@@ -193,15 +199,103 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 	meta.SetStatusCondition(&imp.Status.Conditions, ready)
 
+	var syncErr error
+	if imp.Spec.Port == nil {
+		meta.RemoveStatusCondition(&imp.Status.Conditions, ConditionService)
+		syncErr = r.deleteOwned(ctx, &imp, &discoveryv1.EndpointSlice{}, &corev1.Service{})
+	} else {
+		cond := metav1.Condition{Type: ConditionService, Status: metav1.ConditionTrue, Reason: "Synced", ObservedGeneration: imp.Generation}
+		var conflict bool
+		conflict, syncErr = r.syncService(ctx, &imp, site.Status.Gateway.Address)
+		switch {
+		case syncErr != nil:
+			cond.Status, cond.Reason, cond.Message = metav1.ConditionFalse, "SyncFailed", syncErr.Error()
+		case conflict:
+			cond.Status, cond.Reason, cond.Message = metav1.ConditionFalse, "ServiceConflict", fmt.Sprintf("a Service named %s exists and Strait does not own it", imp.Name)
+		}
+		meta.SetStatusCondition(&imp.Status.Conditions, cond)
+	}
+
 	if !equalStatus(old, &imp.Status) {
 		if err := r.Status().Update(ctx, &imp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
+	if syncErr != nil {
+		return ctrl.Result{}, syncErr
+	}
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
-// SetupWithManager registers the reconciler. Any value on changes requeues every Import.
+// syncService keeps the Service named after an Import that sets spec.port, and its EndpointSlice:
+// the active gateway's address on the import's gateway port. It reports a conflict when another owner holds the name.
+func (r *ImportReconciler) syncService(ctx context.Context, imp *straitv1.Import, gateway string) (bool, error) {
+	var existing corev1.Service
+	err := r.Get(ctx, client.ObjectKeyFromObject(imp), &existing)
+	switch {
+	case err == nil && !metav1.IsControlledBy(&existing, imp):
+		// A slice left from before would add the gateway to the other owner's Service.
+		return true, r.deleteOwned(ctx, imp, &discoveryv1.EndpointSlice{})
+	case err != nil && !apierrors.IsNotFound(err):
+		return false, err
+	}
+	port := *imp.Spec.Port
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: imp.Name, Namespace: imp.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		// Only local pods reach an import.
+		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		svc.Spec.Selector = nil
+		svc.Spec.Ports = []corev1.ServicePort{{
+			Name:       port.Name,
+			Port:       port.Port,
+			TargetPort: intstr.FromInt32(port.Port),
+			Protocol:   corev1.ProtocolTCP,
+		}}
+		return controllerutil.SetControllerReference(imp, svc, r.Scheme())
+	}); err != nil {
+		return false, fmt.Errorf("service %s: %w", imp.Name, err)
+	}
+	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: imp.Name, Namespace: imp.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
+		es.Labels = map[string]string{discoveryv1.LabelServiceName: imp.Name, LabelManagedBy: ManagedBy}
+		if es.AddressType == "" {
+			es.AddressType = addressType([]string{gateway})
+		}
+		es.Ports, es.Endpoints = nil, nil
+		if p := imp.Status.GatewayPort; p > 0 {
+			es.Ports = []discoveryv1.EndpointPort{{Name: ptr.To(port.Name), Port: ptr.To(p), Protocol: ptr.To(corev1.ProtocolTCP)}}
+			if gateway != "" && addressType([]string{gateway}) == es.AddressType {
+				es.Endpoints = []discoveryv1.Endpoint{{Addresses: []string{gateway}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}}
+			}
+		}
+		return controllerutil.SetControllerReference(imp, es, r.Scheme())
+	}); err != nil {
+		return false, fmt.Errorf("endpointslice %s: %w", imp.Name, err)
+	}
+	return false, nil
+}
+
+// deleteOwned deletes the objects named after the Import that the Import owns, and leaves the others.
+func (r *ImportReconciler) deleteOwned(ctx context.Context, imp *straitv1.Import, objs ...client.Object) error {
+	for _, o := range objs {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(imp), o); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		if !metav1.IsControlledBy(o, imp) {
+			continue
+		}
+		if err := r.Delete(ctx, o); client.IgnoreNotFound(err) != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetupWithManager registers the reconciler. Any value on changes, and any change of the Site, requeues every Import.
+// The Site's status names the active gateway, which an Import's Service points at.
 func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan event.GenericEvent) error {
 	all := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		var list straitv1.ImportList
@@ -217,6 +311,9 @@ func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan eve
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("import").
 		For(&straitv1.Import{}).
+		Owns(&corev1.Service{}).
+		Owns(&discoveryv1.EndpointSlice{}).
+		Watches(&straitv1.Site{}, all).
 		WatchesRawSource(source.Channel(changes, all)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)

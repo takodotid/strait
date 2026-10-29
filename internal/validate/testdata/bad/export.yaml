@@ -39,3 +39,26 @@ metadata:
 spec:
   site: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   export: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+---
+# want: <nil>: Invalid value: "object": with port set, the name must be a DNS-1035 label, since it names a Service
+apiVersion: strait.tako.id/v1
+kind: Import
+metadata:
+  name: 1web
+  namespace: app
+spec:
+  site: a
+  export: web-a
+  port: {name: http, port: 8080}
+---
+# want: spec.port.name: Invalid value: "http_1": must match ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+# want: spec.port.port: Invalid value: 70000: must be between 1 and 65535
+apiVersion: strait.tako.id/v1
+kind: Import
+metadata:
+  name: port-limits
+  namespace: app
+spec:
+  site: a
+  export: web-a
+  port: {name: http_1, port: 70000}

@@ -16,3 +16,24 @@ metadata:
 spec:
   site: b
   export: pg-pg-b
+---
+# A hand-written Import with a Service of its own.
+apiVersion: strait.tako.id/v1
+kind: Import
+metadata:
+  name: web-a
+  namespace: app
+spec:
+  site: a
+  export: web-a
+  port: {name: http, port: 8080}
+---
+# Without port, the name need not be a DNS-1035 label.
+apiVersion: strait.tako.id/v1
+kind: Import
+metadata:
+  name: 1web.a
+  namespace: app
+spec:
+  site: a
+  export: web-a

@@ -57,6 +57,7 @@ They run in this order on one fixture and stop at the first failure.
 | # | Scenario | Checks |
 |---|---|---|
 | 1 | Baseline | Both sites route `pg` to `pg-a`. A write from each site lands on `cluster-a`. |
+| import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Without `port`, site b deletes the Service. |
 | 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. |
 | 3 | Switchover with tokens | Site a stops naming `pg-a` within one 500ms sample of the demotion patch, site b within `peerTimeout`. `pg-b` never shows before the promotion patch. Both sites pass through nowhere, then route `pg-b`. |
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |

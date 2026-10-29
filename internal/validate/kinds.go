@@ -150,7 +150,15 @@ func Import(i *straitv1.Import) field.ErrorList {
 	errs := objectMeta(&i.ObjectMeta)
 	spec := field.NewPath("spec")
 	errs = append(errs, required(spec.Child("site"), i.Spec.Site, 63)...)
-	return append(errs, required(spec.Child("export"), i.Spec.Export, 253)...)
+	errs = append(errs, required(spec.Child("export"), i.Spec.Export, 253)...)
+	if p := i.Spec.Port; p != nil {
+		pp := spec.Child("port")
+		errs = append(errs, label(pp.Child("name"), p.Name, 15)...)
+		errs = append(errs, port(pp.Child("port"), p.Port)...)
+	}
+	return append(errs, rule(nil,
+		i.Spec.Port == nil || i.Name == "" || (dns1035.MatchString(i.Name) && len(i.Name) <= 63),
+		"with port set, the name must be a DNS-1035 label, since it names a Service")...)
 }
 
 // SiteService checks a SiteService.

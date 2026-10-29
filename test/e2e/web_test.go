@@ -96,11 +96,12 @@ func pgService(e *env) *straitv1.SiteService {
 	}
 }
 
-// requestReaches returns a check that a request from the site's own web server to web.web.svc is answered by the member.
-func requestReaches(s *site, member string) func(ctx context.Context) (bool, string) {
+// requestReaches returns a check that a request from the site's own web server to the Service, in namespace web,
+// is answered by the member.
+func requestReaches(s *site, service, member string) func(ctx context.Context) (bool, string) {
 	return func(ctx context.Context) (bool, string) {
 		out, err := s.kubectl(ctx, 15*time.Second, "-n", webNamespace, "exec", "deploy/"+webOf(s), "--",
-			"curl", "-sS", "--max-time", "3", "http://web.web.svc:8080/hostname")
+			"curl", "-sS", "--max-time", "3", "http://"+service+"."+webNamespace+".svc:8080/hostname")
 		if err != nil {
 			return false, "site " + s.name + ": " + err.Error()
 		}

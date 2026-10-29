@@ -105,7 +105,7 @@ type SiteServiceSpec struct {
 	Policy Policy `json:"policy,omitzero"`
 }
 
-// ServicePort is the port of the application name.
+// ServicePort is the one port of a Service that Strait writes: an application name, or an Import's Service.
 type ServicePort struct {
 	// Name is the port's name.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`

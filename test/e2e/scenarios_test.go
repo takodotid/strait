@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,6 +39,50 @@ func (e *env) baseline(ctx context.Context, t *testing.T) {
 	for _, s := range e.sites() {
 		d := eventually(ctx, t, time.Minute, time.Second, "a write from site "+s.name+" lands on cluster-a", writesLandOn(s, clusterOf(e.a)))
 		e.times.record(t, "1/first-write-"+s.name, d)
+	}
+}
+
+// importService: a hand-written Export of web-a at site a, and an Import of it with port at site b, give site b the name
+// web-a.web.svc for site a's web-a. Once the Import drops port, its Service is deleted.
+func (e *env) importService(ctx context.Context, t *testing.T) {
+	a, b := e.a, e.b
+	for _, s := range e.sites() {
+		if _, err := s.kubectl(ctx, 3*time.Minute, "-n", webNamespace, "rollout", "status", "deployment/"+webOf(s), "--timeout=2m"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name := webOf(a)
+	exp := &straitv1.Export{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: webNamespace},
+		Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: name, Port: 8080}},
+	}
+	imp := &straitv1.Import{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: webNamespace},
+		Spec:       straitv1.ImportSpec{Site: a.name, Export: name, Port: &straitv1.ServicePort{Name: "http", Port: 8080}},
+	}
+	if err := a.c.Create(ctx, exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.Create(ctx, imp); err != nil {
+		t.Fatal(err)
+	}
+	d := eventually(ctx, t, time.Minute, time.Second, "a request from site b to "+name+" reaches "+name, requestReaches(b, name, name))
+	e.times.record(t, "import/first-request", d)
+
+	base := imp.DeepCopy()
+	imp.Spec.Port = nil
+	if err := b.c.Patch(ctx, imp, client.MergeFrom(base)); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 30*time.Second, time.Second, "site b deletes Service "+name, func(ctx context.Context) (bool, string) {
+		err := b.c.Get(ctx, types.NamespacedName{Namespace: webNamespace, Name: name}, &corev1.Service{})
+		return apierrors.IsNotFound(err), fmt.Sprintf("get: %v", err)
+	})
+	if err := b.c.Delete(ctx, imp); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.c.Delete(ctx, exp); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -423,7 +470,7 @@ func (e *env) declarations(ctx context.Context, t *testing.T) {
 		e.times.record(t, "5/agree-to-route-"+s.name, time.Since(agreed))
 	}
 	for _, s := range e.sites() {
-		eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "a request from site "+s.name+" reaches web-a", requestReaches(s, webOf(a)))
+		eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "a request from site "+s.name+" reaches web-a", requestReaches(s, "web", webOf(a)))
 	}
 }
 
