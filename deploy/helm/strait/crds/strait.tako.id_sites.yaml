@@ -86,12 +86,36 @@ spec:
                       It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
                       A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
                     properties:
+                      allocateLoadBalancerNodePorts:
+                        description: AllocateLoadBalancerNodePorts false gives a LoadBalancer
+                          no node port. Type LoadBalancer only. Unset means true.
+                        type: boolean
                       annotations:
                         additionalProperties:
                           type: string
                         description: Annotations are added to the Service, for example
                           to make a load balancer internal.
                         type: object
+                      externalTrafficPolicy:
+                        description: |-
+                          ExternalTrafficPolicy is Cluster or Local. Type NodePort or LoadBalancer only. Unset means Cluster.
+                          Local keeps the client's address, and only the node that hosts the active gateway serves the Service.
+                        enum:
+                        - Cluster
+                        - Local
+                        type: string
+                      loadBalancerSourceRanges:
+                        description: LoadBalancerSourceRanges limits the clients of
+                          a LoadBalancer to these CIDRs. Type LoadBalancer only.
+                        items:
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an address in CIDR notation
+                            rule: isCIDR(self)
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: atomic
                       type:
                         description: Type is ClusterIP, NodePort or LoadBalancer.
                           Empty means the default of the Service it sets.
@@ -101,6 +125,16 @@ spec:
                         - LoadBalancer
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: loadBalancerSourceRanges needs type LoadBalancer
+                      rule: '!has(self.loadBalancerSourceRanges) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: allocateLoadBalancerNodePorts needs type LoadBalancer
+                      rule: '!has(self.allocateLoadBalancerNodePorts) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: externalTrafficPolicy needs type NodePort or LoadBalancer
+                      rule: '!has(self.externalTrafficPolicy) || (has(self.type) &&
+                        self.type != ''ClusterIP'')'
                   exportPorts:
                     default:
                       first: 30901
@@ -163,12 +197,36 @@ spec:
                     description: WireGuardService sets how peers reach the UDP ports
                       of wireguard links. It is NodePort unless set.
                     properties:
+                      allocateLoadBalancerNodePorts:
+                        description: AllocateLoadBalancerNodePorts false gives a LoadBalancer
+                          no node port. Type LoadBalancer only. Unset means true.
+                        type: boolean
                       annotations:
                         additionalProperties:
                           type: string
                         description: Annotations are added to the Service, for example
                           to make a load balancer internal.
                         type: object
+                      externalTrafficPolicy:
+                        description: |-
+                          ExternalTrafficPolicy is Cluster or Local. Type NodePort or LoadBalancer only. Unset means Cluster.
+                          Local keeps the client's address, and only the node that hosts the active gateway serves the Service.
+                        enum:
+                        - Cluster
+                        - Local
+                        type: string
+                      loadBalancerSourceRanges:
+                        description: LoadBalancerSourceRanges limits the clients of
+                          a LoadBalancer to these CIDRs. Type LoadBalancer only.
+                        items:
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an address in CIDR notation
+                            rule: isCIDR(self)
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: atomic
                       type:
                         description: Type is ClusterIP, NodePort or LoadBalancer.
                           Empty means the default of the Service it sets.
@@ -178,6 +236,16 @@ spec:
                         - LoadBalancer
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: loadBalancerSourceRanges needs type LoadBalancer
+                      rule: '!has(self.loadBalancerSourceRanges) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: allocateLoadBalancerNodePorts needs type LoadBalancer
+                      rule: '!has(self.allocateLoadBalancerNodePorts) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: externalTrafficPolicy needs type NodePort or LoadBalancer
+                      rule: '!has(self.externalTrafficPolicy) || (has(self.type) &&
+                        self.type != ''ClusterIP'')'
                 type: object
                 x-kubernetes-validations:
                 - message: controlPort must be outside exportPorts
@@ -371,12 +439,36 @@ spec:
                       It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
                       A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
                     properties:
+                      allocateLoadBalancerNodePorts:
+                        description: AllocateLoadBalancerNodePorts false gives a LoadBalancer
+                          no node port. Type LoadBalancer only. Unset means true.
+                        type: boolean
                       annotations:
                         additionalProperties:
                           type: string
                         description: Annotations are added to the Service, for example
                           to make a load balancer internal.
                         type: object
+                      externalTrafficPolicy:
+                        description: |-
+                          ExternalTrafficPolicy is Cluster or Local. Type NodePort or LoadBalancer only. Unset means Cluster.
+                          Local keeps the client's address, and only the node that hosts the active gateway serves the Service.
+                        enum:
+                        - Cluster
+                        - Local
+                        type: string
+                      loadBalancerSourceRanges:
+                        description: LoadBalancerSourceRanges limits the clients of
+                          a LoadBalancer to these CIDRs. Type LoadBalancer only.
+                        items:
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an address in CIDR notation
+                            rule: isCIDR(self)
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: atomic
                       type:
                         description: Type is ClusterIP, NodePort or LoadBalancer.
                           Empty means the default of the Service it sets.
@@ -386,6 +478,16 @@ spec:
                         - LoadBalancer
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: loadBalancerSourceRanges needs type LoadBalancer
+                      rule: '!has(self.loadBalancerSourceRanges) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: allocateLoadBalancerNodePorts needs type LoadBalancer
+                      rule: '!has(self.allocateLoadBalancerNodePorts) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: externalTrafficPolicy needs type NodePort or LoadBalancer
+                      rule: '!has(self.externalTrafficPolicy) || (has(self.type) &&
+                        self.type != ''ClusterIP'')'
                   exportPorts:
                     default:
                       first: 30901
@@ -448,12 +550,36 @@ spec:
                     description: WireGuardService sets how peers reach the UDP ports
                       of wireguard links. It is NodePort unless set.
                     properties:
+                      allocateLoadBalancerNodePorts:
+                        description: AllocateLoadBalancerNodePorts false gives a LoadBalancer
+                          no node port. Type LoadBalancer only. Unset means true.
+                        type: boolean
                       annotations:
                         additionalProperties:
                           type: string
                         description: Annotations are added to the Service, for example
                           to make a load balancer internal.
                         type: object
+                      externalTrafficPolicy:
+                        description: |-
+                          ExternalTrafficPolicy is Cluster or Local. Type NodePort or LoadBalancer only. Unset means Cluster.
+                          Local keeps the client's address, and only the node that hosts the active gateway serves the Service.
+                        enum:
+                        - Cluster
+                        - Local
+                        type: string
+                      loadBalancerSourceRanges:
+                        description: LoadBalancerSourceRanges limits the clients of
+                          a LoadBalancer to these CIDRs. Type LoadBalancer only.
+                        items:
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an address in CIDR notation
+                            rule: isCIDR(self)
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: atomic
                       type:
                         description: Type is ClusterIP, NodePort or LoadBalancer.
                           Empty means the default of the Service it sets.
@@ -463,6 +589,16 @@ spec:
                         - LoadBalancer
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: loadBalancerSourceRanges needs type LoadBalancer
+                      rule: '!has(self.loadBalancerSourceRanges) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: allocateLoadBalancerNodePorts needs type LoadBalancer
+                      rule: '!has(self.allocateLoadBalancerNodePorts) || (has(self.type)
+                        && self.type == ''LoadBalancer'')'
+                    - message: externalTrafficPolicy needs type NodePort or LoadBalancer
+                      rule: '!has(self.externalTrafficPolicy) || (has(self.type) &&
+                        self.type != ''ClusterIP'')'
                 type: object
                 x-kubernetes-validations:
                 - message: controlPort must be outside exportPorts

@@ -113,3 +113,52 @@ apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: Site_A
+---
+# want: spec.gateway.directService: Invalid value: "object": loadBalancerSourceRanges needs type LoadBalancer
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: source-ranges-on-node-port
+spec:
+  gateway:
+    directService:
+      type: NodePort
+      loadBalancerSourceRanges: [192.0.2.21/32]
+---
+# The default type of a Service that is written applies only when the whole Service is absent.
+# want: spec.gateway.directService: Invalid value: "object": allocateLoadBalancerNodePorts needs type LoadBalancer
+# want: spec.gateway.wireGuardService: Invalid value: "object": externalTrafficPolicy needs type NodePort or LoadBalancer
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: type-not-written
+spec:
+  gateway:
+    directService:
+      allocateLoadBalancerNodePorts: false
+    wireGuardService:
+      externalTrafficPolicy: Local
+---
+# want: spec.gateway.directService: Invalid value: "object": externalTrafficPolicy needs type NodePort or LoadBalancer
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: traffic-policy-on-cluster-ip
+spec:
+  gateway:
+    directService:
+      type: ClusterIP
+      externalTrafficPolicy: Local
+---
+# want: spec.gateway.directService.loadBalancerSourceRanges[1]: Invalid value: "192.0.2.21": must be an address in CIDR notation
+# want: spec.gateway.directService.externalTrafficPolicy: Unsupported value: "Remote": supported values: "Cluster", "Local"
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: exposure-values
+spec:
+  gateway:
+    directService:
+      type: LoadBalancer
+      loadBalancerSourceRanges: [192.0.2.0/24, 192.0.2.21]
+      externalTrafficPolicy: Remote

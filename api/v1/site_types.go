@@ -79,8 +79,13 @@ type GatewaySpec struct {
 	WireGuardService ServiceExposure `json:"wireGuardService,omitzero"`
 }
 
-// ServiceExposure sets the type and annotations of a gateway Service.
-// With NodePort, each node port equals its port, so a port number is the same on every path.
+// ServiceExposure sets the type, annotations and reach of a gateway Service.
+// With NodePort or LoadBalancer, each node port equals its port, so a port number is the same on every path.
+// A LoadBalancer with allocateLoadBalancerNodePorts false has no node port.
+// The fields that depend on the type need the type set.
+// +kubebuilder:validation:XValidation:rule="!has(self.loadBalancerSourceRanges) || (has(self.type) && self.type == 'LoadBalancer')",message="loadBalancerSourceRanges needs type LoadBalancer"
+// +kubebuilder:validation:XValidation:rule="!has(self.allocateLoadBalancerNodePorts) || (has(self.type) && self.type == 'LoadBalancer')",message="allocateLoadBalancerNodePorts needs type LoadBalancer"
+// +kubebuilder:validation:XValidation:rule="!has(self.externalTrafficPolicy) || (has(self.type) && self.type != 'ClusterIP')",message="externalTrafficPolicy needs type NodePort or LoadBalancer"
 type ServiceExposure struct {
 	// Type is ClusterIP, NodePort or LoadBalancer. Empty means the default of the Service it sets.
 	// +kubebuilder:validation:Enum=ClusterIP;NodePort;LoadBalancer
@@ -90,6 +95,24 @@ type ServiceExposure struct {
 	// Annotations are added to the Service, for example to make a load balancer internal.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// LoadBalancerSourceRanges limits the clients of a LoadBalancer to these CIDRs. Type LoadBalancer only.
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=49
+	// +kubebuilder:validation:items:XValidation:rule="isCIDR(self)",message="must be an address in CIDR notation"
+	// +listType=atomic
+	// +optional
+	LoadBalancerSourceRanges []string `json:"loadBalancerSourceRanges,omitempty"`
+
+	// AllocateLoadBalancerNodePorts false gives a LoadBalancer no node port. Type LoadBalancer only. Unset means true.
+	// +optional
+	AllocateLoadBalancerNodePorts *bool `json:"allocateLoadBalancerNodePorts,omitempty"`
+
+	// ExternalTrafficPolicy is Cluster or Local. Type NodePort or LoadBalancer only. Unset means Cluster.
+	// Local keeps the client's address, and only the node that hosts the active gateway serves the Service.
+	// +kubebuilder:validation:Enum=Cluster;Local
+	// +optional
+	ExternalTrafficPolicy string `json:"externalTrafficPolicy,omitempty"`
 }
 
 // PortRange is an inclusive range of ports.

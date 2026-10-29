@@ -23,6 +23,9 @@ var (
 
 // Site checks a Site.
 func Site(s *straitv1.Site) field.ErrorList {
+	// The CRD defaults a gateway Service's type only when the whole Service is absent,
+	// so the rules on the fields that depend on the type read the type as written.
+	written := s.Spec.Gateway
 	s = s.DeepCopy()
 	defaultSite(&s.Spec)
 	errs := objectMeta(&s.ObjectMeta)
@@ -46,13 +49,31 @@ func Site(s *straitv1.Site) field.ErrorList {
 		"peerPort must be outside importPorts")...)
 
 	for _, e := range []struct {
-		name string
+		name    string
+		written string
 		straitv1.ServiceExposure
-	}{{"directService", g.DirectService}, {"wireGuardService", g.WireGuardService}} {
-		name := e.name
+	}{{"directService", written.DirectService.Type, g.DirectService}, {"wireGuardService", written.WireGuardService.Type, g.WireGuardService}} {
+		p := gp.Child(e.name)
 		if e.Type != "ClusterIP" && e.Type != "NodePort" && e.Type != "LoadBalancer" {
-			errs = append(errs, field.NotSupported(gp.Child(name, "type"), e.Type, []string{"ClusterIP", "NodePort", "LoadBalancer"}))
+			errs = append(errs, field.NotSupported(p.Child("type"), e.Type, []string{"ClusterIP", "NodePort", "LoadBalancer"}))
 		}
+		errs = append(errs, enum(p.Child("externalTrafficPolicy"), e.ExternalTrafficPolicy, false, "Cluster", "Local")...)
+		rp := p.Child("loadBalancerSourceRanges")
+		if n := len(e.LoadBalancerSourceRanges); n > 64 {
+			errs = append(errs, field.TooMany(rp, n, 64))
+		}
+		for i, r := range e.LoadBalancerSourceRanges {
+			errs = append(errs, cidr(rp.Index(i), r)...)
+		}
+		errs = append(errs, rule(p,
+			e.LoadBalancerSourceRanges == nil || e.written == "LoadBalancer",
+			"loadBalancerSourceRanges needs type LoadBalancer")...)
+		errs = append(errs, rule(p,
+			e.AllocateLoadBalancerNodePorts == nil || e.written == "LoadBalancer",
+			"allocateLoadBalancerNodePorts needs type LoadBalancer")...)
+		errs = append(errs, rule(p,
+			e.ExternalTrafficPolicy == "" || (e.written != "" && e.written != "ClusterIP"),
+			"externalTrafficPolicy needs type NodePort or LoadBalancer")...)
 	}
 
 	x := s.Spec.Exchange

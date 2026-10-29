@@ -70,6 +70,8 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	if i < 0 || strings.Contains(e.image[i:], "/") {
 		return fmt.Errorf("STRAIT_IMAGE %q has no tag", e.image)
 	}
+	// With externalTrafficPolicy Local, kube-proxy serves the direct Service only from an endpoint that names its node.
+	// The peer dials the one node of the site, which hosts the gateway.
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
 envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}}
 controller: {logLevel: debug}
@@ -78,7 +80,7 @@ site:
   spec:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
-    gateway: {directService: {type: NodePort}}
+    gateway: {directService: {type: NodePort, externalTrafficPolicy: Local}}
 `, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {

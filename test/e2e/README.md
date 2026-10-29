@@ -39,6 +39,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | Address on `strait-direct` | `172.31.0.11` | `172.31.0.21` |
 | CloudNativePG Cluster | `cluster-a`, primary at start | `cluster-b`, replica cluster at start |
 | SiteLinks | `b-direct` (cost 10), `b-wan` (wireguard, cost 100, waits) | `a-direct` (cost 10), `a-wan` (wireguard, cost 100, dials) |
+| `directService` | `NodePort`, `externalTrafficPolicy: Local` | same |
 
 | Docker network | Subnet | Carries |
 |---|---|---|

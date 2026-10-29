@@ -279,7 +279,7 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 | `encryption: None` | Required on a `direct` link. Traffic crosses it in clear. |
 | `cost: 10` | Lower than the WireGuard link's default, 100. |
 | `direct.address` | The peer gateway's IP address on the private path. |
-| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. |
+| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that admit only them: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
 
 With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)).
 

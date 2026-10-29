@@ -88,7 +88,8 @@ func webService(active string) *straitv1.SiteService {
 	}
 }
 
-func reconciler(t *testing.T, p peers, objs ...client.Object) (*SiteServiceReconciler, client.Client) {
+// fakeClient is a client of an API server that holds objs.
+func fakeClient(t *testing.T, objs ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -97,8 +98,13 @@ func reconciler(t *testing.T, p peers, objs ...client.Object) (*SiteServiceRecon
 	if err := straitv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
-		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Import{}).Build()
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
+		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Import{}, &straitv1.Site{}).Build()
+}
+
+func reconciler(t *testing.T, p peers, objs ...client.Object) (*SiteServiceReconciler, client.Client) {
+	t.Helper()
+	c := fakeClient(t, objs...)
 	return &SiteServiceReconciler{
 		Client:   c,
 		Reader:   c,

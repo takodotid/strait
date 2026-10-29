@@ -24,3 +24,18 @@ spec:
   wireguard:
     privateKeySecretRef:
       name: strait-wireguard
+---
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: c
+spec:
+  gateway:
+    directService:
+      type: LoadBalancer
+      loadBalancerSourceRanges: [192.0.2.21/32, 2001:db8::/64]
+      allocateLoadBalancerNodePorts: false
+      externalTrafficPolicy: Local
+    wireGuardService:
+      type: NodePort
+      externalTrafficPolicy: Local
