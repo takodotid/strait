@@ -10,19 +10,23 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Reasons of a route that is nowhere because a held member's hold ended.
-var timedOut = []string{v1alpha1.ReasonUnknownTimeout, v1alpha1.ReasonMemberUnknown}
+var timedOut = []string{straitv1.ReasonUnknownTimeout, straitv1.ReasonMemberUnknown}
 
 // baseline: both sites route pg to pg-a, and a write from each site lands on cluster-a.
 func (e *env) baseline(ctx context.Context, t *testing.T) {
 	for _, s := range e.sites() {
 		eventually(ctx, t, 2*time.Minute, time.Second, "site "+s.name+" routes pg to pg-a",
-			routeIs(s, dbNamespace, "pg", []string{memberOf(e.a)}, v1alpha1.ReasonActive))
+			routeIs(s, dbNamespace, "pg", []string{memberOf(e.a)}, straitv1.ReasonActive))
 	}
 	eventually(ctx, t, time.Minute, time.Second, "create the table", func(ctx context.Context) (bool, string) {
 		_, err := e.a.kubectl(ctx, 20*time.Second, "-n", dbNamespace, "exec", clientPod, "--",
@@ -35,6 +39,50 @@ func (e *env) baseline(ctx context.Context, t *testing.T) {
 	for _, s := range e.sites() {
 		d := eventually(ctx, t, time.Minute, time.Second, "a write from site "+s.name+" lands on cluster-a", writesLandOn(s, clusterOf(e.a)))
 		e.times.record(t, "1/first-write-"+s.name, d)
+	}
+}
+
+// importService: a hand-written Export of web-a at site a, and an Import of it with port at site b, give site b the name
+// web-a.web.svc for site a's web-a. Once the Import drops port, its Service is deleted.
+func (e *env) importService(ctx context.Context, t *testing.T) {
+	a, b := e.a, e.b
+	for _, s := range e.sites() {
+		if _, err := s.kubectl(ctx, 3*time.Minute, "-n", webNamespace, "rollout", "status", "deployment/"+webOf(s), "--timeout=2m"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name := webOf(a)
+	exp := &straitv1.Export{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: webNamespace},
+		Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: name, Port: 8080}},
+	}
+	imp := &straitv1.Import{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: webNamespace},
+		Spec:       straitv1.ImportSpec{Site: a.name, Export: name, Port: &straitv1.ServicePort{Name: "http", Port: 8080}},
+	}
+	if err := a.c.Create(ctx, exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.Create(ctx, imp); err != nil {
+		t.Fatal(err)
+	}
+	d := eventually(ctx, t, time.Minute, time.Second, "a request from site b to "+name+" reaches "+name, requestReaches(b, name, name))
+	e.times.record(t, "import/first-request", d)
+
+	base := imp.DeepCopy()
+	imp.Spec.Port = nil
+	if err := b.c.Patch(ctx, imp, client.MergeFrom(base)); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 30*time.Second, time.Second, "site b deletes Service "+name, func(ctx context.Context) (bool, string) {
+		err := b.c.Get(ctx, types.NamespacedName{Namespace: webNamespace, Name: name}, &corev1.Service{})
+		return apierrors.IsNotFound(err), fmt.Sprintf("get: %v", err)
+	})
+	if err := b.c.Delete(ctx, imp); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.c.Delete(ctx, exp); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -117,7 +165,7 @@ func (e *env) switchover(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b
 	for _, s := range e.sites() {
 		eventually(ctx, t, 3*time.Minute, time.Second, clusterOf(s)+" healthy", clusterHealthy(s))
-		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-a", routeIs(s, dbNamespace, "pg", []string{memberOf(a)}, v1alpha1.ReasonActive))
+		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-a", routeIs(s, dbNamespace, "pg", []string{memberOf(a)}, straitv1.ReasonActive))
 	}
 	u, err := getCluster(ctx, a)
 	if err != nil {
@@ -181,7 +229,7 @@ func (e *env) switchover(ctx context.Context, t *testing.T) {
 	})
 	e.times.record(t, "3/promotion", d)
 	for _, s := range e.sites() {
-		eventually(ctx, t, 2*time.Minute, 250*time.Millisecond, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", []string{memberOf(b)}, v1alpha1.ReasonActive))
+		eventually(ctx, t, 2*time.Minute, 250*time.Millisecond, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", []string{memberOf(b)}, straitv1.ReasonActive))
 		e.times.record(t, "3/demotion-to-pg-b-"+s.name, time.Since(demoted))
 	}
 	routed := time.Now()
@@ -279,7 +327,7 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	pgB := []string{memberOf(b)}
 	for _, s := range e.sites() {
 		eventually(ctx, t, time.Minute, time.Second, "links steady", func(ctx context.Context) (bool, string) { return e.linksSteady(ctx, s) })
-		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", pgB, v1alpha1.ReasonActive))
+		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", pgB, straitv1.ReasonActive))
 	}
 	spA, spB := startSampler(ctx, a, dbNamespace, "pg"), startSampler(ctx, b, dbNamespace, "pg")
 	defer spA.Stop()
@@ -293,7 +341,7 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 		t.Fatal(err)
 	}
 	d := eventually(ctx, t, peerTimeout+10*time.Second, 250*time.Millisecond, "site a holds pg-b",
-		routeIs(a, dbNamespace, "pg", pgB, v1alpha1.ReasonHeldUnknown))
+		routeIs(a, dbNamespace, "pg", pgB, straitv1.ReasonHeldUnknown))
 	e.times.record(t, "4/held-"+a.name, d)
 	d = eventually(ctx, t, peerTimeout+unknownHold+10*time.Second, 250*time.Millisecond, "site a routes nowhere",
 		routeIs(a, dbNamespace, "pg", nil, timedOut...))
@@ -327,7 +375,7 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	t.Logf("site a routes: %s", summary(sa, cut))
 	t.Logf("site b routes: %s", summary(sb, cut))
 	for _, smp := range sb {
-		if smp.err != nil || !smp.names(memberOf(b)) || smp.reason != v1alpha1.ReasonActive {
+		if smp.err != nil || !smp.names(memberOf(b)) || smp.reason != straitv1.ReasonActive {
 			t.Errorf("site b at %+.1fs: route %s, reason %s, err %v; want pg-b, Active", smp.start.Sub(cut).Seconds(), routeString(smp.route), smp.reason, smp.err)
 		}
 	}
@@ -336,9 +384,9 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 		switch {
 		case smp.err != nil:
 			t.Errorf("site a at %+.1fs: %v", smp.start.Sub(cut).Seconds(), smp.err)
-		case smp.names(memberOf(b)) && smp.reason == v1alpha1.ReasonActive:
+		case smp.names(memberOf(b)) && smp.reason == straitv1.ReasonActive:
 			seq += "a"
-		case smp.names(memberOf(b)) && smp.reason == v1alpha1.ReasonHeldUnknown:
+		case smp.names(memberOf(b)) && smp.reason == straitv1.ReasonHeldUnknown:
 			seq += "h"
 		case smp.nowhere() && (smp.reason == timedOut[0] || smp.reason == timedOut[1]):
 			seq += "n"
@@ -361,7 +409,7 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	if err := e.restore(ctx, cutWAN); err != nil {
 		t.Fatal(err)
 	}
-	eventually(ctx, t, 15*time.Second, 250*time.Millisecond, "site a routes pg-b again", routeIs(a, dbNamespace, "pg", pgB, v1alpha1.ReasonActive))
+	eventually(ctx, t, 15*time.Second, 250*time.Millisecond, "site a routes pg-b again", routeIs(a, dbNamespace, "pg", pgB, straitv1.ReasonActive))
 	e.times.record(t, "4/heal-to-pg-b-"+a.name, time.Since(healed))
 	for _, s := range e.sites() {
 		eventually(ctx, t, time.Minute, time.Second, "links steady", func(ctx context.Context) (bool, string) { return e.linksSteady(ctx, s) })
@@ -384,7 +432,7 @@ func (e *env) declarations(ctx context.Context, t *testing.T) {
 	}
 	for _, s := range e.sites() {
 		d := eventually(ctx, t, 30*time.Second, 250*time.Millisecond, "site "+s.name+" routes web nowhere", func(ctx context.Context) (bool, string) {
-			ok, state := routeIs(s, webNamespace, "web", nil, v1alpha1.ReasonDeclarationsDisagree)(ctx)
+			ok, state := routeIs(s, webNamespace, "web", nil, straitv1.ReasonDeclarationsDisagree)(ctx)
 			if !ok {
 				return false, state
 			}
@@ -392,7 +440,7 @@ func (e *env) declarations(ctx context.Context, t *testing.T) {
 			if err != nil {
 				return false, err.Error()
 			}
-			return conditionTrue(ss, v1alpha1.ConditionDeclarationsDisagree), state
+			return conditionTrue(ss, straitv1.ConditionDeclarationsDisagree), state
 		})
 		e.times.record(t, "5/disagree-"+s.name, d)
 	}
@@ -409,7 +457,7 @@ func (e *env) declarations(ctx context.Context, t *testing.T) {
 	}
 	for _, s := range e.sites() {
 		eventually(ctx, t, 30*time.Second, 250*time.Millisecond, "site "+s.name+" routes web to web-a", func(ctx context.Context) (bool, string) {
-			ok, state := routeIs(s, webNamespace, "web", []string{webOf(a)}, v1alpha1.ReasonActive)(ctx)
+			ok, state := routeIs(s, webNamespace, "web", []string{webOf(a)}, straitv1.ReasonActive)(ctx)
 			if !ok {
 				return false, state
 			}
@@ -417,12 +465,12 @@ func (e *env) declarations(ctx context.Context, t *testing.T) {
 			if err != nil {
 				return false, err.Error()
 			}
-			return !conditionTrue(ss, v1alpha1.ConditionDeclarationsDisagree), state
+			return !conditionTrue(ss, straitv1.ConditionDeclarationsDisagree), state
 		})
 		e.times.record(t, "5/agree-to-route-"+s.name, time.Since(agreed))
 	}
 	for _, s := range e.sites() {
-		eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "a request from site "+s.name+" reaches web-a", requestReaches(s, webOf(a)))
+		eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "a request from site "+s.name+" reaches web-a", requestReaches(s, "web", webOf(a)))
 	}
 }
 
@@ -432,7 +480,7 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b
 	pgB := []string{memberOf(b)}
 	for _, s := range e.sites() {
-		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", pgB, v1alpha1.ReasonActive))
+		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", pgB, straitv1.ReasonActive))
 	}
 	sp := startSampler(ctx, a, dbNamespace, "pg")
 	defer sp.Stop()
@@ -441,7 +489,7 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 	if err := e.siteDown(ctx, b); err != nil {
 		t.Fatal(err)
 	}
-	d := eventually(ctx, t, peerTimeout+10*time.Second, 250*time.Millisecond, "site a holds pg-b", routeIs(a, dbNamespace, "pg", pgB, v1alpha1.ReasonHeldUnknown))
+	d := eventually(ctx, t, peerTimeout+10*time.Second, 250*time.Millisecond, "site a holds pg-b", routeIs(a, dbNamespace, "pg", pgB, straitv1.ReasonHeldUnknown))
 	e.times.record(t, "6/held-"+a.name, d)
 	eventually(ctx, t, peerTimeout+unknownHold+10*time.Second, 250*time.Millisecond, "site a routes nowhere", routeIs(a, dbNamespace, "pg", nil, timedOut...))
 	e.times.record(t, "6/nowhere-"+a.name, time.Since(down))
@@ -450,7 +498,7 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 	if err := patchCluster(ctx, a, fmt.Sprintf(`{"spec":{"replica":{"primary":%q}}}`, clusterOf(a))); err != nil {
 		t.Fatal(err)
 	}
-	eventually(ctx, t, 3*time.Minute, 250*time.Millisecond, "site a routes pg-a", routeIs(a, dbNamespace, "pg", []string{memberOf(a)}, v1alpha1.ReasonActive))
+	eventually(ctx, t, 3*time.Minute, 250*time.Millisecond, "site a routes pg-a", routeIs(a, dbNamespace, "pg", []string{memberOf(a)}, straitv1.ReasonActive))
 	e.times.record(t, "6/promotion-to-pg-a-"+a.name, time.Since(promoted))
 	routed := time.Now()
 	eventually(ctx, t, time.Minute, time.Second, "a write from site a lands on cluster-a", writesLandOn(a, clusterOf(a)))
@@ -462,9 +510,9 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 		switch {
 		case smp.err != nil:
 			t.Errorf("site a at %+.1fs: %v", smp.start.Sub(down).Seconds(), smp.err)
-		case smp.names(memberOf(b)) && smp.reason == v1alpha1.ReasonActive:
+		case smp.names(memberOf(b)) && smp.reason == straitv1.ReasonActive:
 			seq += "b"
-		case smp.names(memberOf(b)) && smp.reason == v1alpha1.ReasonHeldUnknown:
+		case smp.names(memberOf(b)) && smp.reason == straitv1.ReasonHeldUnknown:
 			seq += "h"
 		case smp.nowhere():
 			seq += "n"
@@ -483,10 +531,63 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 	}
 }
 
-// twoWritable: site b comes back with cluster-b still primary. Both members are writable, so both sites route nowhere.
+// twoWritable: site b comes back with cluster-b still primary, still cut off from site a, and its controller restarts.
+// With pg's startupHold, b does not route to its local primary before it has read site a, until the hold ends; then it
+// routes as without the hold. Once the cut is removed, both members are writable, so both sites route nowhere.
 func (e *env) twoWritable(ctx context.Context, t *testing.T) {
+	b := e.b
+	e.unpause(ctx, b)
+	eventually(ctx, t, time.Minute, time.Second, "site b's API answers", func(ctx context.Context) (bool, string) {
+		_, err := siteService(ctx, b, dbNamespace, "pg")
+		return err == nil, fmt.Sprint(err)
+	})
+	hold := fmt.Sprintf(`{"spec":{"policy":{"startupHold":%q}}}`, startupHold)
+	if err := b.c.Patch(ctx, pgService(e), client.RawPatch(types.MergePatchType, []byte(hold))); err != nil {
+		t.Fatal(err)
+	}
+	sp := startSampler(ctx, b, dbNamespace, "pg")
+	defer sp.Stop()
+	restarted := time.Now()
+	if _, err := b.kubectl(ctx, time.Minute, "--namespace", straitNamespace, "delete", "pod", "--selector", "app.kubernetes.io/component=controller", "--wait=false"); err != nil {
+		t.Fatal(err)
+	}
+	d := eventually(ctx, t, 2*time.Minute, 250*time.Millisecond, "site b awaits site a", routeIs(b, dbNamespace, "pg", nil, straitv1.ReasonAwaitingPeers))
+	e.times.record(t, "7/awaiting-"+b.name, d)
+	eventually(ctx, t, startupHold+30*time.Second, 250*time.Millisecond, "site b routes pg-b once the hold ends", routeIs(b, dbNamespace, "pg", []string{memberOf(b)}, straitv1.ReasonActive))
+	ended := time.Now()
+
+	// The new controller starts holding at its first decision. From then, pg-b is never routed until the hold ends:
+	// the hold counts from the first poll, a moment before the first decision.
+	samples := sp.StopAfter(ended)
+	t.Logf("site b routes: %s", summary(samples, restarted))
+	seq, first := "", time.Time{}
+	for _, smp := range samples {
+		switch {
+		case smp.err != nil:
+			seq += "e"
+		case smp.nowhere() && smp.reason == straitv1.ReasonAwaitingPeers:
+			seq += "w"
+			if first.IsZero() {
+				first = smp.start
+			}
+		case smp.nowhere():
+			seq += "n"
+		case smp.names(memberOf(b)):
+			seq += "b"
+			if !first.IsZero() && smp.end.Sub(first) < startupHold-10*time.Second {
+				t.Errorf("site b routes pg-b at %+.1fs, %.1fs after it began to await site a", smp.end.Sub(restarted).Seconds(), smp.end.Sub(first).Seconds())
+			}
+		default:
+			seq += "?"
+		}
+	}
+	// Before the first decision of the new controller, the route is the old controller's, pg-b.
+	if !regexp.MustCompile(`^[ben]*w[wn]*b+$`).MatchString(seq) {
+		t.Errorf("site b routes in the order %q, want pg-b at most until the restart, then AwaitingPeers, then pg-b", seq)
+	}
+
 	up := time.Now()
-	if err := e.siteUp(ctx, e.b); err != nil {
+	if err := e.removeCut(ctx, b.node, cutSite); err != nil {
 		t.Fatal(err)
 	}
 	eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "both sites route nowhere with Multiple", func(ctx context.Context) (bool, string) {
@@ -499,7 +600,7 @@ func (e *env) twoWritable(ctx context.Context, t *testing.T) {
 				states = append(states, "site "+s.name+": "+err.Error())
 				continue
 			}
-			ok = ok && len(ss.Status.Route.Members) == 0 && conditionTrue(ss, v1alpha1.ConditionMultiple)
+			ok = ok && len(ss.Status.Route.Members) == 0 && conditionTrue(ss, straitv1.ConditionMultiple)
 			states = append(states, "site "+s.name+": "+describe(ss))
 		}
 		return ok, strings.Join(states, " | ")

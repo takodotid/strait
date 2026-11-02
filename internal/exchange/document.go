@@ -7,13 +7,15 @@ import (
 	"slices"
 	"time"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
 const (
 	// Kind is the kind of an observation document.
 	Kind = "Observations"
+	// APIVersion is the apiVersion of an observation document. The exchange is versioned on its own, apart from the CRDs.
+	APIVersion = "strait.tako.id/v1alpha1"
 	// Path is where a site serves its observation document.
 	Path = "/v1alpha1/observations"
 	// HealthPath answers 200 while the controller serves.
@@ -21,9 +23,6 @@ const (
 	// MaxDocumentSize is the largest document a reader accepts.
 	MaxDocumentSize = 4 << 20
 )
-
-// APIVersion is the apiVersion of an observation document.
-var APIVersion = v1alpha1.GroupVersion.String()
 
 // errSiteMismatch rejects a document from a site other than the peer polled.
 var errSiteMismatch = errors.New("site mismatch")
@@ -50,9 +49,9 @@ type Service struct {
 // Member is the observation of one member at the publishing site.
 type Member struct {
 	Name       string         `json:"name"`
-	Role       v1alpha1.Role  `json:"role"`
+	Role       straitv1.Role  `json:"role"`
 	Eligible   bool           `json:"eligible"`
-	State      v1alpha1.State `json:"state"`
+	State      straitv1.State `json:"state"`
 	Reason     string         `json:"reason"`
 	ObservedAt time.Time      `json:"observedAt"`
 	Addresses  []string       `json:"addresses"`

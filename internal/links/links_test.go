@@ -5,15 +5,15 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
-func link(name, peer string, cost int32) v1alpha1.SiteLink {
-	return v1alpha1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: v1alpha1.SiteLinkSpec{Peer: peer, Cost: cost}}
+func link(name, peer string, cost int32) straitv1.SiteLink {
+	return straitv1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: straitv1.SiteLinkSpec{Peer: peer, Cost: cost}}
 }
 
 func TestByPeer(t *testing.T) {
-	got := ByPeer([]v1alpha1.SiteLink{link("wan", "b", 100), link("lan-2", "b", 10), link("lan-1", "b", 10), link("x", "c", 5)})
+	got := ByPeer([]straitv1.SiteLink{link("wan", "b", 100), link("lan-2", "b", 10), link("lan-1", "b", 10), link("x", "c", 5)})
 	var names []string
 	for _, l := range got["b"] {
 		names = append(names, l.Name)

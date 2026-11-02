@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/json"
 	"sigs.k8s.io/yaml"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/validate"
 )
 
@@ -150,7 +150,7 @@ func readDocuments(paths []string, stdin io.Reader) ([]document, error) {
 
 var scheme = func() *runtime.Scheme {
 	s := runtime.NewScheme()
-	if err := v1alpha1.AddToScheme(s); err != nil {
+	if err := straitv1.AddToScheme(s); err != nil {
 		panic(err)
 	}
 	return s
@@ -168,42 +168,49 @@ type header struct {
 
 // decode returns the Strait object of a document, nil for an empty document or one of another API group.
 // An object with unknown or duplicate fields is returned with one error for each.
-func decode(d document) (runtime.Object, validate.Ref, []error) {
+// An object of the deprecated version is decoded as v1, which has the same schema, with a warning.
+func decode(d document) (runtime.Object, validate.Ref, []error, []string) {
 	var empty any
 	if err := yaml.Unmarshal(d.data, &empty); err != nil {
-		return nil, validate.Ref{}, []error{err}
+		return nil, validate.Ref{}, []error{err}, nil
 	}
 	if empty == nil {
-		return nil, validate.Ref{}, nil
+		return nil, validate.Ref{}, nil, nil
 	}
 	var h header
 	if err := yaml.Unmarshal(d.data, &h); err != nil {
-		return nil, validate.Ref{}, []error{err}
+		return nil, validate.Ref{}, []error{err}, nil
 	}
 	ref := validate.Ref{Kind: h.Kind, Namespace: h.Metadata.Namespace, Name: h.Metadata.Name}
 	if h.APIVersion == "" || h.Kind == "" {
-		return nil, ref, []error{errors.New("apiVersion and kind are required")}
+		return nil, ref, []error{errors.New("apiVersion and kind are required")}, nil
 	}
 	gv, err := schema.ParseGroupVersion(h.APIVersion)
 	if err != nil {
-		return nil, ref, []error{err}
+		return nil, ref, []error{err}, nil
 	}
-	if gv.Group != v1alpha1.GroupVersion.Group {
-		return nil, ref, nil
+	if gv.Group != straitv1.GroupVersion.Group {
+		return nil, ref, nil, nil
+	}
+	var warnings []string
+	if gv == straitv1.DeprecatedGroupVersion {
+		warnings = append(warnings, fmt.Sprintf("%s is deprecated; use %s", gv, straitv1.GroupVersion))
+		gv = straitv1.GroupVersion
 	}
 	obj, err := scheme.New(gv.WithKind(h.Kind))
 	if err != nil {
-		return nil, ref, []error{fmt.Errorf("%s is not a kind of %s", h.Kind, v1alpha1.GroupVersion)}
+		return nil, ref, []error{fmt.Errorf("%s is not a kind of %s", h.Kind, straitv1.GroupVersion)}, nil
 	}
 	data, err := yaml.YAMLToJSONStrict(d.data)
 	if err != nil {
-		return nil, ref, []error{err}
+		return nil, ref, []error{err}, nil
 	}
 	strict, err := json.UnmarshalStrict(data, obj, json.DisallowDuplicateFields, json.DisallowUnknownFields)
 	if err != nil {
-		return nil, ref, []error{err}
+		return nil, ref, []error{err}, nil
 	}
-	return obj, ref, strict
+	obj.GetObjectKind().SetGroupVersionKind(gv.WithKind(h.Kind))
+	return obj, ref, strict, warnings
 }
 
 func validateFiles(paths []string, stdin io.Reader) (validateView, error) {
@@ -215,9 +222,12 @@ func validateFiles(paths []string, stdin io.Reader) (validateView, error) {
 	var objs []runtime.Object
 	var sources []int
 	for i, d := range docs {
-		obj, ref, errs := decode(d)
+		obj, ref, errs, warnings := decode(d)
 		for _, err := range errs {
 			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Object: ref, Severity: validate.SeverityError, Message: err.Error(), order: i})
+		}
+		for _, w := range warnings {
+			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Object: ref, Severity: validate.SeverityWarning, Field: "apiVersion", Message: w, order: i})
 		}
 		switch {
 		case obj != nil:

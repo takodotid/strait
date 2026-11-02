@@ -1,4 +1,4 @@
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-direct
@@ -11,7 +11,7 @@ spec:
     address: 192.0.2.10
     endpointDirect: true
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: b-wireguard
@@ -23,7 +23,7 @@ spec:
     address: 10.200.0.1/30
     peerAddress: 10.200.0.2
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: c-wireguard

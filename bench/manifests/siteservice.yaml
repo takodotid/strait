@@ -1,5 +1,5 @@
 # The application name bench.bench.svc:7000, applied at both sites. The client at site b connects to it.
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata: {name: bench, namespace: bench}
 spec:

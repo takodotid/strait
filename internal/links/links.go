@@ -7,17 +7,17 @@ import (
 	"hash/fnv"
 	"slices"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // ByPeer returns each peer's links, ordered by cost and then by name. The index of a link is its priority.
-func ByPeer(links []v1alpha1.SiteLink) map[string][]v1alpha1.SiteLink {
-	out := map[string][]v1alpha1.SiteLink{}
+func ByPeer(links []straitv1.SiteLink) map[string][]straitv1.SiteLink {
+	out := map[string][]straitv1.SiteLink{}
 	for _, l := range links {
 		out[l.Spec.Peer] = append(out[l.Spec.Peer], l)
 	}
 	for _, ls := range out {
-		slices.SortFunc(ls, func(a, b v1alpha1.SiteLink) int {
+		slices.SortFunc(ls, func(a, b straitv1.SiteLink) int {
 			return cmp.Or(cmp.Compare(a.Spec.Cost, b.Spec.Cost), cmp.Compare(a.Name, b.Name))
 		})
 	}
@@ -25,11 +25,11 @@ func ByPeer(links []v1alpha1.SiteLink) map[string][]v1alpha1.SiteLink {
 }
 
 // Address returns the peer's address on the link: the direct address, or the peer's tunnel address.
-func Address(l v1alpha1.SiteLink) string {
+func Address(l straitv1.SiteLink) string {
 	switch {
-	case l.Spec.Transport == v1alpha1.TransportDirect && l.Spec.Direct != nil:
+	case l.Spec.Transport == straitv1.TransportDirect && l.Spec.Direct != nil:
 		return l.Spec.Direct.Address
-	case l.Spec.Transport == v1alpha1.TransportWireGuard && l.Spec.WireGuard != nil:
+	case l.Spec.Transport == straitv1.TransportWireGuard && l.Spec.WireGuard != nil:
 		return l.Spec.WireGuard.PeerAddress
 	}
 	return ""

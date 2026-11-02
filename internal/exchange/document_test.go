@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -48,9 +48,9 @@ func exampleLocal() *Local {
 	l.SetService("app", "pg", "pg-a", []observe.Observation{{
 		Member:     "pg-a",
 		Site:       "a",
-		Role:       v1alpha1.RolePrimary,
+		Role:       straitv1.RolePrimary,
 		Eligible:   true,
-		State:      v1alpha1.StateStable,
+		State:      straitv1.StateStable,
 		Reason:     "ClusterPrimary",
 		ObservedAt: at,
 		Endpoint:   observe.Endpoint{Service: "pg-a-rw", Addresses: []string{"10.110.1.5"}, Port: 5432},
@@ -102,9 +102,9 @@ func TestMemberObservation(t *testing.T) {
 	o := observe.Observation{
 		Member:     "pg-b",
 		Site:       "b",
-		Role:       v1alpha1.RoleReplica,
+		Role:       straitv1.RoleReplica,
 		Eligible:   true,
-		State:      v1alpha1.StateTransitioning,
+		State:      straitv1.StateTransitioning,
 		Reason:     "Switchover",
 		ObservedAt: at,
 		Endpoint:   observe.Endpoint{Addresses: []string{"10.0.0.2", "10.0.0.1"}, Port: 5432},

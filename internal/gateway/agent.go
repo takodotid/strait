@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/controller"
 )
 
@@ -269,13 +269,13 @@ func (a *Agent) syncWireGuard(ctx context.Context) {
 
 // inputs reads what the desired state needs. Site is nil unless exactly one Site exists.
 // An error means a read failed for a reason other than absence.
-func (a *Agent) inputs(ctx context.Context) (*v1alpha1.Site, Inputs, error) {
+func (a *Agent) inputs(ctx context.Context) (*straitv1.Site, Inputs, error) {
 	in := Inputs{Resolve: a.Resolve}
-	var sites v1alpha1.SiteList
+	var sites straitv1.SiteList
 	if err := a.Client.List(ctx, &sites); err != nil {
 		return nil, in, err
 	}
-	var site *v1alpha1.Site
+	var site *straitv1.Site
 	switch {
 	case len(sites.Items) != 1:
 		in.NoKey = fmt.Sprintf("want exactly one Site, found %d", len(sites.Items))
@@ -290,11 +290,11 @@ func (a *Agent) inputs(ctx context.Context) (*v1alpha1.Site, Inputs, error) {
 		}
 		in.Key, in.NoKey = key, noKey
 	}
-	var peers v1alpha1.SitePeerList
+	var peers straitv1.SitePeerList
 	if err := a.Client.List(ctx, &peers); err != nil {
 		return nil, in, err
 	}
-	var ls v1alpha1.SiteLinkList
+	var ls straitv1.SiteLinkList
 	if err := a.Client.List(ctx, &ls); err != nil {
 		return nil, in, err
 	}
@@ -303,7 +303,7 @@ func (a *Agent) inputs(ctx context.Context) (*v1alpha1.Site, Inputs, error) {
 }
 
 // privateKey reads the site's private key. Neither the key nor the Secret's data ever reaches an error or a log.
-func (a *Agent) privateKey(ctx context.Context, ref v1alpha1.SecretKeyRef) (*wgtypes.Key, string, error) {
+func (a *Agent) privateKey(ctx context.Context, ref straitv1.SecretKeyRef) (*wgtypes.Key, string, error) {
 	var s corev1.Secret
 	if err := a.Client.Get(ctx, types.NamespacedName{Namespace: a.Namespace, Name: ref.Name}, &s); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -324,7 +324,7 @@ func (a *Agent) privateKey(ctx context.Context, ref v1alpha1.SecretKeyRef) (*wgt
 }
 
 // publishKey writes the public key of the site's private key into the Site's status, when it differs.
-func (a *Agent) publishKey(ctx context.Context, site *v1alpha1.Site, key *wgtypes.Key) {
+func (a *Agent) publishKey(ctx context.Context, site *straitv1.Site, key *wgtypes.Key) {
 	pub := ""
 	if key != nil {
 		pub = key.PublicKey().String()
@@ -345,7 +345,7 @@ func (a *Agent) publishKey(ctx context.Context, site *v1alpha1.Site, key *wgtype
 
 // reportHealth writes each SiteLink's status from Envoy's view of the peer clusters, when it changed.
 func (a *Agent) reportHealth(ctx context.Context) {
-	var ls v1alpha1.SiteLinkList
+	var ls straitv1.SiteLinkList
 	if err := a.Client.List(ctx, &ls); err != nil {
 		return
 	}
@@ -391,7 +391,7 @@ func (a *Agent) reportHealth(ctx context.Context) {
 
 // statusPatch is a merge patch from old to l that always carries status.healthy and status.active.
 // A patch computed from two structs leaves out a false that both hold, and the stored object may lack it.
-func statusPatch(old, l *v1alpha1.SiteLink) (client.Patch, error) {
+func statusPatch(old, l *straitv1.SiteLink) (client.Patch, error) {
 	data, err := client.MergeFrom(old).Data(l)
 	if err != nil {
 		return nil, err

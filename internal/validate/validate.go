@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Severity is how serious a problem is.
@@ -50,17 +50,17 @@ func RefOf(obj runtime.Object) Ref {
 // Kind returns the kind of a Strait object from its Go type. Typed objects read from a cluster often carry no TypeMeta.
 func Kind(obj runtime.Object) string {
 	switch obj.(type) {
-	case *v1alpha1.Site:
+	case *straitv1.Site:
 		return "Site"
-	case *v1alpha1.SitePeer:
+	case *straitv1.SitePeer:
 		return "SitePeer"
-	case *v1alpha1.SiteLink:
+	case *straitv1.SiteLink:
 		return "SiteLink"
-	case *v1alpha1.Export:
+	case *straitv1.Export:
 		return "Export"
-	case *v1alpha1.Import:
+	case *straitv1.Import:
 		return "Import"
-	case *v1alpha1.SiteService:
+	case *straitv1.SiteService:
 		return "SiteService"
 	}
 	return obj.GetObjectKind().GroupVersionKind().Kind
@@ -98,17 +98,17 @@ func newProblem(i int, obj runtime.Object, s Severity, e *field.Error) Problem {
 // It does not change obj and does not check status.
 func Object(obj runtime.Object) field.ErrorList {
 	switch o := obj.(type) {
-	case *v1alpha1.Site:
+	case *straitv1.Site:
 		return Site(o)
-	case *v1alpha1.SitePeer:
+	case *straitv1.SitePeer:
 		return SitePeer(o)
-	case *v1alpha1.SiteLink:
+	case *straitv1.SiteLink:
 		return SiteLink(o)
-	case *v1alpha1.Export:
+	case *straitv1.Export:
 		return Export(o)
-	case *v1alpha1.Import:
+	case *straitv1.Import:
 		return Import(o)
-	case *v1alpha1.SiteService:
+	case *straitv1.SiteService:
 		return SiteService(o)
 	}
 	return field.ErrorList{field.NotSupported(field.NewPath("kind"), Kind(obj), kinds)}
@@ -140,18 +140,18 @@ func Set(objs []runtime.Object) []Problem {
 
 func spanning(objs []runtime.Object) []Problem {
 	var out []Problem
-	var site *v1alpha1.Site
-	peers := map[string]*v1alpha1.SitePeer{}
+	var site *straitv1.Site
+	peers := map[string]*straitv1.SitePeer{}
 	for i, obj := range objs {
 		switch o := obj.(type) {
-		case *v1alpha1.Site:
+		case *straitv1.Site:
 			if site != nil {
 				out = append(out, newProblem(i, o, SeverityError, field.Forbidden(field.NewPath("metadata", "name"),
 					fmt.Sprintf("a cluster holds exactly one Site, and Site/%s comes earlier in the set", site.Name))))
 				continue
 			}
 			site = o
-		case *v1alpha1.SitePeer:
+		case *straitv1.SitePeer:
 			peers[o.Name] = o
 		}
 	}
@@ -159,7 +159,7 @@ func spanning(objs []runtime.Object) []Problem {
 	// Every wireguard link has its own interface in the one gateway, so listen ports must differ across all links.
 	ports := map[int32]string{}
 	for i, obj := range objs {
-		l, ok := obj.(*v1alpha1.SiteLink)
+		l, ok := obj.(*straitv1.SiteLink)
 		if !ok {
 			continue
 		}
@@ -169,7 +169,7 @@ func spanning(objs []runtime.Object) []Problem {
 			out = append(out, newProblem(i, l, SeverityWarning, detail(field.NotFound(spec.Child("peer"), l.Spec.Peer),
 				"no SitePeer of that name in the set")))
 		}
-		if l.Spec.Transport != v1alpha1.TransportWireGuard {
+		if l.Spec.Transport != straitv1.TransportWireGuard {
 			continue
 		}
 		transport := spec.Child("transport")

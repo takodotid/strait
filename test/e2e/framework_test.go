@@ -23,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Docker networks. Other strait-* clusters share them: the test creates them when absent and never deletes them.
@@ -59,6 +59,7 @@ const (
 	pollInterval = time.Second
 	peerTimeout  = 3 * time.Second
 	unknownHold  = 10 * time.Second
+	startupHold  = 30 * time.Second
 	sampleEvery  = 500 * time.Millisecond
 )
 
@@ -150,7 +151,7 @@ func scheme() *runtime.Scheme {
 	if err := clientgoscheme.AddToScheme(s); err != nil {
 		panic(err)
 	}
-	if err := v1alpha1.AddToScheme(s); err != nil {
+	if err := straitv1.AddToScheme(s); err != nil {
 		panic(err)
 	}
 	return s

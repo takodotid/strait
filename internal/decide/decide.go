@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -21,7 +21,7 @@ type SiteView struct {
 
 // Input holds every input of a decision.
 type Input struct {
-	Spec      v1alpha1.SiteServiceSpec
+	Spec      straitv1.SiteServiceSpec
 	LocalSite string
 	// Sites holds every known site. A site that is missing is not known.
 	Sites map[string]SiteView
@@ -32,6 +32,10 @@ type Input struct {
 	// LastConfirmed is the last time each member was Stable and eligible.
 	LastConfirmed map[string]time.Time
 	Now           time.Time
+	// Started is when the controller started to poll peers. The startup hold counts from it.
+	Started time.Time
+	// Read holds the peers whose document was read at least once since Started.
+	Read map[string]bool
 }
 
 // Result is a route and the facts that the status reports.
@@ -50,14 +54,14 @@ type Result struct {
 
 // Decide returns the route for the input.
 func Decide(in Input) Result {
-	if in.Spec.Mode == v1alpha1.ModeSet {
+	if in.Spec.Mode == straitv1.ModeSet {
 		return decideSet(in)
 	}
 	return decideSingle(in)
 }
 
 // observation returns the member's observation. A member whose site is not known is Unknown, whatever was last observed.
-func (in Input) observation(m v1alpha1.Member) observe.Observation {
+func (in Input) observation(m straitv1.Member) observe.Observation {
 	if s, ok := in.Sites[m.Site]; !ok || !s.Known {
 		return observe.Unknown(m.Name, m.Site, "SiteUnknown", in.Now)
 	}
@@ -114,7 +118,51 @@ func (in Input) unanimous() string {
 	return declared
 }
 
+// awaiting returns the sites with a member that have not been read since the controller started, sorted, while the
+// startup hold lasts. Empty when the hold does not apply.
+func (in Input) awaiting() []string {
+	hold := in.Spec.Policy.StartupHold.Duration
+	if hold <= 0 || in.Now.Sub(in.Started) >= hold {
+		return nil
+	}
+	var out []string
+	for _, m := range in.Spec.Members {
+		if m.Site != in.LocalSite && !in.Read[m.Site] && !contains(out, m.Site) {
+			out = append(out, m.Site)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// decideSingle applies the startup hold to the route that the table picks: it never routes to a local member while
+// the hold lasts.
 func decideSingle(in Input) Result {
+	r := singleTable(in)
+	if len(r.Members) != 1 || !in.local(r.Members[0]) {
+		return r
+	}
+	if sites := in.awaiting(); len(sites) > 0 {
+		r.Message = fmt.Sprintf("%s would be routed (%s), but it is local and site %s has not been read since the controller started; startupHold %s",
+			r.Members[0], r.Reason, strings.Join(sites, ", "), in.Spec.Policy.StartupHold.Duration)
+		r.Reason = straitv1.ReasonAwaitingPeers
+		r.Members, r.Held = nil, nil
+	}
+	return r
+}
+
+// local reports whether the member is at the local site.
+func (in Input) local(member string) bool {
+	for _, m := range in.Spec.Members {
+		if m.Name == member {
+			return m.Site == in.LocalSite
+		}
+	}
+	return false
+}
+
+// singleTable picks the route of Single mode by the table of RFC#0002, requirement 18.
+func singleTable(in Input) Result {
 	var writable []string
 	transitioning := false
 	for _, m := range in.Spec.Members {
@@ -122,7 +170,7 @@ func decideSingle(in Input) Result {
 		if o.Writable() {
 			writable = append(writable, m.Name)
 		}
-		if o.State == v1alpha1.StateTransitioning {
+		if o.State == straitv1.StateTransitioning {
 			transitioning = true
 		}
 	}
@@ -131,21 +179,21 @@ func decideSingle(in Input) Result {
 
 	// Row 1.
 	if r.Disagree {
-		r.Reason = v1alpha1.ReasonDeclarationsDisagree
+		r.Reason = straitv1.ReasonDeclarationsDisagree
 		r.Message = fmt.Sprintf("sites declare different primaries: %s", strings.Join(decl, ", "))
 		return r
 	}
 	// Rows 2 and 3.
 	if r.Multiple {
-		if in.Spec.Policy.Multiple == v1alpha1.PreferDeclaredIfConsistent {
+		if in.Spec.Policy.Multiple == straitv1.PreferDeclaredIfConsistent {
 			if d := in.unanimous(); d != "" && contains(writable, d) {
 				r.Members = []string{d}
-				r.Reason = v1alpha1.ReasonPreferDeclared
+				r.Reason = straitv1.ReasonPreferDeclared
 				r.Message = fmt.Sprintf("writable members %s; every site declares %s", strings.Join(writable, ", "), d)
 				return r
 			}
 		}
-		r.Reason = v1alpha1.ReasonMultipleWritable
+		r.Reason = straitv1.ReasonMultipleWritable
 		r.Message = fmt.Sprintf("writable members: %s", strings.Join(writable, ", "))
 		return r
 	}
@@ -153,47 +201,47 @@ func decideSingle(in Input) Result {
 	if len(writable) == 1 {
 		w := writable[0]
 		if len(decl) == 1 && decl[0] != w {
-			r.Reason = v1alpha1.ReasonNotDeclared
+			r.Reason = straitv1.ReasonNotDeclared
 			r.Message = fmt.Sprintf("%s is writable but sites declare %s", w, decl[0])
 			return r
 		}
 		r.Members = []string{w}
-		r.Reason = v1alpha1.ReasonActive
+		r.Reason = straitv1.ReasonActive
 		r.Message = fmt.Sprintf("%s is the only writable member", w)
 		return r
 	}
 	// Row 6.
 	if transitioning {
-		r.Reason = v1alpha1.ReasonTransitioning
+		r.Reason = straitv1.ReasonTransitioning
 		r.Message = "no member is confirmed writable and a member is moving"
 		return r
 	}
 	// Rows 7 and 8.
 	for _, m := range in.Spec.Members {
-		if !contains(in.Previous, m.Name) || in.observation(m).State != v1alpha1.StateUnknown {
+		if !contains(in.Previous, m.Name) || in.observation(m).State != straitv1.StateUnknown {
 			continue
 		}
 		if in.withinHold(m.Name) {
 			r.Members = []string{m.Name}
 			r.Held = []string{m.Name}
-			r.Reason = v1alpha1.ReasonHeldUnknown
+			r.Reason = straitv1.ReasonHeldUnknown
 			r.Message = fmt.Sprintf("%s is Unknown; held for %s after it was last confirmed", m.Name, in.Spec.Policy.UnknownHold.Duration)
 			return r
 		}
-		r.Reason = v1alpha1.ReasonUnknownTimeout
+		r.Reason = straitv1.ReasonUnknownTimeout
 		r.Message = fmt.Sprintf("%s is Unknown for longer than %s", m.Name, in.Spec.Policy.UnknownHold.Duration)
 		return r
 	}
 	// Row 9.
 	for _, m := range in.Spec.Members {
-		if in.observation(m).State == v1alpha1.StateUnknown {
-			r.Reason = v1alpha1.ReasonMemberUnknown
+		if in.observation(m).State == straitv1.StateUnknown {
+			r.Reason = straitv1.ReasonMemberUnknown
 			r.Message = fmt.Sprintf("no member is writable and %s is Unknown", m.Name)
 			return r
 		}
 	}
 	// Row 10.
-	r.Reason = v1alpha1.ReasonNoEligibleMember
+	r.Reason = straitv1.ReasonNoEligibleMember
 	r.Message = "no member is writable"
 	return r
 }
@@ -213,8 +261,8 @@ func decideSet(in Input) Result {
 		switch {
 		case o.Confirmed():
 			c.confirmed = true
-		case contains(in.Previous, m.Name) && o.State == v1alpha1.StateTransitioning:
-		case contains(in.Previous, m.Name) && o.State == v1alpha1.StateUnknown:
+		case contains(in.Previous, m.Name) && o.State == straitv1.StateTransitioning:
+		case contains(in.Previous, m.Name) && o.State == straitv1.StateUnknown:
 			if !in.withinHold(m.Name) {
 				expired = true
 				continue
@@ -228,7 +276,7 @@ func decideSet(in Input) Result {
 
 	locality := in.Spec.Locality
 	if locality == "" {
-		locality = v1alpha1.LocalFirst
+		locality = straitv1.LocalFirst
 	}
 	// LocalFirst prefers the local site only while it has a confirmed member.
 	hasLocal := false
@@ -237,7 +285,7 @@ func decideSet(in Input) Result {
 	}
 	var r Result
 	for _, c := range candidates {
-		if c.local || locality == v1alpha1.Any || (locality == v1alpha1.LocalFirst && !hasLocal) {
+		if c.local || locality == straitv1.Any || (locality == straitv1.LocalFirst && !hasLocal) {
 			r.Members = append(r.Members, c.name)
 			if c.held {
 				r.Held = append(r.Held, c.name)
@@ -247,16 +295,16 @@ func decideSet(in Input) Result {
 
 	switch {
 	case len(r.Members) == 0 && expired:
-		r.Reason = v1alpha1.ReasonUnknownTimeout
+		r.Reason = straitv1.ReasonUnknownTimeout
 		r.Message = fmt.Sprintf("routed members are Unknown for longer than %s", in.Spec.Policy.UnknownHold.Duration)
 	case len(r.Members) == 0:
-		r.Reason = v1alpha1.ReasonNoEligibleMember
+		r.Reason = straitv1.ReasonNoEligibleMember
 		r.Message = fmt.Sprintf("no eligible member for locality %s", locality)
 	case len(r.Held) == len(r.Members):
-		r.Reason = v1alpha1.ReasonHeldUnknown
+		r.Reason = straitv1.ReasonHeldUnknown
 		r.Message = fmt.Sprintf("every routed member is Unknown; held for %s", in.Spec.Policy.UnknownHold.Duration)
 	default:
-		r.Reason = v1alpha1.ReasonEligible
+		r.Reason = straitv1.ReasonEligible
 		r.Message = fmt.Sprintf("eligible members for locality %s: %s", locality, strings.Join(r.Members, ", "))
 	}
 	return r

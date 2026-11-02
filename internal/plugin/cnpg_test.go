@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // cnpgCluster builds a Cluster as CloudNativePG reports it.
@@ -52,20 +52,20 @@ func reported(primary string, isPrimary bool) map[string]any {
 	}
 }
 
-func siteService(role v1alpha1.CNPGRole) *v1alpha1.SiteService {
-	mode := v1alpha1.ModeSingle
-	if role != v1alpha1.CNPGRolePrimary {
-		mode = v1alpha1.ModeSet
+func siteService(role straitv1.CNPGRole) *straitv1.SiteService {
+	mode := straitv1.ModeSingle
+	if role != straitv1.CNPGRolePrimary {
+		mode = straitv1.ModeSet
 	}
-	return &v1alpha1.SiteService{
+	return &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "db", Name: "pg"},
-		Spec: v1alpha1.SiteServiceSpec{
+		Spec: straitv1.SiteServiceSpec{
 			Mode:   mode,
-			Port:   v1alpha1.ServicePort{Name: "postgres", Port: 5432},
-			Plugin: v1alpha1.PluginSpec{CNPG: &v1alpha1.CNPGPlugin{Role: role}},
-			Members: []v1alpha1.Member{
-				{Name: "pg-a", Site: "a", CNPG: &v1alpha1.CNPGMember{Cluster: "cluster-a"}},
-				{Name: "pg-b", Site: "b", CNPG: &v1alpha1.CNPGMember{Cluster: "cluster-b"}},
+			Port:   straitv1.ServicePort{Name: "postgres", Port: 5432},
+			Plugin: straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: role}},
+			Members: []straitv1.Member{
+				{Name: "pg-a", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "cluster-a"}},
+				{Name: "pg-b", Site: "b", CNPG: &straitv1.CNPGMember{Cluster: "cluster-b"}},
 			},
 		},
 	}
@@ -78,51 +78,51 @@ func TestCNPG(t *testing.T) {
 	promotingSpec := map[string]any{"replica": map[string]any{"primary": "cluster-a", "source": "cluster-b", "promotionToken": "t1"}}
 	tests := []struct {
 		name     string
-		role     v1alpha1.CNPGRole
+		role     straitv1.CNPGRole
 		cluster  *unstructured.Unstructured
 		ready    []string
-		want     v1alpha1.Role
+		want     straitv1.Role
 		eligible bool
-		state    v1alpha1.State
+		state    straitv1.State
 		declared string
 	}{
-		{"writable primary", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", primarySpec, reported("cluster-a-1", true)), []string{"10.0.0.1"}, v1alpha1.RolePrimary, true, v1alpha1.StateStable, "pg-a"},
-		{"primary with no ready endpoint", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", primarySpec, reported("cluster-a-1", true)), nil, v1alpha1.RolePrimary, false, v1alpha1.StateStable, "pg-a"},
-		{"replica cluster", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", demotedSpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, v1alpha1.RoleReplica, false, v1alpha1.StateStable, "pg-b"},
-		{"demotion in progress", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", demotedSpec, func() map[string]any {
+		{"writable primary", straitv1.CNPGRolePrimary, clusterObject("cluster-a", primarySpec, reported("cluster-a-1", true)), []string{"10.0.0.1"}, straitv1.RolePrimary, true, straitv1.StateStable, "pg-a"},
+		{"primary with no ready endpoint", straitv1.CNPGRolePrimary, clusterObject("cluster-a", primarySpec, reported("cluster-a-1", true)), nil, straitv1.RolePrimary, false, straitv1.StateStable, "pg-a"},
+		{"replica cluster", straitv1.CNPGRolePrimary, clusterObject("cluster-a", demotedSpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, straitv1.RoleReplica, false, straitv1.StateStable, "pg-b"},
+		{"demotion in progress", straitv1.CNPGRolePrimary, clusterObject("cluster-a", demotedSpec, func() map[string]any {
 			s := reported("cluster-a-1", true)
 			s["switchReplicaClusterStatus"] = map[string]any{"inProgress": true}
 			return s
-		}()), []string{"10.0.0.1"}, v1alpha1.RoleReplica, false, v1alpha1.StateTransitioning, "pg-b"},
-		{"demoted spec, still reported primary", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", demotedSpec, reported("cluster-a-1", true)), []string{"10.0.0.1"}, v1alpha1.RoleReplica, false, v1alpha1.StateTransitioning, "pg-b"},
-		{"promotion token not yet used", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, v1alpha1.RolePrimary, false, v1alpha1.StateTransitioning, "pg-a"},
-		{"promoted, restarting", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
+		}()), []string{"10.0.0.1"}, straitv1.RoleReplica, false, straitv1.StateTransitioning, "pg-b"},
+		{"demoted spec, still reported primary", straitv1.CNPGRolePrimary, clusterObject("cluster-a", demotedSpec, reported("cluster-a-1", true)), []string{"10.0.0.1"}, straitv1.RoleReplica, false, straitv1.StateTransitioning, "pg-b"},
+		{"promotion token not yet used", straitv1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, straitv1.RolePrimary, false, straitv1.StateTransitioning, "pg-a"},
+		{"promoted, restarting", straitv1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
 			s := reported("cluster-a-1", true)
 			s["lastPromotionToken"] = "t1"
 			s["phase"] = "Primary instance is being restarted in-place"
 			return s
-		}()), []string{"10.0.0.1"}, v1alpha1.RolePrimary, false, v1alpha1.StateTransitioning, "pg-a"},
-		{"promoted, applying configuration before the restart", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
+		}()), []string{"10.0.0.1"}, straitv1.RolePrimary, false, straitv1.StateTransitioning, "pg-a"},
+		{"promoted, applying configuration before the restart", straitv1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
 			s := reported("cluster-a-1", true)
 			s["lastPromotionToken"] = "t1"
 			s["phase"] = "Applying configuration"
 			return s
-		}()), []string{"10.0.0.1"}, v1alpha1.RolePrimary, false, v1alpha1.StateTransitioning, "pg-a"},
-		{"promoted", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
+		}()), []string{"10.0.0.1"}, straitv1.RolePrimary, false, straitv1.StateTransitioning, "pg-a"},
+		{"promoted", straitv1.CNPGRolePrimary, clusterObject("cluster-a", promotingSpec, func() map[string]any {
 			s := reported("cluster-a-1", true)
 			s["lastPromotionToken"] = "t1"
 			return s
-		}()), []string{"10.0.0.1"}, v1alpha1.RolePrimary, true, v1alpha1.StateStable, "pg-a"},
-		{"spec primary, not yet reported writable", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", primarySpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, v1alpha1.RolePrimary, false, v1alpha1.StateTransitioning, "pg-a"},
-		{"no replica stanza", v1alpha1.CNPGRolePrimary, clusterObject("cluster-a", map[string]any{}, reported("cluster-a-1", true)), []string{"10.0.0.1"}, v1alpha1.RolePrimary, true, v1alpha1.StateStable, "pg-a"},
-		{"replica role on a replica cluster", v1alpha1.CNPGRoleReplica, clusterObject("cluster-a", demotedSpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, v1alpha1.RoleReplica, true, v1alpha1.StateStable, "pg-b"},
+		}()), []string{"10.0.0.1"}, straitv1.RolePrimary, true, straitv1.StateStable, "pg-a"},
+		{"spec primary, not yet reported writable", straitv1.CNPGRolePrimary, clusterObject("cluster-a", primarySpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, straitv1.RolePrimary, false, straitv1.StateTransitioning, "pg-a"},
+		{"no replica stanza", straitv1.CNPGRolePrimary, clusterObject("cluster-a", map[string]any{}, reported("cluster-a-1", true)), []string{"10.0.0.1"}, straitv1.RolePrimary, true, straitv1.StateStable, "pg-a"},
+		{"replica role on a replica cluster", straitv1.CNPGRoleReplica, clusterObject("cluster-a", demotedSpec, reported("cluster-a-1", false)), []string{"10.0.0.1"}, straitv1.RoleReplica, true, straitv1.StateStable, "pg-b"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = clientgoscheme.AddToScheme(scheme)
 			endpoint := "cluster-a-rw"
-			if tt.role == v1alpha1.CNPGRoleReplica {
+			if tt.role == straitv1.CNPGRoleReplica {
 				endpoint = "cluster-a-r"
 			}
 			objs := append(service(endpoint, tt.ready...), tt.cluster)
@@ -144,7 +144,7 @@ func TestCNPGClusterMissing(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	r := fake.NewClientBuilder().WithScheme(scheme).Build()
-	rep := CNPG{}.Observe(context.Background(), r, siteService(v1alpha1.CNPGRolePrimary), "a", time.Now())
+	rep := CNPG{}.Observe(context.Background(), r, siteService(straitv1.CNPGRolePrimary), "a", time.Now())
 	if o := rep.Members["pg-a"]; o.Eligible || o.Reason != "ClusterNotFound" {
 		t.Fatalf("got %+v", o)
 	}

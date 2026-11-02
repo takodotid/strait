@@ -1,5 +1,5 @@
 # want: spec: Invalid value: "object": set direct for the direct transport, wireguard for the wireguard transport, and not the other
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: direct-and-wireguard
@@ -14,7 +14,7 @@ spec:
     peerAddress: 10.200.0.2
 ---
 # want: spec: Invalid value: "object": set direct for the direct transport, wireguard for the wireguard transport, and not the other
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: wireguard-without-settings
@@ -23,7 +23,7 @@ spec:
   transport: wireguard
 ---
 # want: spec: Invalid value: "object": a direct link carries traffic in clear: declare encryption: None
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: direct-without-encryption
@@ -34,7 +34,7 @@ spec:
     address: 192.0.2.10
 ---
 # want: spec: Invalid value: "object": a wireguard link is encrypted by WireGuard
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: wireguard-in-clear
@@ -47,7 +47,7 @@ spec:
     peerAddress: 10.200.0.2
 ---
 # want: spec.transport: Unsupported value: "gre": supported values: "direct", "wireguard"
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: transport-enum
@@ -59,7 +59,7 @@ spec:
     peerAddress: 10.200.0.2
 ---
 # want: spec.transport: Required value
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: transport-missing
@@ -70,7 +70,7 @@ spec:
     peerAddress: 10.200.0.2
 ---
 # want: spec.peer: Required value
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: peer-missing
@@ -81,7 +81,7 @@ spec:
     address: 192.0.2.10
 ---
 # want: spec.peer: Too long: may not be more than 63 characters
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: peer-long
@@ -93,7 +93,7 @@ spec:
     address: 192.0.2.10
 ---
 # want: spec.cost: Invalid value: 70000: must be between 0 and 65535
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: cost-range
@@ -107,7 +107,7 @@ spec:
 ---
 # want: spec.encryption: Unsupported value: "AES": supported values: "None", "WireGuard"
 # want: spec: Invalid value: "object": a wireguard link is encrypted by WireGuard
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: encryption-enum
@@ -120,7 +120,7 @@ spec:
     peerAddress: 10.200.0.2
 ---
 # want: spec.direct.address: Required value
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: direct-address-missing
@@ -131,7 +131,7 @@ spec:
   direct: {}
 ---
 # want: spec.direct.address: Too long: may not be more than 45 characters
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: direct-address-long
@@ -143,7 +143,7 @@ spec:
     address: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ---
 # want: spec.wireguard.listenPort: Invalid value: 70000: must be between 1 and 65535
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: listen-port-range
@@ -157,7 +157,7 @@ spec:
 ---
 # want: spec.wireguard.address: Required value
 # want: spec.wireguard.peerAddress: Required value
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: wireguard-addresses-missing
@@ -167,7 +167,7 @@ spec:
   wireguard: {}
 ---
 # want: spec.direct.address: Invalid value: "gateway.example": must be an IP address
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: direct-address-host
@@ -180,7 +180,7 @@ spec:
 ---
 # want: spec.wireguard.address: Invalid value: "100.64.0.1": must be an address in CIDR notation
 # want: spec.wireguard.peerAddress: Invalid value: "100.64.0.2/32": must be an IP address
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
   name: wireguard-addresses

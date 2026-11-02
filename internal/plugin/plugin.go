@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -21,11 +21,11 @@ import (
 // It reads through a client.Reader, which has no write methods.
 type Plugin interface {
 	// Observe returns the local site's declaration and one observation per local member.
-	Observe(ctx context.Context, r client.Reader, svc *v1alpha1.SiteService, site string, now time.Time) observe.Report
+	Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteService, site string, now time.Time) observe.Report
 }
 
 // For returns the plugin that svc names.
-func For(svc *v1alpha1.SiteService) (Plugin, error) {
+func For(svc *straitv1.SiteService) (Plugin, error) {
 	switch {
 	case svc.Spec.Plugin.CNPG != nil:
 		return CNPG{}, nil
@@ -36,8 +36,8 @@ func For(svc *v1alpha1.SiteService) (Plugin, error) {
 }
 
 // LocalMembers returns the members of svc at site.
-func LocalMembers(svc *v1alpha1.SiteService, site string) []v1alpha1.Member {
-	var out []v1alpha1.Member
+func LocalMembers(svc *straitv1.SiteService, site string) []straitv1.Member {
+	var out []straitv1.Member
 	for _, m := range svc.Spec.Members {
 		if m.Site == site {
 			out = append(out, m)

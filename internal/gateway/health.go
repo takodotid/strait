@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
 )
 
@@ -85,7 +85,7 @@ type Observation struct {
 // Observe decides the health of each link from Envoy's clusters, and picks the active link to each peer:
 // the healthy link with the lowest rank. EnvoyErr is the error of reading Envoy's clusters.
 // Held maps each wireguard link whose interface is in place to the interface; problems says why the others are not.
-func Observe(ls []v1alpha1.SiteLink, clusters map[string][]Host, envoyErr error, held, problems map[string]string) map[string]Observation {
+func Observe(ls []straitv1.SiteLink, clusters map[string][]Host, envoyErr error, held, problems map[string]string) map[string]Observation {
 	out := map[string]Observation{}
 	for peer, ranked := range links.ByPeer(ls) {
 		active := false
@@ -100,11 +100,11 @@ func Observe(ls []v1alpha1.SiteLink, clusters map[string][]Host, envoyErr error,
 	return out
 }
 
-func observe(l v1alpha1.SiteLink, hosts []Host, envoyErr error, held, problems map[string]string) Observation {
+func observe(l straitv1.SiteLink, hosts []Host, envoyErr error, held, problems map[string]string) Observation {
 	if envoyErr != nil {
 		return Observation{Reason: "EnvoyUnreachable", Message: envoyErr.Error()}
 	}
-	if l.Spec.Transport == v1alpha1.TransportWireGuard && held[l.Name] == "" {
+	if l.Spec.Transport == straitv1.TransportWireGuard && held[l.Name] == "" {
 		return Observation{Reason: "NotConfigured", Message: cmp.Or(problems[l.Name], "the WireGuard interface is not in place")}
 	}
 	addr := links.Address(l)
@@ -143,7 +143,7 @@ func hostAt(hosts []Host, addr string) (Host, bool) {
 
 // LinkStatus returns a link's new status. Times are cut to whole seconds, as the API server stores them,
 // so an unchanged observation gives an equal status.
-func LinkStatus(l v1alpha1.SiteLink, o Observation, iface string, handshake, now time.Time) v1alpha1.SiteLinkStatus {
+func LinkStatus(l straitv1.SiteLink, o Observation, iface string, handshake, now time.Time) straitv1.SiteLinkStatus {
 	st := *l.Status.DeepCopy()
 	ts := metav1.NewTime(now.Truncate(time.Second))
 	if st.Healthy != o.Healthy || st.LastTransitionTime == nil {

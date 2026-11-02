@@ -6,25 +6,25 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // Default sets the defaults of the kubebuilder default markers on obj, as the API server does.
 // A zero value counts as unset: a typed object cannot tell an explicit zero from a missing field.
 func Default(obj runtime.Object) {
 	switch o := obj.(type) {
-	case *v1alpha1.Site:
+	case *straitv1.Site:
 		defaultSite(&o.Spec)
-	case *v1alpha1.SitePeer:
+	case *straitv1.SitePeer:
 		setInt(&o.Spec.ControlPort, 30900)
-	case *v1alpha1.SiteLink:
+	case *straitv1.SiteLink:
 		defaultSiteLink(&o.Spec)
-	case *v1alpha1.SiteService:
+	case *straitv1.SiteService:
 		defaultSiteService(&o.Spec)
 	}
 }
 
-func defaultSite(s *v1alpha1.SiteSpec) {
+func defaultSite(s *straitv1.SiteSpec) {
 	g := &s.Gateway
 	setInt(&g.ControlPort, 30900)
 	setRange(&g.ExportPorts, 30901, 31899)
@@ -43,7 +43,7 @@ func defaultSite(s *v1alpha1.SiteSpec) {
 	}
 }
 
-func defaultSiteLink(s *v1alpha1.SiteLinkSpec) {
+func defaultSiteLink(s *straitv1.SiteLinkSpec) {
 	setInt(&s.Cost, 100)
 	if w := s.WireGuard; w != nil {
 		setInt(&w.ListenPort, 31820)
@@ -53,9 +53,9 @@ func defaultSiteLink(s *v1alpha1.SiteLinkSpec) {
 	}
 }
 
-func defaultSiteService(s *v1alpha1.SiteServiceSpec) {
+func defaultSiteService(s *straitv1.SiteServiceSpec) {
 	if s.Policy.Multiple == "" {
-		s.Policy.Multiple = v1alpha1.RouteNowhere
+		s.Policy.Multiple = straitv1.RouteNowhere
 	}
 	setDuration(&s.Policy.UnknownHold, 30*time.Second)
 }
@@ -66,9 +66,9 @@ func setInt(v *int32, d int32) {
 	}
 }
 
-func setRange(r *v1alpha1.PortRange, first, last int32) {
-	if *r == (v1alpha1.PortRange{}) {
-		*r = v1alpha1.PortRange{First: first, Last: last}
+func setRange(r *straitv1.PortRange, first, last int32) {
+	if *r == (straitv1.PortRange{}) {
+		*r = straitv1.PortRange{First: first, Last: last}
 	}
 }
 

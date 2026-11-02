@@ -15,7 +15,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
 )
 
@@ -28,20 +28,20 @@ func newKey(t *testing.T) wgtypes.Key {
 	return k
 }
 
-func peer(name string, pub string) v1alpha1.SitePeer {
-	p := v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: name}}
+func peer(name string, pub string) straitv1.SitePeer {
+	p := straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: name}}
 	if pub != "" {
-		p.Spec.WireGuard = &v1alpha1.PeerWireGuard{PublicKey: pub}
+		p.Spec.WireGuard = &straitv1.PeerWireGuard{PublicKey: pub}
 	}
 	return p
 }
 
-func wgLink(name, peer string, cost int32, port int32, endpoint, addr, peerAddr string) v1alpha1.SiteLink {
-	return v1alpha1.SiteLink{
+func wgLink(name, peer string, cost int32, port int32, endpoint, addr, peerAddr string) straitv1.SiteLink {
+	return straitv1.SiteLink{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: v1alpha1.SiteLinkSpec{
-			Peer: peer, Transport: v1alpha1.TransportWireGuard, Cost: cost,
-			WireGuard: &v1alpha1.WireGuardLink{
+		Spec: straitv1.SiteLinkSpec{
+			Peer: peer, Transport: straitv1.TransportWireGuard, Cost: cost,
+			WireGuard: &straitv1.WireGuardLink{
 				ListenPort: port, Endpoint: endpoint, Address: addr, PeerAddress: peerAddr,
 				PersistentKeepalive: &metav1.Duration{Duration: 25 * time.Second},
 			},
@@ -49,10 +49,10 @@ func wgLink(name, peer string, cost int32, port int32, endpoint, addr, peerAddr 
 	}
 }
 
-func directLink(name, peer string, cost int32, addr string) v1alpha1.SiteLink {
-	return v1alpha1.SiteLink{
+func directLink(name, peer string, cost int32, addr string) straitv1.SiteLink {
+	return straitv1.SiteLink{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec:       v1alpha1.SiteLinkSpec{Peer: peer, Transport: v1alpha1.TransportDirect, Cost: cost, Encryption: v1alpha1.EncryptionNone, Direct: &v1alpha1.DirectLink{Address: addr}},
+		Spec:       straitv1.SiteLinkSpec{Peer: peer, Transport: straitv1.TransportDirect, Cost: cost, Encryption: straitv1.EncryptionNone, Direct: &straitv1.DirectLink{Address: addr}},
 	}
 }
 
@@ -69,8 +69,8 @@ func TestDesired(t *testing.T) {
 	pubB, pubC := newKey(t).PublicKey(), newKey(t).PublicKey()
 	in := Inputs{
 		Key:   &site,
-		Peers: []v1alpha1.SitePeer{peer("b", pubB.String()), peer("c", pubC.String()), peer("d", "")},
-		Links: []v1alpha1.SiteLink{
+		Peers: []straitv1.SitePeer{peer("b", pubB.String()), peer("c", pubC.String()), peer("d", "")},
+		Links: []straitv1.SiteLink{
 			wgLink("to-b", "b", 100, 51820, "192.0.2.10:51820", "100.64.0.1/32", "100.64.0.2"),
 			wgLink("to-c", "c", 100, 51821, "", "100.64.1.1/30", "100.64.1.2"),
 			wgLink("to-d", "d", 100, 51822, "", "100.64.2.1/32", "100.64.2.2"),
@@ -124,8 +124,8 @@ func TestDesired(t *testing.T) {
 func TestDesiredWithoutKey(t *testing.T) {
 	in := Inputs{
 		NoKey: "Secret strait/wg not found",
-		Peers: []v1alpha1.SitePeer{peer("b", newKey(t).PublicKey().String())},
-		Links: []v1alpha1.SiteLink{wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")},
+		Peers: []straitv1.SitePeer{peer("b", newKey(t).PublicKey().String())},
+		Links: []straitv1.SiteLink{wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")},
 	}
 	want, problems := Desired(in)
 	if len(want) != 0 || problems["to-b"] != "Secret strait/wg not found" {
@@ -321,8 +321,8 @@ func TestApply(t *testing.T) {
 	pubB, pubC := newKey(t).PublicKey(), newKey(t).PublicKey()
 	in := Inputs{
 		Key:   &site,
-		Peers: []v1alpha1.SitePeer{peer("b", pubB.String()), peer("c", pubC.String())},
-		Links: []v1alpha1.SiteLink{
+		Peers: []straitv1.SitePeer{peer("b", pubB.String()), peer("c", pubC.String())},
+		Links: []straitv1.SiteLink{
 			wgLink("to-b", "b", 100, 51820, "192.0.2.10:51820", "100.64.0.1/32", "100.64.0.2"),
 			wgLink("to-c", "c", 100, 51821, "", "100.64.1.1/30", "100.64.1.2"),
 		},

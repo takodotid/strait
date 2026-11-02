@@ -117,9 +117,9 @@ func TestValidateSources(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("site.yaml", "apiVersion: strait.tako.id/v1alpha1\nkind: Site\nmetadata:\n  name: a\n")
-	write("nested/peer.yml", "# comment only\n---\napiVersion: strait.tako.id/v1alpha1\nkind: SitePeer\nmetadata:\n  name: b\n")
-	write("nested/deeper/link.json", `{"apiVersion": "strait.tako.id/v1alpha1", "kind": "SiteLink", "metadata": {"name": "b-direct"},
+	write("site.yaml", "apiVersion: strait.tako.id/v1\nkind: Site\nmetadata:\n  name: a\n")
+	write("nested/peer.yml", "# comment only\n---\napiVersion: strait.tako.id/v1\nkind: SitePeer\nmetadata:\n  name: b\n")
+	write("nested/deeper/link.json", `{"apiVersion": "strait.tako.id/v1", "kind": "SiteLink", "metadata": {"name": "b-direct"},
 		"spec": {"peer": "b", "transport": "direct", "encryption": "None", "direct": {"address": "192.0.2.10"}}}`)
 	write("notes.txt", "not a manifest")
 
@@ -128,7 +128,7 @@ func TestValidateSources(t *testing.T) {
 		t.Errorf("directory: exit %d, got %+v", r.code, v)
 	}
 
-	stdin := "apiVersion: strait.tako.id/v1alpha1\nkind: SiteLink\nmetadata:\n  name: x\nspec:\n  peer: b\n  transport: direct\n  direct:\n    address: 192.0.2.10\n"
+	stdin := "apiVersion: strait.tako.id/v1\nkind: SiteLink\nmetadata:\n  name: x\nspec:\n  peer: b\n  transport: direct\n  direct:\n    address: 192.0.2.10\n"
 	v, r = validateJSON(t, stdin, "-f", "-", "-f", filepath.Join(dir, "nested", "peer.yml"))
 	if r.code != 1 || v.Objects != 2 || v.Errors != 1 || v.Problems[0].File != "-" || v.Problems[0].Document != 1 {
 		t.Errorf("stdin: exit %d, got %+v", r.code, v)
@@ -142,7 +142,7 @@ func TestValidateSources(t *testing.T) {
 
 // A document that cannot be decoded is an error that names its file, document and object.
 func TestValidateDecodeErrors(t *testing.T) {
-	stdin := `apiVersion: strait.tako.id/v1alpha1
+	stdin := `apiVersion: strait.tako.id/v1
 kind: SiteService
 metadata:
   name: pg
@@ -151,7 +151,7 @@ spec:
   mode: Single
   unknownhold: 30s
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: a
@@ -159,7 +159,7 @@ spec:
   exchange:
     pollInterval: often
 ---
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Route
 metadata:
   name: r
@@ -185,8 +185,8 @@ metadata:
 	for i, want := range []struct{ object, message string }{
 		{"SiteService/app/pg", `unknown field "spec.unknownhold"`},
 		{"Site/a", `time: invalid duration "often"`},
-		{"Route/r", "Route is not a kind of strait.tako.id/v1alpha1"},
-		{"Site/b", "Site is not a kind of strait.tako.id/v1alpha1"},
+		{"Route/r", "Route is not a kind of strait.tako.id/v1"},
+		{"Site/b", "Site is not a kind of strait.tako.id/v1"},
 		{"/no-kind", "apiVersion and kind are required"},
 	} {
 		found := false
@@ -200,6 +200,45 @@ metadata:
 	for i := 1; i < len(v.Problems); i++ {
 		if v.Problems[i-1].Document > v.Problems[i].Document {
 			t.Errorf("problems are not in document order")
+		}
+	}
+}
+
+// A document of the deprecated version is checked with the rules of v1, and warns. The other two warnings are the missing SitePeer.
+func TestValidateDeprecatedVersion(t *testing.T) {
+	stdin := `apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-direct
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: 192.0.2.10
+---
+apiVersion: strait.tako.id/v1alpha1
+kind: SiteLink
+metadata:
+  name: b-wan
+spec:
+  peer: b
+  transport: direct
+  direct:
+    address: 192.0.2.10
+`
+	v, r := validateJSON(t, stdin, "-f", "-")
+	if r.code != 1 || v.Objects != 2 || v.Errors != 1 || v.Warnings != 4 {
+		t.Fatalf("exit %d, got %+v", r.code, v)
+	}
+	want := "strait.tako.id/v1alpha1 is deprecated; use strait.tako.id/v1"
+	for _, doc := range []int{1, 2} {
+		found := false
+		for _, p := range v.Problems {
+			found = found || (p.Document == doc && p.Severity == "Warning" && p.Field == "apiVersion" && p.Message == want)
+		}
+		if !found {
+			t.Errorf("document %d: no deprecation warning in %+v", doc, v.Problems)
 		}
 	}
 }

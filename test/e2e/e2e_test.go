@@ -35,6 +35,7 @@ func TestE2E(t *testing.T) {
 	}{
 		{"setup", e.setup},
 		{"1-baseline", e.baseline},
+		{"import", e.importService},
 		{"2-link-failover", e.linkFailover},
 		{"3-switchover", e.switchover},
 		{"4-partition", e.partition},

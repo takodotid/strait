@@ -16,7 +16,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -93,9 +93,9 @@ func (r *recorder) take() []string {
 	return out
 }
 
-func exchangeSpec(interval, timeout time.Duration) func() v1alpha1.ExchangeSpec {
-	return func() v1alpha1.ExchangeSpec {
-		return v1alpha1.ExchangeSpec{PollInterval: metav1.Duration{Duration: interval}, PeerTimeout: metav1.Duration{Duration: timeout}}
+func exchangeSpec(interval, timeout time.Duration) func() straitv1.ExchangeSpec {
+	return func() straitv1.ExchangeSpec {
+		return straitv1.ExchangeSpec{PollInterval: metav1.Duration{Duration: interval}, PeerTimeout: metav1.Duration{Duration: timeout}}
 	}
 }
 
@@ -180,7 +180,7 @@ func TestPollSiteMismatch(t *testing.T) {
 	if !state.LastSuccess.Equal(good.LastSuccess) || doc.Site != "b" {
 		t.Errorf("site mismatch replaced the last good poll")
 	}
-	if len(p.View("app", "pg", []v1alpha1.Member{{Name: "pg-b", Site: "b"}}, time.Now(), time.Minute)) != 0 {
+	if len(p.View("app", "pg", []straitv1.Member{{Name: "pg-b", Site: "b"}}, time.Now(), time.Minute)) != 0 {
 		t.Errorf("view holds a peer that answered for another site")
 	}
 
@@ -331,7 +331,7 @@ func TestChanged(t *testing.T) {
 	if got := rec.take(); !slices.Equal(got, []string{"b"}) {
 		t.Errorf("observedAt changed: want one call, have %v", got)
 	}
-	o.State = v1alpha1.StateTransitioning
+	o.State = straitv1.StateTransitioning
 	s.set(siteDocument("b", o), nil)
 	round()
 	if got := rec.take(); !slices.Equal(got, []string{"b"}) {
@@ -405,7 +405,7 @@ func TestPeerRemoved(t *testing.T) {
 }
 
 func TestView(t *testing.T) {
-	members := []v1alpha1.Member{{Name: "pg-a", Site: "a"}, {Name: "pg-b", Site: "b"}, {Name: "pg-c", Site: "c"}}
+	members := []straitv1.Member{{Name: "pg-a", Site: "a"}, {Name: "pg-b", Site: "b"}, {Name: "pg-c", Site: "c"}}
 	_, b := newSite(t, "b", siteDocument("b", obs("pg-b", "b"), obs("pg-a", "b"), obs("pg-x", "b")))
 	_, c := newSite(t, "c", siteDocument("c", obs("pg-c", "c")))
 	l := &Local{}
@@ -433,7 +433,7 @@ func TestView(t *testing.T) {
 	if len(rb.Members) != 1 {
 		t.Errorf("want only pg-b, have %v", rb.Members)
 	}
-	if o := rb.Members["pg-b"]; o.Site != "b" || o.State != v1alpha1.StateStable || !o.Eligible {
+	if o := rb.Members["pg-b"]; o.Site != "b" || o.State != straitv1.StateStable || !o.Eligible {
 		t.Errorf("pg-b: %+v", o)
 	}
 	rd, ok := view["d"]

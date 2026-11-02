@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 const podIP = "10.244.1.7"
@@ -37,7 +37,7 @@ func scheme(t *testing.T) *runtime.Scheme {
 	if err := clientgoscheme.AddToScheme(s); err != nil {
 		t.Fatal(err)
 	}
-	if err := v1alpha1.AddToScheme(s); err != nil {
+	if err := straitv1.AddToScheme(s); err != nil {
 		t.Fatal(err)
 	}
 	return s
@@ -50,15 +50,15 @@ func objectMeta(namespace, name string) metav1.ObjectMeta {
 // fixture is site a with 2 exports, 2 imports and peer b over a direct link (cost 10) and a wireguard link (cost 100).
 // It also holds objects that Collect leaves out: an export and an import with no port, and a link with a host name.
 func fixture(t *testing.T) client.Client {
-	site := &v1alpha1.Site{
+	site := &straitv1.Site{
 		ObjectMeta: metav1.ObjectMeta{Name: "a"},
-		Spec:       v1alpha1.SiteSpec{Gateway: v1alpha1.GatewaySpec{ControlPort: 30900, PeerPort: 14999}},
+		Spec:       straitv1.SiteSpec{Gateway: straitv1.GatewaySpec{ControlPort: 30900, PeerPort: 14999}},
 	}
-	export := func(name, svc string, port, gatewayPort int32) *v1alpha1.Export {
-		return &v1alpha1.Export{
+	export := func(name, svc string, port, gatewayPort int32) *straitv1.Export {
+		return &straitv1.Export{
 			ObjectMeta: objectMeta("app", name),
-			Spec:       v1alpha1.ExportSpec{Service: v1alpha1.ServicePortRef{Name: svc, Port: port}},
-			Status:     v1alpha1.ExportStatus{GatewayPort: gatewayPort},
+			Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: svc, Port: port}},
+			Status:     straitv1.ExportStatus{GatewayPort: gatewayPort},
 		}
 	}
 	service := func(name, portName string, port int32) *corev1.Service {
@@ -73,23 +73,23 @@ func fixture(t *testing.T) client.Client {
 			{Addresses: []string{"10.110.1.6"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(false)}},
 		},
 	}
-	imp := func(name, export string, gatewayPort, remotePort int32) *v1alpha1.Import {
-		return &v1alpha1.Import{
+	imp := func(name, export string, gatewayPort, remotePort int32) *straitv1.Import {
+		return &straitv1.Import{
 			ObjectMeta: objectMeta("app", name),
-			Spec:       v1alpha1.ImportSpec{Site: "b", Export: export},
-			Status:     v1alpha1.ImportStatus{GatewayPort: gatewayPort, RemotePort: remotePort},
+			Spec:       straitv1.ImportSpec{Site: "b", Export: export},
+			Status:     straitv1.ImportStatus{GatewayPort: gatewayPort, RemotePort: remotePort},
 		}
 	}
-	peer := &v1alpha1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Spec: v1alpha1.SitePeerSpec{ControlPort: 30910}}
-	direct := func(name string, cost int32, addr string) *v1alpha1.SiteLink {
-		return &v1alpha1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: v1alpha1.SiteLinkSpec{
-			Peer: "b", Transport: v1alpha1.TransportDirect, Cost: cost, Encryption: v1alpha1.EncryptionNone,
-			Direct: &v1alpha1.DirectLink{Address: addr},
+	peer := &straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}, Spec: straitv1.SitePeerSpec{ControlPort: 30910}}
+	direct := func(name string, cost int32, addr string) *straitv1.SiteLink {
+		return &straitv1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: straitv1.SiteLinkSpec{
+			Peer: "b", Transport: straitv1.TransportDirect, Cost: cost, Encryption: straitv1.EncryptionNone,
+			Direct: &straitv1.DirectLink{Address: addr},
 		}}
 	}
-	wg := &v1alpha1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "a-b-wg"}, Spec: v1alpha1.SiteLinkSpec{
-		Peer: "b", Transport: v1alpha1.TransportWireGuard, Cost: 100,
-		WireGuard: &v1alpha1.WireGuardLink{Address: "10.200.0.1/30", PeerAddress: "10.200.0.2"},
+	wg := &straitv1.SiteLink{ObjectMeta: metav1.ObjectMeta{Name: "a-b-wg"}, Spec: straitv1.SiteLinkSpec{
+		Peer: "b", Transport: straitv1.TransportWireGuard, Cost: 100,
+		WireGuard: &straitv1.WireGuardLink{Address: "10.200.0.1/30", PeerAddress: "10.200.0.2"},
 	}}
 	return fake.NewClientBuilder().WithScheme(scheme(t)).WithObjects(
 		site,

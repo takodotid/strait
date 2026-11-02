@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
 	"github.com/takodotid/strait/internal/plugin"
 )
@@ -66,7 +66,7 @@ type Link struct {
 // An export whose endpoints cannot be read has none. A link whose address is not an IP address is left out.
 func Collect(ctx context.Context, r client.Reader, controllerAddr string) (Model, error) {
 	logger := log.FromContext(ctx)
-	var sites v1alpha1.SiteList
+	var sites straitv1.SiteList
 	if err := r.List(ctx, &sites); err != nil {
 		return Model{}, err
 	}
@@ -76,7 +76,7 @@ func Collect(ctx context.Context, r client.Reader, controllerAddr string) (Model
 	gw := sites.Items[0].Spec.Gateway
 	m := Model{ControlPort: gw.ControlPort, PeerPort: gw.PeerPort, Controller: controllerAddr}
 
-	var exports v1alpha1.ExportList
+	var exports straitv1.ExportList
 	if err := r.List(ctx, &exports); err != nil {
 		return Model{}, err
 	}
@@ -97,7 +97,7 @@ func Collect(ctx context.Context, r client.Reader, controllerAddr string) (Model
 		m.Exports = append(m.Exports, x)
 	}
 
-	var imports v1alpha1.ImportList
+	var imports straitv1.ImportList
 	if err := r.List(ctx, &imports); err != nil {
 		return Model{}, err
 	}
@@ -111,11 +111,11 @@ func Collect(ctx context.Context, r client.Reader, controllerAddr string) (Model
 		})
 	}
 
-	var peers v1alpha1.SitePeerList
+	var peers straitv1.SitePeerList
 	if err := r.List(ctx, &peers); err != nil {
 		return Model{}, err
 	}
-	var siteLinks v1alpha1.SiteLinkList
+	var siteLinks straitv1.SiteLinkList
 	if err := r.List(ctx, &siteLinks); err != nil {
 		return Model{}, err
 	}

@@ -8,14 +8,14 @@ import (
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 type linkView struct {
 	Name       string              `json:"name"`
 	Peer       string              `json:"peer"`
-	Transport  v1alpha1.Transport  `json:"transport"`
-	Encryption v1alpha1.Encryption `json:"encryption"`
+	Transport  straitv1.Transport  `json:"transport"`
+	Encryption straitv1.Encryption `json:"encryption"`
 	Cost       int32               `json:"cost"`
 	// EndpointDirect is true on a direct link with endpointDirect.
 	EndpointDirect bool `json:"endpointDirect"`
@@ -48,15 +48,15 @@ SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 			if err != nil {
 				return err
 			}
-			var links v1alpha1.SiteLinkList
+			var links straitv1.SiteLinkList
 			if err := r.List(cmd.Context(), &links); err != nil {
 				return fmt.Errorf("list SiteLinks: %w", err)
 			}
 			v := []linkView{}
 			for _, l := range links.Items {
 				enc := l.Spec.Encryption
-				if enc == "" && l.Spec.Transport == v1alpha1.TransportWireGuard {
-					enc = v1alpha1.EncryptionWireGuard
+				if enc == "" && l.Spec.Transport == straitv1.TransportWireGuard {
+					enc = straitv1.EncryptionWireGuard
 				}
 				v = append(v, linkView{
 					Name:               l.Name,

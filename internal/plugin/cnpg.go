@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -40,7 +40,7 @@ const postgresPort = 5432
 type CNPG struct{}
 
 // Observe implements Plugin.
-func (CNPG) Observe(ctx context.Context, r client.Reader, svc *v1alpha1.SiteService, site string, now time.Time) observe.Report {
+func (CNPG) Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteService, site string, now time.Time) observe.Report {
 	role := svc.Spec.Plugin.CNPG.Role
 	rep := observe.Report{Members: map[string]observe.Observation{}}
 	declared := map[string]bool{}
@@ -135,22 +135,22 @@ func (c cluster) transition() string {
 }
 
 // observeCluster returns the member's observation and the cluster's declaration (a self name, or "").
-func observeCluster(ctx context.Context, r client.Reader, namespace string, m v1alpha1.Member, role v1alpha1.CNPGRole, now time.Time) (observe.Observation, string) {
+func observeCluster(ctx context.Context, r client.Reader, namespace string, m straitv1.Member, role straitv1.CNPGRole, now time.Time) (observe.Observation, string) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(cnpgCluster)
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: m.CNPG.Cluster}, u); err != nil {
 		if apierrors.IsNotFound(err) {
-			return observe.Observation{Member: m.Name, Role: v1alpha1.RoleUnknown, State: v1alpha1.StateStable, Reason: "ClusterNotFound", ObservedAt: now}, ""
+			return observe.Observation{Member: m.Name, Role: straitv1.RoleUnknown, State: straitv1.StateStable, Reason: "ClusterNotFound", ObservedAt: now}, ""
 		}
 		return observe.Unknown(m.Name, "", "ReadFailed: "+err.Error(), now), ""
 	}
 	c := readCluster(u)
-	o := observe.Observation{Member: m.Name, Role: v1alpha1.RolePrimary, State: v1alpha1.StateStable, ObservedAt: now}
+	o := observe.Observation{Member: m.Name, Role: straitv1.RolePrimary, State: straitv1.StateStable, ObservedAt: now}
 	if c.replica {
-		o.Role = v1alpha1.RoleReplica
+		o.Role = straitv1.RoleReplica
 	}
 	if t := c.transition(); t != "" {
-		o.State = v1alpha1.StateTransitioning
+		o.State = straitv1.StateTransitioning
 		o.Reason = t
 	}
 
@@ -179,12 +179,12 @@ func observeCluster(ctx context.Context, r client.Reader, namespace string, m v1
 		setReason(&o, "NoReadyEndpoint")
 		return o, c.declared
 	}
-	if o.State != v1alpha1.StateStable {
+	if o.State != straitv1.StateStable {
 		return o, c.declared
 	}
 	switch role {
-	case v1alpha1.CNPGRolePrimary:
-		o.Eligible = o.Role == v1alpha1.RolePrimary
+	case straitv1.CNPGRolePrimary:
+		o.Eligible = o.Role == straitv1.RolePrimary
 		o.Reason = "PrimaryCluster"
 		if !o.Eligible {
 			o.Reason = "ReplicaCluster"
@@ -203,11 +203,11 @@ func setReason(o *observe.Observation, reason string) {
 }
 
 // endpointService returns the cluster's Service for the role.
-func endpointService(c cluster, role v1alpha1.CNPGRole) string {
+func endpointService(c cluster, role straitv1.CNPGRole) string {
 	switch role {
-	case v1alpha1.CNPGRolePrimary:
+	case straitv1.CNPGRolePrimary:
 		return c.name + "-rw"
-	case v1alpha1.CNPGRoleReplica:
+	case straitv1.CNPGRoleReplica:
 		if c.replica {
 			return c.name + "-r"
 		}
@@ -217,14 +217,14 @@ func endpointService(c cluster, role v1alpha1.CNPGRole) string {
 }
 
 // poolerTypes is the Pooler type that matches each role.
-var poolerTypes = map[v1alpha1.CNPGRole]string{
-	v1alpha1.CNPGRolePrimary: "rw",
-	v1alpha1.CNPGRoleReplica: "ro",
-	v1alpha1.CNPGRoleAny:     "r",
+var poolerTypes = map[straitv1.CNPGRole]string{
+	straitv1.CNPGRolePrimary: "rw",
+	straitv1.CNPGRoleReplica: "ro",
+	straitv1.CNPGRoleAny:     "r",
 }
 
 // poolerUsable reports whether the Pooler belongs to the cluster, matches the role, and is not paused.
-func poolerUsable(ctx context.Context, r client.Reader, namespace, name, clusterName string, role v1alpha1.CNPGRole) (bool, string, error) {
+func poolerUsable(ctx context.Context, r client.Reader, namespace, name, clusterName string, role straitv1.CNPGRole) (bool, string, error) {
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(cnpgPooler)
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, u); err != nil {

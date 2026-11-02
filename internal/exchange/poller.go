@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/observe"
 )
 
@@ -53,15 +53,16 @@ type Poller struct {
 	// URL returns a peer's base URL. Path is appended to it.
 	URL func(peer string) (string, error)
 	// Exchange returns the poll interval and the peer timeout. Read every round.
-	Exchange func() v1alpha1.ExchangeSpec
+	Exchange func() straitv1.ExchangeSpec
 	// Changed is called when a peer's document changes, apart from generatedAt, or its freshness flips.
 	// It runs on the poller's goroutine and must not block.
 	Changed func(peer string)
 	// Client sends the polls. When nil, a client with no proxy, no keep-alive and no redirect is used.
 	Client *http.Client
 
-	mu    sync.Mutex
-	peers map[string]*peer
+	mu      sync.Mutex
+	peers   map[string]*peer
+	started time.Time
 }
 
 // Start polls every peer until ctx is cancelled.
@@ -72,6 +73,9 @@ func (p *Poller) Start(ctx context.Context) error {
 	if p.Client == nil {
 		p.Client = newClient()
 	}
+	p.mu.Lock()
+	p.started = time.Now()
+	p.mu.Unlock()
 	for {
 		start := time.Now()
 		ex := p.Exchange()
@@ -259,6 +263,13 @@ func (p *Poller) Fresh(peer string, now time.Time, timeout time.Duration) bool {
 	return ok && s.state.Fresh(now, timeout)
 }
 
+// Started returns when Start began, from time.Now. Zero before. A peer's state counts from then.
+func (p *Poller) Started() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.started
+}
+
 // Snapshot returns a peer's last good document, which may be stale, and its poll state.
 // The document is shared and must not be modified.
 func (p *Poller) Snapshot(peer string) (Document, PeerState) {
@@ -274,7 +285,7 @@ func (p *Poller) Snapshot(peer string) (Document, PeerState) {
 // View returns what every fresh peer reports about one SiteService, by peer name. now must come from time.Now.
 // A peer's report holds only the observations of members that the spec places at that peer.
 // A stale peer is left out, so its members count as Unknown and its declaration as unknown.
-func (p *Poller) View(namespace, name string, members []v1alpha1.Member, now time.Time, timeout time.Duration) map[string]observe.Report {
+func (p *Poller) View(namespace, name string, members []straitv1.Member, now time.Time, timeout time.Duration) map[string]observe.Report {
 	site := map[string]string{}
 	for _, m := range members {
 		site[m.Name] = m.Site

@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/takodotid/strait/api/v1alpha1"
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 // CNPG kinds the cnpg plugin reads.
@@ -34,13 +34,13 @@ func (r *SiteServiceReconciler) SetupWithManager(mgr ctrl.Manager, changes <-cha
 		return r.all(ctx, o.GetNamespace())
 	})
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.SiteService{}).
+		For(&straitv1.SiteService{}).
 		Owns(&corev1.Service{}).
-		Owns(&v1alpha1.Export{}).
-		Owns(&v1alpha1.Import{}).
+		Owns(&straitv1.Export{}).
+		Owns(&straitv1.Import{}).
 		Watches(&discoveryv1.EndpointSlice{}, inNamespace).
-		Watches(&v1alpha1.Site{}, all).
-		Watches(&v1alpha1.SiteLink{}, all).
+		Watches(&straitv1.Site{}, all).
+		Watches(&straitv1.SiteLink{}, all).
 		WatchesRawSource(source.Channel(changes, all)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1})
 	if watchCNPG {
@@ -54,7 +54,7 @@ func (r *SiteServiceReconciler) SetupWithManager(mgr ctrl.Manager, changes <-cha
 }
 
 func (r *SiteServiceReconciler) all(ctx context.Context, namespace string) []reconcile.Request {
-	var list v1alpha1.SiteServiceList
+	var list straitv1.SiteServiceList
 	opts := []client.ListOption{}
 	if namespace != "" {
 		opts = append(opts, client.InNamespace(namespace))

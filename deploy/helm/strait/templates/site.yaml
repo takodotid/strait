@@ -1,5 +1,5 @@
 {{- if .Values.site.create }}
-apiVersion: strait.tako.id/v1alpha1
+apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
   name: {{ required "site.name is required" .Values.site.name }}
