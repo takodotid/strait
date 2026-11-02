@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # One image holds every Strait binary and the man pages.
 # The build stage runs on the builder's platform and cross-compiles, so a multi-arch build needs no emulation.
-FROM --platform=$BUILDPLATFORM golang:1.27.3@sha256:9048d5e7751706200eb1719c7dae0436950d362f29a1da91fa05e5c63867c60f AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
