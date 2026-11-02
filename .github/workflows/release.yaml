@@ -63,7 +63,7 @@ jobs:
       - run: make verify test
       - name: CLI archives
         run: |
-          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             make dist VERSION="$GITHUB_REF_NAME" GOOS="${p%/*}" GOARCH="${p#*/}"
           done
       - name: Helm chart
@@ -81,5 +81,5 @@ jobs:
         run: |
           cat config/crd/*.yaml > dist/strait-crds.yaml
           cd dist
-          sha256sum *.tar.gz *.tgz strait-crds.yaml > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.tgz strait-crds.yaml SHA256SUMS
+          sha256sum *.tar.gz *.zip *.tgz strait-crds.yaml > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.zip *.tgz strait-crds.yaml SHA256SUMS
