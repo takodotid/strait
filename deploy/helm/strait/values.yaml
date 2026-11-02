@@ -1,13 +1,13 @@
 image:
   repository: ghcr.io/takodotid/strait
   # Defaults to the chart's appVersion.
-  tag: ""
+  tag: "@sha256:29953007e318af996c46cf0373f950fc7da06b647d091a4b95d1bfdbb2c6d823"
   pullPolicy: IfNotPresent
 
 envoy:
   image:
     repository: envoyproxy/envoy
-    tag: distroless-v1.40.2
+    tag: distroless-v1.40.2@sha256:09ca6f2140a61ad8df11779a4a30d52b48433d444466328494f9188c9c35eded
     pullPolicy: IfNotPresent
   # Envoy worker threads.
   concurrency: 2
