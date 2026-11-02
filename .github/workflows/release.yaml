@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   image:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
@@ -47,7 +47,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: image
     permissions:
       contents: write
