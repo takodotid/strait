@@ -98,7 +98,7 @@ Held                  False   NoHeldUnknown           12m    -
 
 | Item | Value |
 |---|---|
-| Release | v1.0.0 |
+| Release | v1.1.0 |
 | API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
@@ -127,13 +127,13 @@ Each release publishes:
 |---|---|
 | Helm chart | `oci://ghcr.io/takodotid/charts/strait` |
 | Image, linux/amd64 and linux/arm64 | `ghcr.io/takodotid/strait` |
-| CLI archives for Linux and macOS, amd64 and arm64, with `SHA256SUMS` | [GitHub releases](https://github.com/takodotid/strait/releases) |
+| CLI archives for Linux, macOS and Windows, amd64 and arm64, with `SHA256SUMS` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 | The CRDs, in one file: `strait-crds.yaml` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.0.0 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.0 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -142,7 +142,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v1.0.0
+v=v1.1.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -152,12 +152,44 @@ sudo install "strait_${v}_linux_amd64/strait" "strait_${v}_linux_amd64/kubectl-s
 
 The archive also holds the man pages in `man/man1/` and the skill document `SKILL.md`.
 
+### CLI on Windows
+
+The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
+
+```powershell
+$v = "v1.1.0"
+$a = "strait_${v}_windows_amd64"
+$url = "https://github.com/takodotid/strait/releases/download/$v"
+Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
+Invoke-WebRequest "$url/SHA256SUMS" -OutFile SHA256SUMS -UseBasicParsing
+$sum = (Get-Content SHA256SUMS | Where-Object { $_.EndsWith("  $a.zip") }).Split(" ")[0]
+if ((Get-FileHash "$a.zip" -Algorithm SHA256).Hash -ne $sum) { throw "$a.zip does not match SHA256SUMS" }
+Expand-Archive "$a.zip" -DestinationPath .
+$bin = "$env:LOCALAPPDATA\Programs\strait"
+New-Item -ItemType Directory -Force $bin | Out-Null
+Copy-Item "$a\strait.exe", "$a\kubectl-strait.exe" $bin
+```
+
+Add that folder to `Path` once, then open a new terminal. kubectl finds `kubectl-strait.exe` there, so `kubectl strait` runs the same commands. Flags go after `strait`:
+
+```powershell
+strait version
+kubectl plugin list
+kubectl strait --context site-a status
+```
+
+| Difference on Windows | Detail |
+|---|---|
+| Exit status of `kubectl strait` | 1 on every failure, and kubectl adds the line `Error: exit status N`: kubectl runs a plugin there as a child process. `strait.exe` exits with 0, 1 or 2 as on other systems. |
+| Man pages | Windows has no `man`. `strait --help` and `strait COMMAND --help` hold the same text. |
+| Skill document | Copy `SKILL.md` from the archive into `<skills dir>\strait\`. In Windows PowerShell 5.1, `strait --skill > SKILL.md` writes UTF-16LE, not the UTF-8 that `strait` prints. |
+
 ### Upgrade
 
 Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. At each site, apply the new release's CRDs first, then upgrade the chart with the same values:
 
 ```sh
-v=v1.0.0
+v=v1.1.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
 helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" \
@@ -236,7 +268,7 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 | `strait --skill` | Prints the skill document for AI agents. |
 | `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 
-Each command that reads a cluster reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, the same commands run as `kubectl strait`.
+Each command that reads a cluster reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, or `kubectl-strait.exe` on Windows, the same commands run as `kubectl strait`.
 
 For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skill that explains how to read Strait's state.
 

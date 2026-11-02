@@ -39,15 +39,22 @@ docs: ## Write the man pages into bin/man and the skill document into bin/SKILL.
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 DIST := dist/strait_$(VERSION)_$(GOOS)_$(GOARCH)
+EXE := $(if $(filter windows,$(GOOS)),.exe)
+# Runs a tool of the build on the host, whatever GOOS and GOARCH the archive is for.
+HOSTGO := GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) go
 
 .PHONY: dist
-dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill document.
-	rm -rf $(DIST) && mkdir -p $(DIST)/man/man1
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w $(VERSION_LDFLAGS)" -o $(DIST)/strait ./cmd/strait
-	cp $(DIST)/strait $(DIST)/kubectl-strait
-	GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) go run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
+dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill document. A .zip for windows, a .tar.gz otherwise.
+	rm -rf $(DIST) $(DIST).zip $(DIST).tar.gz && mkdir -p $(DIST)/man/man1
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w $(VERSION_LDFLAGS)" -o $(DIST)/strait$(EXE) ./cmd/strait
+	cp $(DIST)/strait$(EXE) $(DIST)/kubectl-strait$(EXE)
+	$(HOSTGO) run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
 	cp LICENSE README.md $(DIST)/
+ifeq ($(GOOS),windows)
+	$(HOSTGO) run ./hack/zipdir $(DIST).zip $(DIST)
+else
 	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
+endif
 
 .PHONY: test
 test: ## Run unit tests.
