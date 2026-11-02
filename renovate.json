@@ -2,5 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>takodotid/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "The chart's own image follows the chart's appVersion; never pin it.",
+      "matchPackageNames": ["ghcr.io/takodotid/strait"],
+      "enabled": false
+    }
   ]
 }
