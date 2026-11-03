@@ -8,31 +8,43 @@ Strait routes. It never fails over, promotes or demotes a workload. The workload
 
 ## How it works
 
-```
-            site a                                           site b
-+---------------------------+                    +---------------------------+
-| app                       |                    |                       app |
-|  |                        |                    |                        |  |
-|  v                        |                    |                        v  |
-| pg.app.svc                |                    |                pg.app.svc |
-|  |                        |                    |                        |  |
-|  v                        |                    |                        |  |
-| pg-a <------- gateway a   |<====== link ======>|  gateway b <-----------+  |
-| primary            ^      |                    |     ^                     |
-|                xDS |      |                    |     | xDS                 |
-|             controller a  |<-- observations -->|  controller b             |
-|                    |      |                    |     |                     |
-|              reads |      |                    |     | reads               |
-|                    v      |                    |     v                     |
-|             Cluster pg-a  |                    |  Cluster pg-b, replica    |
-+---------------------------+                    +---------------------------+
-```
+The same `SiteService`, named `pg`, is applied at both sites. Each site decides its own route. A connection to `pg.app.svc` takes this path:
 
-The same `SiteService`, named `pg`, is applied at both sites. Each site decides its own route:
+```mermaid
+flowchart LR
+  subgraph sb["site b: the primary is remote"]
+    appB["app"] -->|"connects to"| nameB["pg.app.svc<br/>endpoints: gateway b"]
+    nameB --> gwB["strait-gateway b"]
+  end
+  subgraph sa["site a: the primary is local"]
+    appA["app"] -->|"connects to"| nameA["pg.app.svc<br/>endpoints: the pods of pg-a"]
+    nameA --> pgA[("pg-a<br/>primary")]
+    gwA["strait-gateway a"] --> pgA
+  end
+  gwB ==>|"link, direct or wireguard"| gwA
+```
 
 - At site a, the primary `pg-a` is local. `pg.app.svc` points at its pods.
 - At site b, the primary is remote. `pg.app.svc` points at gateway b, which carries each connection over the link to gateway a, and on to `pg-a`.
-- Each controller reads only its own site's members, and polls the other site's observations through the gateways, over the same link.
+
+The route comes from the controller at each site:
+
+```mermaid
+flowchart LR
+  subgraph sa["site a"]
+    clA["Cluster pg-a<br/>primary"] -->|"plugin reads,<br/>read-only"| ctrlA["strait-controller a"]
+    ctrlA -->|"writes endpoints"| nameA["pg.app.svc"]
+    ctrlA -->|"xDS"| gwA["strait-gateway a"]
+  end
+  subgraph sb["site b"]
+    clB["Cluster pg-b<br/>replica"] -->|"plugin reads,<br/>read-only"| ctrlB["strait-controller b"]
+    ctrlB -->|"writes endpoints"| nameB["pg.app.svc"]
+    ctrlB -->|"xDS"| gwB["strait-gateway b"]
+  end
+  ctrlA <-.->|"observations,<br/>polled over the link"| ctrlB
+```
+
+Each controller reads only its own site's members, and polls the other site's observations through the gateways, over the same link.
 
 | Piece | Runs as | Does |
 |---|---|---|
