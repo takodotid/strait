@@ -52,6 +52,8 @@ type SiteServiceReconciler struct {
 	// inPlace keeps, by SiteService, the EndpointSlices in place after the last apply, so that a slice the cache does
 	// not show yet is still deleted.
 	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
+	// decided keeps, by SiteService, the members of the last decision: the next decision's previous route.
+	decided map[types.NamespacedName][]string
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -63,6 +65,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			r.Local.DeleteService(req.Namespace, req.Name)
 			delete(r.confirmed, req.NamespacedName)
 			delete(r.inPlace, req.NamespacedName)
+			delete(r.decided, req.NamespacedName)
 			r.written.forget(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -121,12 +124,16 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			read[m.Site] = true
 		}
 	}
+	previous, err := r.previousRoute(ctx, &svc)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	in := decide.Input{
 		Spec:          svc.Spec,
 		LocalSite:     site.Name,
 		Sites:         sites,
 		Observations:  observations,
-		Previous:      svc.Status.Route.Members,
+		Previous:      previous,
 		LastConfirmed: confirmed,
 		Now:           now,
 		Started:       started,
@@ -134,6 +141,10 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	result := decide.Decide(in)
 	shown := startupStatus(result, in, r.Peers.Polled())
+	if r.decided == nil {
+		r.decided = map[types.NamespacedName][]string{}
+	}
+	r.decided[req.NamespacedName] = slices.Clone(result.Members)
 
 	if err := r.syncExportsImports(ctx, &svc, site.Name, report); err != nil {
 		return ctrl.Result{}, err
@@ -172,6 +183,26 @@ func startupStatus(result decide.Result, in decide.Input, polled bool) decide.Re
 		strings.Join(unread, ", "), result.Reason, result.Message)
 	result.Reason = straitv1.ReasonAwaitingPeers
 	return result
+}
+
+// previousRoute returns the members of the last decision. After a start, it returns the members of status.route that
+// have an EndpointSlice in place. Status alone can be older than the last decision, when a status write failed, and the
+// slices alone can hold a member that the last decision dropped, when its delete failed.
+func (r *SiteServiceReconciler) previousRoute(ctx context.Context, svc *straitv1.SiteService) ([]string, error) {
+	if members, ok := r.decided[client.ObjectKeyFromObject(svc)]; ok {
+		return members, nil
+	}
+	inPlace, err := r.slicesInPlace(ctx, svc)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, m := range svc.Status.Route.Members {
+		if es, ok := inPlace[memberObjectName(svc, m)]; ok && es.Labels[LabelMember] == m {
+			out = append(out, m)
+		}
+	}
+	return out, nil
 }
 
 // lastConfirmed returns each member's last confirmed time, from memory or else from status.

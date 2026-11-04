@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,7 +30,9 @@ import (
 // application name web has the EndpointSlices of two members.
 type faults struct {
 	// fail is the write to fail, counted from 1 since the last arm. 0 fails none.
-	fail   int
+	fail int
+	// failOn fails every write whose description contains it, while armed.
+	failOn string
 	armed  bool
 	writes []string
 	// twice holds each write after which two members had a slice.
@@ -38,7 +41,12 @@ type faults struct {
 
 // arm counts writes from now on, and fails the nth.
 func (f *faults) arm(n int) {
-	f.armed, f.fail, f.writes = true, n, nil
+	f.armed, f.fail, f.failOn, f.writes = true, n, "", nil
+}
+
+// armOn fails, from now on, every write whose description contains what.
+func (f *faults) armOn(what string) {
+	f.armed, f.fail, f.failOn, f.writes = true, 0, what, nil
 }
 
 func (f *faults) disarm() { f.armed = false }
@@ -55,8 +63,8 @@ func (f *faults) client(t *testing.T, objs ...client.Object) client.Client {
 	do := func(ctx context.Context, c client.Client, what string, write func() error) error {
 		if f.armed {
 			f.writes = append(f.writes, what)
-			if len(f.writes) == f.fail {
-				return apierrors.NewInternalError(fmt.Errorf("injected failure of write %d, %s", f.fail, what))
+			if len(f.writes) == f.fail || (f.failOn != "" && strings.Contains(what, f.failOn)) {
+				return apierrors.NewInternalError(fmt.Errorf("injected failure of write %d, %s", len(f.writes), what))
 			}
 		}
 		if err := write(); err != nil {
@@ -251,4 +259,68 @@ func TestSwitchWhileCacheLags(t *testing.T) {
 	if m := sliceMembers(context.Background(), t, c); !slices.Equal(m, []string{"web-b"}) {
 		t.Fatalf("slices of %v", m)
 	}
+}
+
+// moving is a fresh peer b whose member web-b is a primary in a switchover.
+var moving = peers{
+	fresh: map[string]bool{"b": true},
+	view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
+		"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, State: straitv1.StateTransitioning, ObservedAt: now},
+	}}},
+}
+
+// The previous route is the last decision, not a status that a failed write left behind. A member that the route
+// dropped is not held when it turns Unknown, also after a restart (issue #32).
+func TestPreviousRouteIsTheLastDecision(t *testing.T) {
+	// web-b is routed through the gateway, then moves: the route drops it, but the status write fails.
+	setup := func(t *testing.T) (*SiteServiceReconciler, client.Client) {
+		t.Helper()
+		f := &faults{}
+		imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+		imp.Status.GatewayPort = 15001
+		c := f.client(t, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-b"), imp)...)
+		r := &SiteServiceReconciler{
+			Client: c, Reader: c, Recorder: events.NewFakeRecorder(100), Peers: declaring("web-b"), Local: &exchange.Local{},
+			Now: func() time.Time { return now },
+		}
+		run(t, r)
+		if st := status(t, c); !slices.Equal(st.Route.Members, []string{"web-b"}) {
+			t.Fatalf("before the move: route %+v", st.Route)
+		}
+		r.Peers = moving
+		r.Now = func() time.Time { return now.Add(time.Second) }
+		f.armOn("status")
+		_ = reconcileWeb(r)
+		f.disarm()
+		if m := sliceMembers(context.Background(), t, c); len(m) != 0 {
+			t.Fatalf("while web-b moves: slices of %v", m)
+		}
+		if st := status(t, c); !slices.Equal(st.Route.Members, []string{"web-b"}) {
+			t.Fatalf("the status write did not fail: route %+v", st.Route)
+		}
+		return r, c
+	}
+	// Then site b goes stale, within web-b's hold.
+	stale := func(t *testing.T, r *SiteServiceReconciler, c client.Client) {
+		t.Helper()
+		r.Peers = readB
+		r.Now = func() time.Time { return now.Add(2 * time.Second) }
+		run(t, r)
+		if st := status(t, c); len(st.Route.Members) != 0 || st.Route.Reason != straitv1.ReasonMemberUnknown {
+			t.Fatalf("route = %+v, want nowhere, MemberUnknown", st.Route)
+		}
+		if m := sliceMembers(context.Background(), t, c); len(m) != 0 {
+			t.Fatalf("slices of %v", m)
+		}
+	}
+
+	t.Run("same controller", func(t *testing.T) {
+		r, c := setup(t)
+		stale(t, r, c)
+	})
+	t.Run("after a restart", func(t *testing.T) {
+		r, c := setup(t)
+		restarted := &SiteServiceReconciler{Client: r.Client, Reader: r.Reader, Recorder: r.Recorder, Peers: r.Peers, Local: &exchange.Local{}, Now: r.Now}
+		stale(t, restarted, c)
+	})
 }

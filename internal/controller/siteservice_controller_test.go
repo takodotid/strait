@@ -268,7 +268,15 @@ func TestUnknownHeldThenNowhere(t *testing.T) {
 	ss.Status.Members = []straitv1.MemberStatus{{Name: "web-b", Site: "b", LastConfirmedTime: &metav1.Time{Time: now.Add(-5 * time.Second)}}}
 	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
 	imp.Status.GatewayPort = 15001
-	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss, imp)
+	// The slice that the previous controller wrote for the route.
+	es := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b", Labels: map[string]string{
+			discoveryv1.LabelServiceName: "web", LabelManagedBy: ManagedBy, LabelSiteService: "web", LabelMember: "web-b",
+		}},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"10.0.9.9"}}},
+	}
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss, imp, es)
 	r, c := reconciler(t, readB, objs...)
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonHeldUnknown || len(endpointSlices(t, c)) != 1 {
