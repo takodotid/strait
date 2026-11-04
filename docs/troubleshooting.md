@@ -29,6 +29,12 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 | `NoEligibleMember` | The `REASON` of each member | No member can take traffic. See [Members that are not eligible](#members-that-are-not-eligible). |
 | `AwaitingPeers` | `strait peers`, and the route's `Message` | The controller started and has not yet read every site with a member. The route is what it decided from the sites read so far, and the message gives that decision's reason. With `policy.startupHold`, it does not route to the local member until it reads them, or until the hold ends. The reason changes once every site has been read. A peer that stays unreachable keeps it: see [Unreachable peers](#unreachable-peers-and-unhealthy-links). |
 
+## Connections after a route change
+
+| Symptom | Cause and next step |
+|---|---|
+| A client still reaches the previous member, while the `SiteService`'s EndpointSlices no longer name it | A route change never moves an established connection: the client must reconnect. A new connection that reaches the previous member comes from the CNI's connection tracking. For Cilium, check that `cilium-dbg status --verbose` in the agent shows `Socket LB: Enabled`, and that the agent's configuration does not set `bpf-lb-sock-hostns-only` to `"true"`. [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
+
 ## Unknown members
 
 The `REASON` column of the members table, for a member whose `STATE` is `Unknown`:

@@ -10,6 +10,7 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 | Kernel module `wireguard` | On every node that can run a gateway pod. The gateway agent does not load it. |
 | Pod Security level `privileged` | In the gateway's namespace. The gateway agent runs as root with `NET_ADMIN`, to hold the WireGuard interfaces ([RFC0007](../rfcs/RFC0007.md)). |
 | A UDP path from site b to site a | Site b dials a node of site a on UDP port 32100. Here, `203.0.113.10` stands for that node's address. |
+| Socket load balancing for pods | Recommended, where the CNI load-balances Services. For Cilium: socket LB on, with `socketLB.hostNamespaceOnly=false`. Without it, a new connection can still reach the previous member after a route change: [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
 | CloudNativePG | At both sites, installed before Strait. One `Cluster` per site in namespace `app`, in CloudNativePG's distributed topology: `pg-a` at site a, `pg-b` at site b. Strait only reads them. |
 | Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](../README.md#install), [on Windows](../README.md#cli-on-windows)). |
 | A shell | The commands are for bash. On Windows, a line that runs only `strait` or `kubectl strait` works as written in PowerShell. The others need bash, for example in WSL. |
