@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
@@ -68,19 +70,11 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	old := exp.Status.DeepCopy()
 
 	rng := site.Spec.Gateway.ExportPorts
-	if p := exp.Status.GatewayPort; p < rng.First || p > rng.Last {
-		var list straitv1.ExportList
-		if err := r.List(ctx, &list); err != nil {
-			return ctrl.Result{}, err
-		}
-		used := map[int32]bool{}
-		for _, e := range list.Items {
-			if e.UID != exp.UID {
-				used[e.Status.GatewayPort] = true
-			}
-		}
-		exp.Status.GatewayPort = allocate(rng, used)
+	var list straitv1.ExportList
+	if err := r.List(ctx, &list); err != nil {
+		return ctrl.Result{}, err
 	}
+	exp.Status.GatewayPort = gatewayPort(ctx, rng, &exp, exp.Status.GatewayPort, otherPorts(list.Items, exp.UID, &r.written, exportPort))
 	alloc := metav1.Condition{Type: ConditionAllocated, Status: metav1.ConditionTrue, Reason: "Allocated", ObservedGeneration: exp.Generation}
 	if exp.Status.GatewayPort == 0 {
 		alloc.Status, alloc.Reason, alloc.Message = metav1.ConditionFalse, "RangeFull", fmt.Sprintf("no free port in %d-%d", rng.First, rng.Last)
@@ -107,6 +101,62 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+}
+
+// portHolder is another Export, or another Import, and the gateway port it holds.
+type portHolder struct {
+	key  types.NamespacedName
+	port int32
+}
+
+func exportPort(e *straitv1.Export) int32 { return e.Status.GatewayPort }
+func importPort(i *straitv1.Import) int32 { return i.Status.GatewayPort }
+
+// otherPorts returns the gateway port of each listed object but self: as the cache shows it or, while the cache
+// predates this controller's last status write of that object, as that write set it. So a port that this controller
+// allocated counts as taken before the cache shows it. That holds because the reconciles of one kind run one at a time.
+func otherPorts[T any, P interface {
+	*T
+	client.Object
+}](items []T, self types.UID, w *written[T, P], port func(P) int32) []portHolder {
+	out := make([]portHolder, 0, len(items))
+	for i := range items {
+		o := P(&items[i])
+		if o.GetUID() == self {
+			continue
+		}
+		w.latest(o)
+		out = append(out, portHolder{key: client.ObjectKeyFromObject(o), port: port(o)})
+	}
+	return out
+}
+
+// comesFirst orders two holders of one port as the gateway does: the lower namespace, then the lower name, keeps it.
+func comesFirst(a, b types.NamespacedName) bool {
+	return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name)) < 0
+}
+
+// gatewayPort returns the port that obj holds next. Obj keeps port while it is in rng and no other object that comes
+// first holds it. Otherwise obj gets the lowest port of rng that no other object holds, or 0 when there is none.
+func gatewayPort(ctx context.Context, rng straitv1.PortRange, obj client.Object, port int32, others []portHolder) int32 {
+	key := client.ObjectKeyFromObject(obj)
+	used := map[int32]bool{}
+	var holder *types.NamespacedName
+	for _, o := range others {
+		used[o.port] = true
+		if o.port == port && comesFirst(o.key, key) {
+			holder = &o.key
+		}
+	}
+	inRange := port >= rng.First && port <= rng.Last
+	if inRange && holder == nil {
+		return port
+	}
+	next := allocate(rng, used)
+	if inRange {
+		log.FromContext(ctx).Info("gateway port moved: another object holds it and comes first", "from", port, "to", next, "holder", holder.String())
+	}
+	return next
 }
 
 // allocate returns the lowest port of rng that is not used, or 0.
@@ -176,19 +226,11 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	old := imp.Status.DeepCopy()
 
 	rng := site.Spec.Gateway.ImportPorts
-	if p := imp.Status.GatewayPort; p < rng.First || p > rng.Last {
-		var list straitv1.ImportList
-		if err := r.List(ctx, &list); err != nil {
-			return ctrl.Result{}, err
-		}
-		used := map[int32]bool{}
-		for _, e := range list.Items {
-			if e.UID != imp.UID {
-				used[e.Status.GatewayPort] = true
-			}
-		}
-		imp.Status.GatewayPort = allocate(rng, used)
+	var list straitv1.ImportList
+	if err := r.List(ctx, &list); err != nil {
+		return ctrl.Result{}, err
 	}
+	imp.Status.GatewayPort = gatewayPort(ctx, rng, &imp, imp.Status.GatewayPort, otherPorts(list.Items, imp.UID, &r.written, importPort))
 	alloc := metav1.Condition{Type: ConditionAllocated, Status: metav1.ConditionTrue, Reason: "Allocated", ObservedGeneration: imp.Generation}
 	if imp.Status.GatewayPort == 0 {
 		alloc.Status, alloc.Reason, alloc.Message = metav1.ConditionFalse, "RangeFull", fmt.Sprintf("no free port in %d-%d", rng.First, rng.Last)

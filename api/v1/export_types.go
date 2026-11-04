@@ -40,7 +40,8 @@ type ServicePortRef struct {
 
 // ExportStatus shows the export's gateway port and readiness.
 type ExportStatus struct {
-	// GatewayPort is the port that peers reach this export on. Allocated from the Site's exportPorts and kept.
+	// GatewayPort is the port that peers reach this export on. Allocated from the Site's exportPorts, and held by no
+	// other Export (RFC0005).
 	// +optional
 	GatewayPort int32 `json:"gatewayPort,omitempty"`
 	// ReadyEndpoints is the number of ready endpoints of the Service.
@@ -98,7 +99,8 @@ type ImportSpec struct {
 
 // ImportStatus shows the import's local gateway port and the peer's export port.
 type ImportStatus struct {
-	// GatewayPort is the local gateway port of this import. Allocated from the Site's importPorts and kept.
+	// GatewayPort is the local gateway port of this import. Allocated from the Site's importPorts, and held by no other
+	// Import (RFC0005).
 	// +optional
 	GatewayPort int32 `json:"gatewayPort,omitempty"`
 	// RemotePort is the export's gateway port at the peer, from the peer's last document.

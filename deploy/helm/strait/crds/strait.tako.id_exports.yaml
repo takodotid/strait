@@ -138,8 +138,9 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               gatewayPort:
-                description: GatewayPort is the port that peers reach this export
-                  on. Allocated from the Site's exportPorts and kept.
+                description: |-
+                  GatewayPort is the port that peers reach this export on. Allocated from the Site's exportPorts, and held by no
+                  other Export (RFC0005).
                 format: int32
                 type: integer
               readyEndpoints:
@@ -281,8 +282,9 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               gatewayPort:
-                description: GatewayPort is the port that peers reach this export
-                  on. Allocated from the Site's exportPorts and kept.
+                description: |-
+                  GatewayPort is the port that peers reach this export on. Allocated from the Site's exportPorts, and held by no
+                  other Export (RFC0005).
                 format: int32
                 type: integer
               readyEndpoints:

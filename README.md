@@ -110,7 +110,7 @@ Held                  False   NoHeldUnknown           12m    -
 
 | Item | Value |
 |---|---|
-| Release | v1.1.2 |
+| Release | v1.1.3 |
 | API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
@@ -145,7 +145,7 @@ Each release publishes:
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.2 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.3 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -154,7 +154,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v1.1.2
+v=v1.1.3
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -169,7 +169,7 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
 
 ```powershell
-$v = "v1.1.2"
+$v = "v1.1.3"
 $a = "strait_${v}_windows_amd64"
 $url = "https://github.com/takodotid/strait/releases/download/$v"
 Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
@@ -202,13 +202,13 @@ Upgrade one site at a time. Sites on different releases still read each other's 
 
 | Step | What to do |
 |---|---|
-| 1. Pull the images (optional) | List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. |
+| 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. |
 | 2. Upgrade the site | Apply the release's CRDs, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. |
 | 3. Wait | Run `strait --context SITE status -A` at every site. Go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. |
 | 4. Next site | Back to step 1. |
 
 ```sh
-v=v1.1.2
+v=v1.1.3
 helm template strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" --values values-a.yaml | grep 'image:' | sort -u
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
@@ -217,8 +217,10 @@ helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait 
 ```
 
 Why:
-- The controller runs as one replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). A site has no controller from the moment its old pod stops until its new pod is elected, and a slow image pull makes that longer.
-- In that time, no other site can read the site's observations, so the other sites count its members `Unknown`. A routed `Unknown` member stays in the route for `policy.unknownHold` after it was last confirmed, 30s by default. Then the name routes nowhere until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17).
+- The controller runs as one replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). A site has no controller from the moment its old pod stops until its new pod serves. That gap holds the image pull, the start, and the wait for the leader election Lease.
+- The Lease wait is none when the old controller released the Lease as it stopped, and 15s when it did not ([RFC0004](rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. So an upgrade from an earlier release still waits 15s.
+- In the gap, no other site can read the site's observations, so the other sites count its members `Unknown`. A routed `Unknown` member stays in the route for `policy.unknownHold` after it was last confirmed, 30s by default. Then the name routes nowhere until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17).
+- So the smallest `policy.unknownHold` of the names with a member at the site is the budget for the site's controller gap. Pull the images first when a pull can take longer than that budget, less the start and the Lease wait.
 - One site at a time, only that site's members are at risk, and step 3 shows the upgrade worked before the next site. Every site at once puts every site's members at risk together.
 
 #### From 0.1 to 1.0

@@ -21,6 +21,7 @@ import (
 	coordinationv1client "k8s.io/client-go/kubernetes/typed/coordination/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -77,26 +78,12 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	if err := straitv1.AddToScheme(scheme); err != nil {
 		return err
 	}
-	inGateway := cache.ByObject{Namespaces: map[string]cache.Config{gatewayNamespace: {}}}
 	cfg := ctrl.GetConfigOrDie()
 	lock, err := leaderLock(cfg, gatewayNamespace)
 	if err != nil {
 		return err
 	}
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:                              scheme,
-		Metrics:                             metricsserver.Options{BindAddress: metricsAddr},
-		HealthProbeBindAddress:              probeAddr,
-		LeaderElection:                      leaderElect,
-		LeaderElectionID:                    leaderElectionID,
-		LeaderElectionNamespace:             gatewayNamespace,
-		LeaderElectionResourceLockInterface: lock,
-		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&corev1.Pod{}:           inGateway,
-			&coordinationv1.Lease{}: inGateway,
-		}},
-		Client: client.Options{Cache: &client.CacheOptions{Unstructured: true}},
-	})
+	mgr, err := ctrl.NewManager(cfg, managerOptions(scheme, lock, gatewayNamespace, metricsAddr, probeAddr, leaderElect))
 	if err != nil {
 		return err
 	}
@@ -209,6 +196,32 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 // leaderElectionID names the controller's leader election Lease.
 const leaderElectionID = "strait-controller"
 
+// managerOptions are the manager's options. A manager that stops releases the Lease once its leader-only runnables
+// have stopped, so the next controller takes it at once instead of after the lease duration (RFC0004). That is safe
+// only because the process exits as soon as the manager stops: main returns right after run.
+// The manager waits for every runnable to stop, with no timeout: a release while one still runs would let the next
+// controller overlap with it. A runnable that hangs is ended by the pod's termination grace period, and the Lease
+// then expires.
+func managerOptions(scheme *runtime.Scheme, lock resourcelock.Interface, namespace, metricsAddr, probeAddr string, leaderElect bool) ctrl.Options {
+	inGateway := cache.ByObject{Namespaces: map[string]cache.Config{namespace: {}}}
+	return ctrl.Options{
+		Scheme:                              scheme,
+		Metrics:                             metricsserver.Options{BindAddress: metricsAddr},
+		HealthProbeBindAddress:              probeAddr,
+		LeaderElection:                      leaderElect,
+		LeaderElectionID:                    leaderElectionID,
+		LeaderElectionNamespace:             namespace,
+		LeaderElectionResourceLockInterface: lock,
+		LeaderElectionReleaseOnCancel:       true,
+		GracefulShutdownTimeout:             ptr.To(time.Duration(-1)),
+		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
+			&corev1.Pod{}:           inGateway,
+			&coordinationv1.Lease{}: inGateway,
+		}},
+		Client: client.Options{Cache: &client.CacheOptions{Unstructured: true}},
+	}
+}
+
 // leaderLock is the controller's leader election Lease. It records no event: controller-runtime's own lock writes
 // core Events, and the controller may only write events.k8s.io Events (RFC0007).
 func leaderLock(cfg *rest.Config, namespace string) (resourcelock.Interface, error) {
@@ -252,15 +265,28 @@ type httpServer struct {
 }
 
 func (s *httpServer) Start(ctx context.Context) error {
-	srv := &http.Server{Addr: s.addr, Handler: s.handler, ReadHeaderTimeout: 5 * time.Second}
-	go func() {
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdown)
-	}()
-	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	lis, err := net.Listen("tcp", s.addr)
+	if err != nil {
 		return err
+	}
+	return serve(ctx, lis, s.handler)
+}
+
+// serve serves handler on lis until ctx ends, then returns once the requests in flight have ended, or after 5s.
+// So a leader-only server answers nothing after the manager releases the Lease.
+func serve(ctx context.Context, lis net.Listener, handler http.Handler) error {
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(lis) }()
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
+	}
+	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdown); err != nil {
+		_ = srv.Close()
 	}
 	return nil
 }

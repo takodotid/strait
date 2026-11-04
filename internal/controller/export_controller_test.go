@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
@@ -355,5 +357,172 @@ func TestImportStatusWriteOnLaggingCache(t *testing.T) {
 	runImport(t, r)
 	if len(r.written.last) != 0 {
 		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written.last)
+	}
+}
+
+// portSite is site a with export ports 16000-16999 and import ports 15000-15999.
+func portSite() *straitv1.Site {
+	s := site("a", "10.0.9.9")
+	s.Spec.Gateway.ExportPorts = straitv1.PortRange{First: 16000, Last: 16999}
+	s.Spec.Gateway.ImportPorts = straitv1.PortRange{First: 15000, Last: 15999}
+	return s
+}
+
+// newExport is an Export in namespace app, of Service web, that holds port, or none.
+func newExport(name string, port int32) *straitv1.Export {
+	e := &straitv1.Export{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: name, UID: types.UID("uid-" + name)},
+		Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: "web", Port: 8080}},
+	}
+	e.Status.GatewayPort = port
+	return e
+}
+
+// newImport is an Import in namespace app, of site b's export of the same name, that holds port, or none.
+func newImport(name string, port int32) *straitv1.Import {
+	i := &straitv1.Import{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: name, UID: types.UID("uid-" + name)},
+		Spec:       straitv1.ImportSpec{Site: "b", Export: name},
+	}
+	i.Status.GatewayPort = port
+	return i
+}
+
+// portsExport is an export reconciler whose cache can lag behind the API server.
+func portsExport(t *testing.T, objs ...client.Object) (*ExportReconciler, *laggingCache, client.Client) {
+	t.Helper()
+	c := fakeClient(t, append(appService("web", "10.0.0.1"), append(objs, portSite())...)...)
+	cache := &laggingCache{Client: c}
+	return &ExportReconciler{Client: cache, Reader: cache, Local: &exchange.Local{}}, cache, c
+}
+
+// portsImport is an import reconciler whose cache can lag behind the API server.
+func portsImport(t *testing.T, objs ...client.Object) (*ImportReconciler, *laggingCache, client.Client) {
+	t.Helper()
+	r, c := importReconciler(t, append(objs, portSite())...)
+	cache := &laggingCache{Client: c}
+	r.Client, r.Reader = cache, cache
+	return r, cache, c
+}
+
+func reconcileNamed(t *testing.T, r reconcile.Reconciler, name string) {
+	t.Helper()
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: name}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// exportPorts returns the gateway port of each named Export, as the API server holds it.
+func exportPorts(t *testing.T, c client.Client, names ...string) []int32 {
+	t.Helper()
+	var out []int32
+	for _, n := range names {
+		var e straitv1.Export
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: n}, &e); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, e.Status.GatewayPort)
+	}
+	return out
+}
+
+// importPorts returns the gateway port of each named Import, as the API server holds it.
+func importPorts(t *testing.T, c client.Client, names ...string) []int32 {
+	t.Helper()
+	var out []int32
+	for _, n := range names {
+		var i straitv1.Import
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: n}, &i); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, i.Status.GatewayPort)
+	}
+	return out
+}
+
+// Two Exports created together get different ports, though the second is reconciled before the cache shows the
+// first one's port (issue #26).
+func TestExportPortsCreatedTogether(t *testing.T) {
+	r, cache, c := portsExport(t, newExport("one", 0), newExport("two", 0))
+	cache.freeze(t, &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "one"}})
+	reconcileNamed(t, r, "one")
+	reconcileNamed(t, r, "two")
+	if got := exportPorts(t, c, "one", "two"); !slices.Equal(got, []int32{16000, 16001}) {
+		t.Fatalf("ports = %v, want [16000 16001]", got)
+	}
+}
+
+// Two Imports created together get different ports, though the second is reconciled before the cache shows the
+// first one's port (issue #26).
+func TestImportPortsCreatedTogether(t *testing.T) {
+	r, cache, c := portsImport(t, newImport("one", 0), newImport("two", 0))
+	cache.freeze(t, &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "one"}})
+	reconcileNamed(t, r, "one")
+	reconcileNamed(t, r, "two")
+	if got := importPorts(t, c, "one", "two"); !slices.Equal(got, []int32{15000, 15001}) {
+		t.Fatalf("ports = %v, want [15000 15001]", got)
+	}
+}
+
+// Of two Exports that hold one port, as an earlier release could leave them, the one that comes second by namespace
+// and name moves to a free port, whichever is reconciled first. The first keeps it (issue #26).
+func TestExportDuplicatePortRepaired(t *testing.T) {
+	for _, order := range [][]string{{"a-first", "b-second"}, {"b-second", "a-first"}} {
+		r, _, c := portsExport(t, newExport("a-first", 16000), newExport("b-second", 16000), newExport("c-other", 16001))
+		for _, n := range order {
+			reconcileNamed(t, r, n)
+		}
+		if got := exportPorts(t, c, "a-first", "b-second", "c-other"); !slices.Equal(got, []int32{16000, 16002, 16001}) {
+			t.Errorf("reconciled in order %v: ports = %v, want [16000 16002 16001]", order, got)
+		}
+	}
+}
+
+// Of two Imports that hold one port, the one that comes second moves to a free port. The first keeps it (issue #26).
+func TestImportDuplicatePortRepaired(t *testing.T) {
+	for _, order := range [][]string{{"a-first", "b-second"}, {"b-second", "a-first"}} {
+		r, _, c := portsImport(t, newImport("a-first", 15000), newImport("b-second", 15000))
+		for _, n := range order {
+			reconcileNamed(t, r, n)
+		}
+		if got := importPorts(t, c, "a-first", "b-second"); !slices.Equal(got, []int32{15000, 15001}) {
+			t.Errorf("reconciled in order %v: ports = %v, want [15000 15001]", order, got)
+		}
+	}
+}
+
+// A cache that has not yet seen a port move moves nothing else: the moved object keeps its new port, and its old and
+// new ports both count as they are on the API server.
+func TestExportPortMoveOnLaggingCache(t *testing.T) {
+	r, cache, c := portsExport(t, newExport("a-first", 16000), newExport("b-second", 16000), newExport("c-new", 0))
+	cache.freeze(t, &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "b-second"}})
+	reconcileNamed(t, r, "b-second")
+	// The cache still shows b-second on 16000.
+	reconcileNamed(t, r, "a-first")
+	reconcileNamed(t, r, "b-second")
+	reconcileNamed(t, r, "c-new")
+	if got := exportPorts(t, c, "a-first", "b-second", "c-new"); !slices.Equal(got, []int32{16000, 16001, 16002}) {
+		t.Fatalf("ports = %v, want [16000 16001 16002]", got)
+	}
+}
+
+// With no free port left, the Export that comes second holds none, and says so, rather than share a port.
+func TestExportDuplicatePortRangeFull(t *testing.T) {
+	r, _, c := portsExport(t, newExport("a-first", 16000), newExport("b-second", 16000))
+	var s straitv1.Site
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "a"}, &s); err != nil {
+		t.Fatal(err)
+	}
+	s.Spec.Gateway.ExportPorts.Last = 16000
+	if err := c.Update(context.Background(), &s); err != nil {
+		t.Fatal(err)
+	}
+	reconcileNamed(t, r, "b-second")
+	var e straitv1.Export
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "b-second"}, &e); err != nil {
+		t.Fatal(err)
+	}
+	if cond := meta.FindStatusCondition(e.Status.Conditions, ConditionAllocated); e.Status.GatewayPort != 0 || cond == nil || cond.Reason != "RangeFull" {
+		t.Fatalf("port %d, Allocated = %+v; want no port, RangeFull", e.Status.GatewayPort, cond)
 	}
 }
