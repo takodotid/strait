@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -231,7 +232,9 @@ func leadWithInterface(t *testing.T) (*Agent, *fakeKernel) {
 	l := wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")
 	p := peer("b", newKey(t).PublicKey().String())
 	a, k, _ := newAgent(t, testSite(), keySecret(key.String()), &l, &p)
-	a.EnvoyAdmin = envoy(t, &atomic.Bool{})
+	up := &atomic.Bool{}
+	up.Store(true)
+	a.EnvoyAdmin = envoy(t, up)
 	return a, k
 }
 
@@ -297,4 +300,94 @@ type recordLock struct {
 func (l *recordLock) Update(_ context.Context, r resourcelock.LeaderElectionRecord) error {
 	l.update(r)
 	return nil
+}
+
+// renewing renews l every 500ms until the test ends, as the elector does.
+func renewing(t *testing.T, l *lease) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		for ctx.Err() == nil {
+			_ = l.Update(ctx, resourcelock.LeaderElectionRecord{HolderIdentity: "gw-0"})
+			select {
+			case <-ctx.Done():
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	}()
+}
+
+// The active replica steps down once Envoy has not been ready for EnvoyNotReady, so that a ready standby can take the
+// Lease, and not while Envoy is ready (issue #35).
+func TestStepDownWhenEnvoyNotReady(t *testing.T) {
+	key := newKey(t)
+	wl := wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")
+	p := peer("b", newKey(t).PublicKey().String())
+	a, k, _ := newAgent(t, testSite(), keySecret(key.String()), &wl, &p)
+	up := &atomic.Bool{}
+	up.Store(true)
+	a.EnvoyAdmin = envoy(t, up)
+	l := &lease{Interface: &recordLock{update: func(resourcelock.LeaderElectionRecord) {}}, before: a.stopLeading}
+	renewing(t, l)
+
+	var stepped atomic.Bool
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.lead(context.Background(), l, func() { stepped.Store(true) })
+	}()
+	waitForInterfaces(t, k, 1)
+	time.Sleep(EnvoyNotReady + time.Second)
+	if stepped.Load() {
+		t.Fatal("stepped down while Envoy is ready")
+	}
+
+	up.Store(false)
+	start := time.Now()
+	select {
+	case <-done:
+	case <-time.After(EnvoyNotReady + 5*time.Second):
+		t.Fatalf("still leading %s after Envoy stopped being ready", time.Since(start))
+	}
+	if !stepped.Load() || time.Since(start) < EnvoyNotReady {
+		t.Fatalf("stepped down %v after %s, want after %s", stepped.Load(), time.Since(start), EnvoyNotReady)
+	}
+	waitForInterfaces(t, k, 0)
+}
+
+// A replica joins the gateway election only while its Envoy is ready (issue #35).
+func TestJoinOnlyWhenEnvoyReady(t *testing.T) {
+	a, _, _ := newAgent(t, testSite())
+	up := &atomic.Bool{}
+	a.EnvoyAdmin = envoy(t, up)
+	leases := k8sfake.NewClientset().CoordinationV1()
+	a.Leases = leases
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	holder := func() string {
+		l, err := leases.Leases(ns).Get(context.Background(), "strait-gateway", metav1.GetOptions{})
+		if err != nil || l.Spec.HolderIdentity == nil {
+			return ""
+		}
+		return *l.Spec.HolderIdentity
+	}
+	time.Sleep(2*RetryPeriod + RetryPeriod/2)
+	if h := holder(); h != "" {
+		t.Fatalf("Envoy not ready: the Lease is held by %q", h)
+	}
+	up.Store(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for holder() != "gw-0" {
+		if time.Now().After(deadline) {
+			t.Fatalf("Envoy ready: the Lease is held by %q, want gw-0", holder())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
