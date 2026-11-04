@@ -104,6 +104,7 @@ Routed                True    Active                  12m    pg-a is the only wr
 Multiple              False   NoMultipleWritable      12m    -
 DeclarationsDisagree  False   NoDeclarationsDisagree  12m    -
 Held                  False   NoHeldUnknown           12m    -
+Applied               True    Synced                  12m    -
 ```
 
 ## Status

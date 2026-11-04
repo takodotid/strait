@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -124,7 +125,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			read[m.Site] = true
 		}
 	}
-	previous, err := r.previousRoute(ctx, &svc)
+	inPlace, err := r.slicesInPlace(ctx, &svc)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -133,7 +134,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		LocalSite:     site.Name,
 		Sites:         sites,
 		Observations:  observations,
-		Previous:      previous,
+		Previous:      r.previousRoute(&svc, inPlace),
 		LastConfirmed: confirmed,
 		Now:           now,
 		Started:       started,
@@ -146,26 +147,15 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	r.decided[req.NamespacedName] = slices.Clone(result.Members)
 
-	if err := r.syncExportsImports(ctx, &svc, site.Name, report); err != nil {
-		return ctrl.Result{}, err
+	a := r.apply(ctx, &svc, site, result.Members, observations, report, inPlace)
+	if a.err != nil {
+		logger.Error(a.err, "route not applied", "route", result.Members)
 	}
-	conflict, err := r.syncService(ctx, &svc)
-	if err != nil {
-		return ctrl.Result{}, err
+	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, shown, a, now); err != nil {
+		logger.Error(err, "status not written")
 	}
-	endpoints := 0
-	var paths map[string]straitv1.Path
-	if !conflict {
-		endpoints, paths, err = r.syncSlices(ctx, &svc, site, result.Members, observations)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, shown, endpoints, paths, conflict, now); err != nil {
-		return ctrl.Result{}, err
-	}
-	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", endpoints)
+	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", a.endpoints())
+	// An error does not return: the controller's backoff would delay the decision that ends a hold.
 	return ctrl.Result{RequeueAfter: r.next(&svc, result, confirmed, started, now)}, nil
 }
 
@@ -188,13 +178,9 @@ func startupStatus(result decide.Result, in decide.Input, polled bool) decide.Re
 // previousRoute returns the members of the last decision. After a start, it returns the members of status.route that
 // have an EndpointSlice in place. Status alone can be older than the last decision, when a status write failed, and the
 // slices alone can hold a member that the last decision dropped, when its delete failed.
-func (r *SiteServiceReconciler) previousRoute(ctx context.Context, svc *straitv1.SiteService) ([]string, error) {
+func (r *SiteServiceReconciler) previousRoute(svc *straitv1.SiteService, inPlace map[string]discoveryv1.EndpointSlice) []string {
 	if members, ok := r.decided[client.ObjectKeyFromObject(svc)]; ok {
-		return members, nil
-	}
-	inPlace, err := r.slicesInPlace(ctx, svc)
-	if err != nil {
-		return nil, err
+		return members
 	}
 	var out []string
 	for _, m := range svc.Status.Route.Members {
@@ -202,7 +188,7 @@ func (r *SiteServiceReconciler) previousRoute(ctx context.Context, svc *straitv1
 			out = append(out, m)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // lastConfirmed returns each member's last confirmed time, from memory or else from status.
@@ -306,18 +292,23 @@ func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *str
 	return nil
 }
 
-// syncService keeps the application name's Service. It reports a conflict when another owner holds the name.
-func (r *SiteServiceReconciler) syncService(ctx context.Context, svc *straitv1.SiteService) (bool, error) {
+// serviceConflict reports whether another owner holds the application name's Service.
+func (r *SiteServiceReconciler) serviceConflict(ctx context.Context, svc *straitv1.SiteService) (bool, error) {
 	var existing corev1.Service
 	err := r.Get(ctx, client.ObjectKeyFromObject(svc), &existing)
 	switch {
-	case err == nil && !metav1.IsControlledBy(&existing, svc):
-		return true, nil
-	case err != nil && !apierrors.IsNotFound(err):
-		return false, err
+	case err == nil:
+		return !metav1.IsControlledBy(&existing, svc), nil
+	case apierrors.IsNotFound(err):
+		return false, nil
 	}
+	return false, fmt.Errorf("read service %s: %w", svc.Name, err)
+}
+
+// writeService writes the application name's Service.
+func (r *SiteServiceReconciler) writeService(ctx context.Context, svc *straitv1.SiteService) error {
 	s := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: svc.Name, Namespace: svc.Namespace}}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, s, func() error {
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, s, func() error {
 		if s.Labels == nil {
 			s.Labels = map[string]string{}
 		}
@@ -331,7 +322,10 @@ func (r *SiteServiceReconciler) syncService(ctx context.Context, svc *straitv1.S
 		}}
 		return controllerutil.SetControllerReference(svc, s, r.Scheme())
 	})
-	return false, err
+	if err != nil {
+		return fmt.Errorf("service %s: %w", svc.Name, err)
+	}
+	return nil
 }
 
 // target is one routed member's addresses and port, and the path they take.
@@ -411,50 +405,99 @@ func (r *SiteServiceReconciler) slicesInPlace(ctx context.Context, svc *straitv1
 	return out, nil
 }
 
-// syncSlices writes one EndpointSlice per routed member that has a target and deletes the rest. It deletes first, and
-// writes nothing once a delete fails, so a member leaves the route before another joins it (RFC#0002).
-// It returns the number of endpoints written, and the path of each member that has endpoints.
-func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (int, map[string]straitv1.Path, error) {
-	targets, err := r.targets(ctx, svc, site, members, observations)
-	if err != nil {
-		return 0, nil, err
+// applied is what one apply of a decision left in place.
+type applied struct {
+	// slices are the application name's EndpointSlices in place, by name.
+	slices map[string]discoveryv1.EndpointSlice
+	// written holds the path of each member whose slice this apply wrote.
+	written map[string]straitv1.Path
+	// owed holds the members whose slice this apply had to write.
+	owed map[string]bool
+	// conflict is true when another owner holds the application name's Service.
+	conflict bool
+	// err is the first read or write that failed. The steps after it did not run.
+	err error
+}
+
+// endpoints returns the number of endpoints in place.
+func (a applied) endpoints() int {
+	n := 0
+	for _, es := range a.slices {
+		n += len(es.Endpoints)
 	}
-	inPlace, err := r.slicesInPlace(ctx, svc)
-	if err != nil {
-		return 0, nil, err
-	}
+	return n
+}
+
+// in reports whether the member has an EndpointSlice in place.
+func (a applied) in(svc *straitv1.SiteService, member string) (discoveryv1.EndpointSlice, bool) {
+	es, ok := a.slices[memberObjectName(svc, member)]
+	return es, ok && es.Labels[LabelMember] == member
+}
+
+// apply writes a decision in the order of RFC#0002, and stops at the first read or write that fails:
+//  1. it deletes every EndpointSlice in place that is not the slice of a routed member with a target;
+//  2. it writes the Exports and Imports, then the Service;
+//  3. it writes the slice of each routed member with a target.
+//
+// A member leaves the route before another joins it, and a failure after step 1 leaves no member that the decision
+// dropped. When the targets cannot be read, step 1 keeps the slices of every routed member.
+func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation, report observe.Report, inPlace map[string]discoveryv1.EndpointSlice) (a applied) {
+	a = applied{slices: inPlace, written: map[string]straitv1.Path{}, owed: map[string]bool{}}
 	if r.inPlace == nil {
 		r.inPlace = map[types.NamespacedName]map[string]discoveryv1.EndpointSlice{}
 	}
 	// What is in place when this returns, whatever fails.
-	defer func() { r.inPlace[client.ObjectKeyFromObject(svc)] = inPlace }()
+	defer func() { r.inPlace[client.ObjectKeyFromObject(svc)] = a.slices }()
 
-	for _, name := range slices.Sorted(maps.Keys(inPlace)) {
-		es := inPlace[name]
-		if _, ok := targets[es.Labels[LabelMember]]; ok && name == memberObjectName(svc, es.Labels[LabelMember]) {
+	conflict, cerr := r.serviceConflict(ctx, svc)
+	a.conflict = conflict
+	targets, terr := r.targets(ctx, svc, site, members, observations)
+	if terr == nil {
+		for m := range targets {
+			a.owed[m] = true
+		}
+	} else {
+		for _, m := range members {
+			a.owed[m] = true
+		}
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(a.slices)) {
+		es := a.slices[name]
+		if m := es.Labels[LabelMember]; a.owed[m] && name == memberObjectName(svc, m) {
 			continue
 		}
 		if err := r.Delete(ctx, &es); client.IgnoreNotFound(err) != nil {
-			return 0, nil, fmt.Errorf("delete endpointslice %s: %w", name, err)
+			a.err = fmt.Errorf("delete endpointslice %s: %w", name, err)
+			return a
 		}
-		delete(inPlace, name)
+		delete(a.slices, name)
+	}
+	if a.err = cmp.Or(cerr, terr); a.err != nil {
+		return a
 	}
 
-	count := 0
-	paths := map[string]straitv1.Path{}
+	if a.err = r.syncExportsImports(ctx, svc, site.Name, report); a.err != nil {
+		return a
+	}
+	if conflict {
+		a.owed = map[string]bool{}
+		return a
+	}
+	if a.err = r.writeService(ctx, svc); a.err != nil {
+		return a
+	}
 	for _, member := range slices.Sorted(maps.Keys(targets)) {
 		t := targets[member]
 		es, err := r.writeSlice(ctx, svc, member, t)
 		if err != nil {
-			return 0, nil, err
+			a.err = err
+			return a
 		}
-		inPlace[es.Name] = *es
-		count += len(es.Endpoints)
-		if len(es.Endpoints) > 0 {
-			paths[member] = t.path
-		}
+		a.slices[es.Name] = *es
+		a.written[member] = t.path
 	}
-	return count, paths, nil
+	return a
 }
 
 // writeSlice writes the EndpointSlice of one routed member.
@@ -500,7 +543,10 @@ func addressType(addresses []string) discoveryv1.AddressType {
 	return discoveryv1.AddressTypeIPv4
 }
 
-func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, endpoints int, paths map[string]straitv1.Path, conflict bool, now time.Time) error {
+// writeStatus writes the status of a decision and of its apply. The route shows the decision's members, less each
+// member whose EndpointSlice the apply had to write and that is not in place. The endpoints, the paths and the Routed
+// condition show the EndpointSlices in place.
+func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, a applied, now time.Time) error {
 	old := svc.Status.DeepCopy()
 	st := &svc.Status
 	st.ObservedGeneration = svc.Generation
@@ -509,6 +555,29 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	for _, m := range old.Members {
 		previous[m.Name] = m
 	}
+	// A slice that this apply did not write keeps the path that status last gave it.
+	paths := map[string]straitv1.Path{}
+	for _, m := range svc.Spec.Members {
+		es, ok := a.in(svc, m.Name)
+		if !ok || len(es.Endpoints) == 0 {
+			continue
+		}
+		if p, ok := a.written[m.Name]; ok {
+			paths[m.Name] = p
+		} else {
+			paths[m.Name] = previous[m.Name].Path
+		}
+	}
+	route := []string{}
+	for _, m := range result.Members {
+		if _, ok := a.in(svc, m); ok || !a.owed[m] {
+			route = append(route, m)
+		}
+	}
+	if len(route) == 0 {
+		route = nil
+	}
+	endpoints := a.endpoints()
 	st.Members = nil
 	for _, m := range svc.Spec.Members {
 		o, ok := observations[m.Name]
@@ -543,27 +612,34 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	event := func(eventType, reason, action, note string, args ...any) {
 		events = append(events, func() { r.Recorder.Eventf(svc, nil, eventType, reason, action, note, args...) })
 	}
-	if !slices.Equal(old.Route.Members, result.Members) || old.Route.LastChangeTime == nil {
+	if !slices.Equal(old.Route.Members, route) || old.Route.LastChangeTime == nil {
 		st.Route.LastChangeTime = &metav1.Time{Time: now}
 		if old.Route.LastChangeTime != nil {
-			event(corev1.EventTypeNormal, "RouteChanged", "Route", "route %s -> %s (%s)", routeString(old.Route.Members), routeString(result.Members), result.Reason)
+			event(corev1.EventTypeNormal, "RouteChanged", "Route", "route %s -> %s (%s)", routeString(old.Route.Members), routeString(route), result.Reason)
 		}
 	}
-	st.Route.Members = result.Members
+	st.Route.Members = route
 	st.Route.Reason = result.Reason
 	st.Route.Message = result.Message
 	st.Route.Endpoints = int32(endpoints)
 
 	routed := metav1.Condition{Type: straitv1.ConditionRouted, Status: metav1.ConditionTrue, Reason: result.Reason, Message: result.Message, ObservedGeneration: svc.Generation}
 	switch {
-	case conflict:
+	case a.conflict:
 		routed.Status, routed.Reason, routed.Message = metav1.ConditionFalse, "ServiceConflict", fmt.Sprintf("a Service named %s exists and Strait does not own it", svc.Name)
+	case endpoints == 0 && len(result.Members) > 0 && a.err != nil:
+		routed.Status, routed.Reason, routed.Message = metav1.ConditionFalse, "NoEndpoints", fmt.Sprintf("routed to %s but no endpoint is written; see the %s condition", routeString(result.Members), straitv1.ConditionApplied)
 	case endpoints == 0 && len(result.Members) > 0:
 		routed.Status, routed.Reason, routed.Message = metav1.ConditionFalse, "NoEndpoints", fmt.Sprintf("routed to %s but no endpoint is ready", routeString(result.Members))
 	case endpoints == 0:
 		routed.Status = metav1.ConditionFalse
 	}
 	meta.SetStatusCondition(&st.Conditions, routed)
+	written := metav1.Condition{Type: straitv1.ConditionApplied, Status: metav1.ConditionTrue, Reason: "Synced", ObservedGeneration: svc.Generation}
+	if a.err != nil {
+		written.Status, written.Reason, written.Message = metav1.ConditionFalse, "SyncFailed", a.err.Error()
+	}
+	meta.SetStatusCondition(&st.Conditions, written)
 	setFlag(&st.Conditions, straitv1.ConditionMultiple, result.Multiple, straitv1.ReasonMultipleWritable, svc.Generation)
 	setFlag(&st.Conditions, straitv1.ConditionDeclarationsDisagree, result.Disagree, straitv1.ReasonDeclarationsDisagree, svc.Generation)
 	setFlag(&st.Conditions, straitv1.ConditionHeld, len(result.Held) > 0, straitv1.ReasonHeldUnknown, svc.Generation)

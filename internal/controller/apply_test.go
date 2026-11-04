@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -323,4 +325,91 @@ func TestPreviousRouteIsTheLastDecision(t *testing.T) {
 		restarted := &SiteServiceReconciler{Client: r.Client, Reader: r.Reader, Recorder: r.Recorder, Peers: r.Peers, Local: &exchange.Local{}, Now: r.Now}
 		stale(t, restarted, c)
 	})
+}
+
+// routedToB returns a reconciler at site a whose route is web-b, reached through the gateway.
+func routedToB(t *testing.T, f *faults) (*SiteServiceReconciler, client.Client) {
+	t.Helper()
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp.Status.GatewayPort = 15001
+	c := f.client(t, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-b"), imp)...)
+	r := &SiteServiceReconciler{
+		Client: c, Reader: c, Recorder: events.NewFakeRecorder(100), Peers: declaring("web-b"), Local: &exchange.Local{},
+		Now: func() time.Time { return now },
+	}
+	run(t, r)
+	if m := sliceMembers(context.Background(), t, c); !slices.Equal(m, []string{"web-b"}) {
+		t.Fatalf("before the switch: slices of %v", m)
+	}
+	return r, c
+}
+
+// An error after the decision still drops the member that the decision dropped. Status shows the route as far as it
+// is in place, and the Applied condition gives the error. The next decision comes at the next resync, not after the
+// controller's backoff (issue #31).
+func TestFailedApplyAfterTheDecision(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// gone is the object deleted before the switch, so the switch must write it.
+		gone client.Object
+		fail string
+	}{
+		{"slice", nil, "create *v1.EndpointSlice web-web-a"},
+		{"service", &corev1.Service{}, "create *v1.Service web"},
+		{"export", &straitv1.Export{}, "create *v1.Export web-web-a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &faults{}
+			r, c := routedToB(t, f)
+			if tc.gone != nil {
+				name := map[bool]string{true: "web", false: "web-web-a"}[tc.name == "service"]
+				tc.gone.SetNamespace("app")
+				tc.gone.SetName(name)
+				if err := c.Delete(context.Background(), tc.gone); err != nil {
+					t.Fatal(err)
+				}
+			}
+			declare(t, r, c, "web-a")
+			f.armOn(tc.fail)
+			res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web"}})
+			f.disarm()
+			if !slices.Contains(f.writes, tc.fail) {
+				t.Fatalf("no write %q in %v", tc.fail, f.writes)
+			}
+			if m := sliceMembers(context.Background(), t, c); len(m) != 0 {
+				t.Fatalf("slices of %v, want none", m)
+			}
+			if err != nil || res.RequeueAfter <= 0 || res.RequeueAfter > resync {
+				t.Fatalf("result %+v, error %v; want a requeue within %s and no error", res, err, resync)
+			}
+			st := status(t, c)
+			applied := meta.FindStatusCondition(st.Conditions, "Applied")
+			if len(st.Route.Members) != 0 || st.Route.Reason != straitv1.ReasonActive || st.Route.Endpoints != 0 ||
+				applied == nil || applied.Status != metav1.ConditionFalse || applied.Reason != "SyncFailed" || !strings.Contains(applied.Message, "injected") ||
+				meta.IsStatusConditionTrue(st.Conditions, straitv1.ConditionRouted) {
+				t.Fatalf("route %+v, applied %+v", st.Route, applied)
+			}
+
+			run(t, r)
+			st = status(t, c)
+			if !slices.Equal(st.Route.Members, []string{"web-a"}) || !meta.IsStatusConditionTrue(st.Conditions, "Applied") ||
+				!slices.Equal(sliceMembers(context.Background(), t, c), []string{"web-a"}) {
+				t.Fatalf("after a clean reconcile: route %+v, conditions %+v", st.Route, st.Conditions)
+			}
+		})
+	}
+}
+
+// A failed write does not delay the decision that ends a hold (issue #31).
+func TestFailedWriteKeepsTheHoldTimer(t *testing.T) {
+	f := &faults{}
+	r, _ := routedToB(t, f)
+	r.Peers = readB
+	r.Now = func() time.Time { return now.Add(9 * time.Second) }
+	f.armOn("status")
+	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web"}})
+	f.disarm()
+	if err != nil || res.RequeueAfter <= 0 || res.RequeueAfter > time.Second+50*time.Millisecond {
+		t.Fatalf("result %+v, error %v; want a requeue when the hold ends, in 1s, and no error", res, err)
+	}
 }
