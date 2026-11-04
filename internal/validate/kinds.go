@@ -118,6 +118,13 @@ func SiteLink(l *straitv1.SiteLink) field.ErrorList {
 	errs = append(errs, enum(spec.Child("encryption"), s.Encryption, false, straitv1.EncryptionNone, straitv1.EncryptionWireGuard)...)
 	if d := s.Direct; d != nil {
 		errs = append(errs, ip(spec.Child("direct", "address"), d.Address)...)
+		cp := spec.Child("direct", "endpointCIDRs")
+		if n := len(d.EndpointCIDRs); n > 16 {
+			errs = append(errs, field.TooMany(cp, n, 16))
+		}
+		for i, c := range d.EndpointCIDRs {
+			errs = append(errs, cidr(cp.Index(i), c)...)
+		}
 	}
 	if w := s.WireGuard; w != nil {
 		wp := spec.Child("wireguard")

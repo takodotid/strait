@@ -74,6 +74,19 @@ spec:
                     x-kubernetes-validations:
                     - message: must be an IP address
                       rule: isIP(self)
+                  endpointCIDRs:
+                    description: |-
+                      EndpointCIDRs limits endpoint-direct to member addresses in these ranges, such as the peer's pod CIDRs.
+                      Empty accepts any IP address that is not unspecified, loopback, link-local or multicast.
+                    items:
+                      maxLength: 49
+                      type: string
+                      x-kubernetes-validations:
+                      - message: must be an address in CIDR notation
+                        rule: isCIDR(self)
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: atomic
                   endpointDirect:
                     description: EndpointDirect points application names straight
                       at the remote member's addresses while this link is the active
@@ -307,6 +320,19 @@ spec:
                     x-kubernetes-validations:
                     - message: must be an IP address
                       rule: isIP(self)
+                  endpointCIDRs:
+                    description: |-
+                      EndpointCIDRs limits endpoint-direct to member addresses in these ranges, such as the peer's pod CIDRs.
+                      Empty accepts any IP address that is not unspecified, loopback, link-local or multicast.
+                    items:
+                      maxLength: 49
+                      type: string
+                      x-kubernetes-validations:
+                      - message: must be an address in CIDR notation
+                        rule: isCIDR(self)
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: atomic
                   endpointDirect:
                     description: EndpointDirect points application names straight
                       at the remote member's addresses while this link is the active

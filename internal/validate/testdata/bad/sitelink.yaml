@@ -190,3 +190,17 @@ spec:
   wireguard:
     address: 100.64.0.1
     peerAddress: 100.64.0.2/32
+---
+# want: spec.direct.endpointCIDRs[1]: Invalid value: "10.120.0.0": must be an address in CIDR notation
+apiVersion: strait.tako.id/v1
+kind: SiteLink
+metadata:
+  name: direct-endpoint-cidrs
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: 172.31.0.21
+    endpointDirect: true
+    endpointCIDRs: [10.120.0.0/16, 10.120.0.0]

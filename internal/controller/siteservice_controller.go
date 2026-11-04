@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/netip"
 	"reflect"
 	"slices"
 	"strings"
@@ -335,13 +336,14 @@ type target struct {
 	path      straitv1.Path
 }
 
-// targets returns where each routed member takes traffic. A member with no target is left out.
-func (r *SiteServiceReconciler) targets(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (map[string]target, error) {
+// targets returns where each routed member takes traffic. A member with no target is left out. Dropped holds, by
+// member, the addresses from a peer's document that endpoint-direct does not accept, with the reason.
+func (r *SiteServiceReconciler) targets(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (out map[string]target, dropped map[string][]string, err error) {
 	direct, err := endpointDirectPeers(ctx, r.Reader)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	out := map[string]target{}
+	out, dropped = map[string]target{}, map[string][]string{}
 	for _, name := range members {
 		var m straitv1.Member
 		for _, sm := range svc.Spec.Members {
@@ -350,39 +352,89 @@ func (r *SiteServiceReconciler) targets(ctx context.Context, svc *straitv1.SiteS
 			}
 		}
 		o := observations[name]
-		switch {
-		case m.Site == site.Name:
+		if m.Site == site.Name {
 			if len(o.Endpoint.Addresses) > 0 && o.Endpoint.Port > 0 {
 				out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, straitv1.PathLocal}
 			}
-		case direct[m.Site] && len(o.Endpoint.Addresses) > 0 && o.Endpoint.Port > 0:
-			out[name] = target{o.Endpoint.Addresses, o.Endpoint.Port, straitv1.PathEndpointDirect}
-		default:
-			var imp straitv1.Import
-			if err := r.Reader.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: memberObjectName(svc, name)}, &imp); err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				return nil, err
+			continue
+		}
+		// A member whose document gives no address that endpoint-direct accepts takes the gateway.
+		if ranges, ok := direct[m.Site]; ok && len(o.Endpoint.Addresses) > 0 {
+			addresses, bad := ranges.accept(o.Endpoint.Addresses)
+			if o.Endpoint.Port < 1 || o.Endpoint.Port > 65535 {
+				addresses, bad = nil, []string{fmt.Sprintf("port %d (out of range)", o.Endpoint.Port)}
 			}
-			if imp.Status.GatewayPort > 0 && site.Status.Gateway.Address != "" {
-				out[name] = target{[]string{site.Status.Gateway.Address}, imp.Status.GatewayPort, straitv1.PathGateway}
+			if len(bad) > 0 {
+				dropped[name] = bad
+			}
+			if len(addresses) > 0 {
+				out[name] = target{addresses, o.Endpoint.Port, straitv1.PathEndpointDirect}
+				continue
 			}
 		}
+		var imp straitv1.Import
+		if err := r.Reader.Get(ctx, types.NamespacedName{Namespace: svc.Namespace, Name: memberObjectName(svc, name)}, &imp); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, nil, err
+		}
+		if imp.Status.GatewayPort > 0 && site.Status.Gateway.Address != "" {
+			out[name] = target{[]string{site.Status.Gateway.Address}, imp.Status.GatewayPort, straitv1.PathGateway}
+		}
 	}
-	return out, nil
+	return out, dropped, nil
 }
 
-// endpointDirectPeers returns the peers whose active link is a healthy direct link with endpointDirect.
-func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]bool, error) {
+// directRanges are the ranges that endpoint-direct accepts a peer's member addresses from.
+type directRanges struct {
+	// limited is true when the link sets endpointCIDRs. Then only addresses in prefixes are accepted.
+	limited  bool
+	prefixes []netip.Prefix
+}
+
+// accept returns, in their canonical form, the addresses that endpoint-direct accepts, and each other address with
+// the reason it is dropped. The addresses come from a peer's document, so none is trusted to be an IP address, and a
+// dropped one is cut to 64 bytes: it goes into a condition's message, which the API server limits.
+func (d directRanges) accept(addresses []string) (ok, dropped []string) {
+	for _, a := range addresses {
+		ip, err := netip.ParseAddr(a)
+		ip = ip.Unmap()
+		switch {
+		case err != nil || ip.Zone() != "":
+			if len(a) > 64 {
+				a = a[:64] + "..."
+			}
+			dropped = append(dropped, fmt.Sprintf("%q (not an IP address)", a))
+		case ip.IsUnspecified() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast():
+			dropped = append(dropped, ip.String()+" (unspecified, loopback, link-local or multicast)")
+		case d.limited && !slices.ContainsFunc(d.prefixes, func(p netip.Prefix) bool { return p.Contains(ip) }):
+			dropped = append(dropped, ip.String()+" (outside endpointCIDRs)")
+		default:
+			ok = append(ok, ip.String())
+		}
+	}
+	return ok, dropped
+}
+
+// endpointDirectPeers returns, for each peer whose active link is a healthy direct link with endpointDirect, the
+// ranges that the link accepts member addresses from.
+func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]directRanges, error) {
 	var links straitv1.SiteLinkList
 	if err := r.List(ctx, &links); err != nil {
 		return nil, err
 	}
-	out := map[string]bool{}
+	out := map[string]directRanges{}
 	for _, l := range links.Items {
 		if l.Spec.Transport == straitv1.TransportDirect && l.Spec.Direct != nil && l.Spec.Direct.EndpointDirect && l.Status.Active && l.Status.Healthy {
-			out[l.Spec.Peer] = true
+			d := directRanges{limited: len(l.Spec.Direct.EndpointCIDRs) > 0}
+			for _, c := range l.Spec.Direct.EndpointCIDRs {
+				// The CRD admits only CIDRs. One that does not parse admits nothing.
+				if p, err := netip.ParsePrefix(c); err == nil {
+					d.prefixes = append(d.prefixes, p.Masked())
+				}
+			}
+			out[l.Spec.Peer] = d
 		}
 	}
 	return out, nil
@@ -415,6 +467,8 @@ type applied struct {
 	owed map[string]bool
 	// conflict is true when another owner holds the application name's Service.
 	conflict bool
+	// dropped holds, by member, the addresses from a peer's document that endpoint-direct does not accept.
+	dropped map[string][]string
 	// err is the first read or write that failed. The steps after it did not run.
 	err error
 }
@@ -452,7 +506,8 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 
 	conflict, cerr := r.serviceConflict(ctx, svc)
 	a.conflict = conflict
-	targets, terr := r.targets(ctx, svc, site, members, observations)
+	targets, dropped, terr := r.targets(ctx, svc, site, members, observations)
+	a.dropped = dropped
 	switch {
 	case conflict:
 		// Another owner's Service: no slice of this SiteService may feed it (RFC#0002, requirement 9).
@@ -637,6 +692,9 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	case endpoints == 0:
 		routed.Status = metav1.ConditionFalse
 	}
+	if note := droppedNote(a.dropped); note != "" {
+		routed.Message = strings.TrimPrefix(routed.Message+"; "+note, "; ")
+	}
 	meta.SetStatusCondition(&st.Conditions, routed)
 	written := metav1.Condition{Type: straitv1.ConditionApplied, Status: metav1.ConditionTrue, Reason: "Synced", ObservedGeneration: svc.Generation}
 	if a.err != nil {
@@ -668,6 +726,20 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 		e()
 	}
 	return nil
+}
+
+// droppedNote names the addresses that endpoint-direct dropped, at most 5 per member.
+func droppedNote(dropped map[string][]string) string {
+	var parts []string
+	for _, m := range slices.Sorted(maps.Keys(dropped)) {
+		d := dropped[m]
+		more := ""
+		if len(d) > 5 {
+			d, more = d[:5], fmt.Sprintf(" and %d more", len(d)-5)
+		}
+		parts = append(parts, fmt.Sprintf("endpoint-direct dropped from %s: %s%s", m, strings.Join(d, ", "), more))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func setFlag(conds *[]metav1.Condition, t string, on bool, reason string, gen int64) {

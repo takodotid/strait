@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -497,5 +498,93 @@ func TestStatusWriteConflict(t *testing.T) {
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive {
 		t.Fatalf("next reconcile: route = %+v", st.Route)
+	}
+}
+
+// directPeer is site a with a healthy, active direct link to b with endpointDirect, and b's member web-b at addresses.
+func directPeer(t *testing.T, link func(*straitv1.SiteLink), addresses ...string) client.Client {
+	t.Helper()
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp.Status.GatewayPort = 15001
+	l := &straitv1.SiteLink{
+		ObjectMeta: metav1.ObjectMeta{Name: "b-direct"},
+		Spec:       straitv1.SiteLinkSpec{Peer: "b", Transport: straitv1.TransportDirect, Direct: &straitv1.DirectLink{Address: "172.31.0.22", EndpointDirect: true}},
+	}
+	l.Status.Active, l.Status.Healthy = true, true
+	if link != nil {
+		link(l)
+	}
+	p := peers{
+		fresh: map[string]bool{"b": true},
+		view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
+			"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, ObservedAt: now,
+				Endpoint: observe.Endpoint{Addresses: addresses, Port: 9090}},
+		}}},
+	}
+	r, c := reconciler(t, p, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-b"), imp, l)...)
+	run(t, r)
+	return c
+}
+
+func sliceAddresses(es discoveryv1.EndpointSlice) []string {
+	var out []string
+	for _, e := range es.Endpoints {
+		out = append(out, e.Addresses...)
+	}
+	return out
+}
+
+// Endpoint-direct writes only IP addresses from a peer's document, and none that is unspecified, loopback, link-local
+// or multicast. Status names what it dropped (issue #36).
+func TestEndpointDirectDropsAddresses(t *testing.T) {
+	c := directPeer(t, nil, "10.1.0.7", "127.0.0.1", "not-an-ip", "169.254.169.254", "224.0.0.1", "0.0.0.0", "::ffff:10.1.0.8")
+	es := endpointSlices(t, c)["web-b"]
+	if got := sliceAddresses(es); !slices.Equal(got, []string{"10.1.0.7", "10.1.0.8"}) || *es.Ports[0].Port != 9090 {
+		t.Fatalf("addresses = %v, port %d; want [10.1.0.7 10.1.0.8], 9090", got, *es.Ports[0].Port)
+	}
+	routed := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
+	for _, want := range []string{"endpoint-direct dropped from web-b", "127.0.0.1", `"not-an-ip"`, "169.254.169.254", "224.0.0.1", "0.0.0.0"} {
+		if routed == nil || !strings.Contains(routed.Message, want) {
+			t.Fatalf("routed = %+v, want %q in its message", routed, want)
+		}
+	}
+}
+
+// A peer cannot make the Routed message too long for the API server, which takes up to 32768 bytes (issue #36).
+func TestEndpointDirectBoundsTheMessage(t *testing.T) {
+	addresses := []string{"10.1.0.7", strings.Repeat("x", 100_000)}
+	for i := range 20 {
+		addresses = append(addresses, fmt.Sprintf("127.0.0.%d", i+1))
+	}
+	c := directPeer(t, nil, addresses...)
+	routed := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
+	if routed == nil || len(routed.Message) > 1024 || !strings.Contains(routed.Message, "and 16 more") {
+		t.Fatalf("routed message of %d bytes: %.300s", len(routed.Message), routed.Message)
+	}
+}
+
+// A member whose document gives no address that endpoint-direct accepts takes the gateway, as with no address
+// (issue #36).
+func TestEndpointDirectFallsBackToGateway(t *testing.T) {
+	c := directPeer(t, nil, "127.0.0.1")
+	es := endpointSlices(t, c)["web-b"]
+	if got := sliceAddresses(es); !slices.Equal(got, []string{"10.0.9.9"}) || *es.Ports[0].Port != 15001 {
+		t.Fatalf("addresses = %v, port %d; want the gateway, 10.0.9.9:15001", got, *es.Ports[0].Port)
+	}
+	if st := status(t, c); st.Members[1].Path != straitv1.PathGateway {
+		t.Fatalf("members = %+v", st.Members)
+	}
+}
+
+// With endpointCIDRs, endpoint-direct writes only addresses in those ranges (issue #36).
+func TestEndpointDirectCIDRs(t *testing.T) {
+	c := directPeer(t, func(l *straitv1.SiteLink) { l.Spec.Direct.EndpointCIDRs = []string{"10.1.0.0/16", "fd00:1::/64"} },
+		"10.1.0.7", "10.2.0.9", "192.0.2.1")
+	if got := sliceAddresses(endpointSlices(t, c)["web-b"]); !slices.Equal(got, []string{"10.1.0.7"}) {
+		t.Fatalf("addresses = %v, want [10.1.0.7]", got)
+	}
+	routed := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
+	if routed == nil || !strings.Contains(routed.Message, "10.2.0.9 (outside endpointCIDRs)") || !strings.Contains(routed.Message, "192.0.2.1 (outside endpointCIDRs)") {
+		t.Fatalf("routed = %+v", routed)
 	}
 }
