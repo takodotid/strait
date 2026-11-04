@@ -110,7 +110,7 @@ Held                  False   NoHeldUnknown           12m    -
 
 | Item | Value |
 |---|---|
-| Release | v1.1.0 |
+| Release | v1.1.1 |
 | API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
@@ -145,7 +145,7 @@ Each release publishes:
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.0 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.1 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -154,7 +154,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v1.1.0
+v=v1.1.1
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -169,7 +169,7 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
 
 ```powershell
-$v = "v1.1.0"
+$v = "v1.1.1"
 $a = "strait_${v}_windows_amd64"
 $url = "https://github.com/takodotid/strait/releases/download/$v"
 Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
@@ -201,7 +201,7 @@ kubectl strait --context site-a status
 Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. At each site, apply the new release's CRDs first, then upgrade the chart with the same values:
 
 ```sh
-v=v1.1.0
+v=v1.1.1
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
 helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" \
