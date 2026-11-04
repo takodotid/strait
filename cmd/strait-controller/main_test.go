@@ -19,6 +19,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/takodotid/strait/internal/exchange"
+	"github.com/takodotid/strait/internal/xds"
 )
 
 // memoryLock is a leader election lock held in memory.
@@ -167,5 +170,21 @@ func TestServeWaitsForRequests(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("serve did not return once the request ended")
+	}
+}
+
+// The document server, the poller, the SitePeer status writer and the xDS server run on the elected controller only
+// (RFC0004, requirement 12).
+func TestRunnablesNeedLeaderElection(t *testing.T) {
+	poller := &exchange.Poller{}
+	list := runnables("127.0.0.1:0", func() exchange.Document { return exchange.Document{} }, poller, nil, xds.NewServer(nil, "strait-system", "127.0.0.1:0", ""))
+	if len(list) != 4 {
+		t.Fatalf("%d runnables, want the document server, the poller, the status writer and the xDS server", len(list))
+	}
+	for i, r := range list {
+		l, ok := r.(manager.LeaderElectionRunnable)
+		if !ok || !l.NeedLeaderElection() {
+			t.Errorf("runnable %d (%T) runs without the Lease", i, r)
+		}
 	}
 }
