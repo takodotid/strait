@@ -252,6 +252,8 @@ const (
 	ConditionMultiple             = "Multiple"
 	ConditionDeclarationsDisagree = "DeclarationsDisagree"
 	ConditionHeld                 = "Held"
+	// ConditionApplied is True when every write of the last decision succeeded.
+	ConditionApplied = "Applied"
 )
 
 // SiteServiceStatus shows the route and every input of the decision.

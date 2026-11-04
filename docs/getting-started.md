@@ -68,11 +68,11 @@ Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its 
 Check the rendered `Site`, then install at both sites:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.1.3 \
+helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.2.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f -
 
 for s in a b; do
-  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.3 \
+  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.2.0 \
     --namespace strait-system --values values-$s.yaml --wait
 done
 ```
@@ -158,7 +158,7 @@ Check each site's objects together with its `Site`. The output must end with `Er
 
 ```sh
 for s in a b; do
-  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.1.3 \
+  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.2.0 \
     --namespace strait-system --values values-$s.yaml | strait validate -f - -f site-$s.yaml
 done
 ```
@@ -283,7 +283,7 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 | `direct.address` | The peer gateway's IP address on the private path. |
 | `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that admit only them: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
 
-With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)).
+With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)). Set `endpointCIDRs` on that link to the peer's pod CIDRs, so a peer's document cannot point the name anywhere else.
 
 ## Next
 

@@ -348,6 +348,15 @@ type DirectLink struct {
 	// EndpointDirect points application names straight at the remote member's addresses while this link is the active link, with no gateway hop. Pod addresses must be routable over the link.
 	// +optional
 	EndpointDirect bool `json:"endpointDirect,omitempty"`
+
+	// EndpointCIDRs limits endpoint-direct to member addresses in these ranges, such as the peer's pod CIDRs.
+	// Empty accepts any IP address that is not unspecified, loopback, link-local or multicast.
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:MaxLength=49
+	// +kubebuilder:validation:items:XValidation:rule="isCIDR(self)",message="must be an address in CIDR notation"
+	// +listType=atomic
+	// +optional
+	EndpointCIDRs []string `json:"endpointCIDRs,omitempty"`
 }
 
 // WireGuardLink holds the settings of a wireguard link.

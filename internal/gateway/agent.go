@@ -38,6 +38,10 @@ const (
 	RetryPeriod       = time.Second
 	WireGuardInterval = 2 * time.Second
 	HealthInterval    = time.Second
+	// EnvoyNotReady is how long Envoy may be not ready before the active replica steps down. It matches the chart's
+	// readiness probe of the Envoy container, 3 failures 2s apart: the Lease moves only once the pod is not ready and
+	// the controller has stopped publishing it, so a shorter stall moves nothing.
+	EnvoyNotReady = 6 * time.Second
 )
 
 // Agent is the gateway agent.
@@ -67,7 +71,7 @@ type Agent struct {
 }
 
 // Run takes part in the gateway Lease until ctx ends, and re-joins the election each time the Lease is lost.
-// The interfaces are gone before the Lease is released.
+// It joins only while Envoy is ready. The interfaces are gone before the Lease is released.
 func (a *Agent) Run(ctx context.Context) error {
 	// A restarted container finds the interfaces of its last run in the pod's network namespace.
 	a.removeAll()
@@ -80,6 +84,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		before: a.stopLeading,
 	}
 	for ctx.Err() == nil {
+		if !a.waitForEnvoy(ctx) {
+			break
+		}
 		term, stepDown := context.WithCancel(ctx)
 		le, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 			Lock:            l,
@@ -103,6 +110,26 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.stopLeading()
 	}
 	return nil
+}
+
+// waitForEnvoy returns true once Envoy is ready, and false if ctx ends first.
+func (a *Agent) waitForEnvoy(ctx context.Context) bool {
+	logged := false
+	for {
+		err := EnvoyReady(ctx, a.HTTP, a.EnvoyAdmin)
+		if err == nil {
+			return true
+		}
+		if !logged && ctx.Err() == nil {
+			a.Log.Info("Envoy is not ready; not joining the gateway election", "error", err.Error())
+			logged = true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(RetryPeriod):
+		}
+	}
 }
 
 // lease is the gateway Lease. It records each renewal, and stops the leader's work before a release.
@@ -151,7 +178,8 @@ func (l *lease) sinceRenewed() time.Duration {
 
 // lead runs the WireGuard and health loops until lctx ends, then removes every interface.
 // It steps down when the Lease goes unrenewed for RenewDeadline, so the interfaces are gone
-// before the Lease can expire and another replica take it.
+// before the Lease can expire and another replica take it. It also steps down when Envoy has not been ready for
+// EnvoyNotReady, so that a ready standby can take the Lease.
 func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
 	ctx, cancel := context.WithCancel(lctx)
 	done := make(chan struct{})
@@ -175,6 +203,24 @@ func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
 		a.loop(ctx, RetryPeriod/4, nil, func(context.Context) {
 			if d := l.sinceRenewed(); d > RenewDeadline {
 				a.Log.Info("the Lease was not renewed in time; stepping down", "since", d.String())
+				stepDown()
+				cancel()
+			}
+		})
+	})
+	wg.Go(func() {
+		// notReady is when the first check that failed since Envoy was last ready began. Zero while Envoy is ready.
+		var notReady time.Time
+		a.loop(ctx, HealthInterval, nil, func(ctx context.Context) {
+			start := time.Now()
+			err := EnvoyReady(ctx, a.HTTP, a.EnvoyAdmin)
+			switch {
+			case err == nil:
+				notReady = time.Time{}
+			case notReady.IsZero():
+				notReady = start
+			case time.Since(notReady) >= EnvoyNotReady && ctx.Err() == nil:
+				a.Log.Info("Envoy is not ready; stepping down", "since", time.Since(notReady).String(), "error", err.Error())
 				stepDown()
 				cancel()
 			}

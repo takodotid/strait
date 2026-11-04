@@ -19,6 +19,7 @@ import (
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -84,6 +85,7 @@ type site struct {
 	// wgPublicKey is the site's WireGuard public key. The private key only exists in the site's Secret.
 	wgPublicKey string
 	c           client.Client
+	cfg         *rest.Config
 }
 
 // env is the fixture shared by every scenario.
@@ -169,8 +171,16 @@ func (s *site) connect() error {
 	// A paused site must not hang a call.
 	cfg.Timeout = 10 * time.Second
 	cfg.QPS, cfg.Burst = 50, 100
+	s.cfg = cfg
 	s.c, err = client.New(cfg, client.Options{Scheme: scheme()})
 	return err
+}
+
+// watcher returns a client of the site that can watch, with no timeout on a request.
+func (s *site) watcher() (client.WithWatch, error) {
+	cfg := rest.CopyConfig(s.cfg)
+	cfg.Timeout = 0
+	return client.NewWithWatch(cfg, client.Options{Scheme: scheme()})
 }
 
 // run runs a command and returns its standard output. The error holds the end of standard error.

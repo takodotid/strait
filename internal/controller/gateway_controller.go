@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,9 +45,16 @@ type GatewayReconciler struct {
 	Namespace string
 	// Version is the controller's version, written into the Site's status.
 	Version string
+	// Now is the controller's clock. Nil means time.Now.
+	Now func() time.Time
 
 	// written keeps what the last status write of the Site returned, until the cache shows it.
 	written written[straitv1.Site, *straitv1.Site]
+
+	mu sync.Mutex
+	// lease is the gateway Lease's spec as the controller last saw it, and seen is when the controller saw it change.
+	lease coordinationv1.LeaseSpec
+	seen  time.Time
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -55,7 +64,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		return ctrl.Result{RequeueAfter: resync}, err
 	}
 	r.written.latest(site)
-	pod, addr, node, err := r.activeGateway(ctx)
+	pod, addr, node, left, err := r.activeGateway(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -108,34 +117,64 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	// The Lease expires on the controller's clock, and no event marks it, so look again when it would.
+	next := 10 * time.Second
+	if left > 0 && left < next {
+		next = left + 10*time.Millisecond
+	}
+	return ctrl.Result{RequeueAfter: next}, nil
 }
 
 // activeGateway returns the pod that holds the gateway lease, and its address and node when it is running and ready.
-func (r *GatewayReconciler) activeGateway(ctx context.Context) (name, addr, node string, err error) {
+// Left is how long the lease stays valid unless it is renewed, or 0 when that is not known.
+func (r *GatewayReconciler) activeGateway(ctx context.Context) (name, addr, node string, left time.Duration, err error) {
 	var lease coordinationv1.Lease
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.Namespace, Name: GatewayLease}, &lease); err != nil {
-		return "", "", "", client.IgnoreNotFound(err)
+		return "", "", "", 0, client.IgnoreNotFound(err)
 	}
 	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
-		return "", "", "", nil
+		return "", "", "", 0, nil
 	}
-	if lease.Spec.RenewTime != nil && lease.Spec.LeaseDurationSeconds != nil &&
-		time.Since(lease.Spec.RenewTime.Time) > time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second {
-		return "", "", "", nil
+	left = r.leaseLeft(lease.Spec)
+	if left < 0 {
+		return "", "", "", 0, nil
 	}
 	name = *lease.Spec.HolderIdentity
 	var pod corev1.Pod
 	if err := r.Get(ctx, types.NamespacedName{Namespace: r.Namespace, Name: name}, &pod); err != nil {
 		if apierrors.IsNotFound(err) {
-			return name, "", "", nil
+			return name, "", "", left, nil
 		}
-		return "", "", "", err
+		return "", "", "", 0, err
 	}
 	if pod.Status.PodIP == "" || !pod.DeletionTimestamp.IsZero() || !podReady(&pod) {
-		return name, "", "", nil
+		return name, "", "", left, nil
 	}
-	return name, pod.Status.PodIP, pod.Spec.NodeName, nil
+	return name, pod.Status.PodIP, pod.Spec.NodeName, left, nil
+}
+
+// leaseLeft returns how long the gateway lease stays valid unless its spec changes: its duration, counted on the
+// controller's clock from when the controller saw the spec change, as client-go's leader election counts it. The
+// holder sets renewTime on its own node's clock, so renewTime is never compared with the controller's clock.
+// It returns a negative duration once the lease has expired, and 0 when the lease names no duration.
+func (r *GatewayReconciler) leaseLeft(spec coordinationv1.LeaseSpec) time.Duration {
+	now := time.Now()
+	if r.Now != nil {
+		now = r.Now()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.seen.IsZero() || !equality.Semantic.DeepEqual(r.lease, spec) {
+		r.lease, r.seen = *spec.DeepCopy(), now
+	}
+	if spec.LeaseDurationSeconds == nil {
+		return 0
+	}
+	left := r.seen.Add(time.Duration(*spec.LeaseDurationSeconds) * time.Second).Sub(now)
+	if left == 0 {
+		left = -1
+	}
+	return left
 }
 
 func podReady(p *corev1.Pod) bool {
