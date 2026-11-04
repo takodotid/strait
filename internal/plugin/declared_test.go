@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +72,19 @@ func TestDeclared(t *testing.T) {
 			}
 			if _, ok := rep.Members["web-b"]; ok {
 				t.Fatal("observed a member of another site")
+			}
+		})
+	}
+}
+
+// A member whose Service or EndpointSlices cannot be read is Unknown (RFC#0003, requirements 3 and 12).
+func TestDeclaredReadFailed(t *testing.T) {
+	for _, kind := range []string{"Service", "EndpointSlice"} {
+		t.Run(kind, func(t *testing.T) {
+			rep := Declared{}.Observe(context.Background(), failing(t, kind, service("web-a", "10.0.0.1")...), declaredService(), "a", time.Now())
+			o := rep.Members["web-a"]
+			if o.State != straitv1.StateUnknown || o.Eligible || !strings.HasPrefix(o.Reason, "ReadFailed: ") {
+				t.Fatalf("got state=%s eligible=%v reason=%q; want Unknown, ReadFailed", o.State, o.Eligible, o.Reason)
 			}
 		})
 	}
