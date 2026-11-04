@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/decide"
 )
 
 // cnpgCluster builds a Cluster as CloudNativePG reports it.
@@ -164,5 +165,43 @@ func TestCNPGLocalClustersDisagree(t *testing.T) {
 	rep := CNPG{}.Observe(context.Background(), r, svc, "a", time.Now())
 	if rep.Declared != "" || !slices.Equal(rep.Conflicting, []string{"pg-a", "pg-b"}) {
 		t.Fatalf("declared %q, conflicting %v", rep.Declared, rep.Conflicting)
+	}
+}
+
+// The declaration names a Cluster by its self name, and maps to the member whose cnpg.cluster has that name. A self
+// that differs from the Cluster's name declares a name that is no member, and the site routes nowhere (RFC#0003,
+// requirement 7).
+func TestCNPGSelf(t *testing.T) {
+	tests := []struct {
+		name     string
+		self     string
+		declared string
+		reason   string
+	}{
+		{"self is the Cluster's name", "cluster-a", "pg-a", straitv1.ReasonActive},
+		{"self differs from the Cluster's name", "site-a", "site-a", straitv1.ReasonNotDeclared},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = clientgoscheme.AddToScheme(scheme)
+			spec := map[string]any{"replica": map[string]any{"self": tt.self, "primary": tt.self, "source": "cluster-b"}}
+			objs := append(service("cluster-a-rw", "10.0.0.1"), clusterObject("cluster-a", spec, reported("cluster-a-1", true)))
+			r := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+			svc := siteService(straitv1.CNPGRolePrimary)
+			rep := CNPG{}.Observe(context.Background(), r, svc, "a", time.Now())
+			if o := rep.Members["pg-a"]; !o.Writable() || rep.Declared != tt.declared {
+				t.Fatalf("writable %v, declared %q; want writable, declared %q", o.Writable(), rep.Declared, tt.declared)
+			}
+			got := decide.Decide(decide.Input{
+				Spec:         svc.Spec,
+				LocalSite:    "a",
+				Sites:        map[string]decide.SiteView{"a": {Known: true, Declared: rep.Declared}},
+				Observations: rep.Members,
+			})
+			if got.Reason != tt.reason {
+				t.Fatalf("reason %s (%s), want %s", got.Reason, got.Message, tt.reason)
+			}
+		})
 	}
 }
