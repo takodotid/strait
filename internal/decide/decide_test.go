@@ -845,3 +845,26 @@ func TestStartupHold(t *testing.T) {
 		})
 	}
 }
+
+// Unread lists the sites with a member, other than the local site, not read since the controller began to poll
+// peers, with no time limit.
+func TestUnread(t *testing.T) {
+	tests := []struct {
+		name string
+		in   decide.Input
+		want []string
+	}{
+		{"nothing read yet", decide.Input{Spec: pgSpec(straitv1.RouteNowhere, hold, "c", "a", "b"), LocalSite: "a", Started: ago(time.Hour)}, []string{"b", "c"}},
+		{"one peer read", decide.Input{Spec: pgSpec(straitv1.RouteNowhere, hold, "a", "b", "c"), LocalSite: "a", Read: map[string]bool{"c": true}}, []string{"b"}},
+		{"every peer read", decide.Input{Spec: pgSpec(straitv1.RouteNowhere, hold, "a", "b"), LocalSite: "a", Read: map[string]bool{"b": true}}, nil},
+		{"every member local", decide.Input{Spec: pgSpec(straitv1.RouteNowhere, hold, "a"), LocalSite: "a"}, nil},
+		{"two members at one peer", decide.Input{Spec: setSpec(straitv1.LocalFirst, ""), LocalSite: "b"}, []string{"a"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.Unread(); !slices.Equal(got, tt.want) {
+				t.Fatalf("Unread() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

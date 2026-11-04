@@ -123,7 +123,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			read[m.Site] = true
 		}
 	}
-	result := decide.Decide(decide.Input{
+	in := decide.Input{
 		Spec:          svc.Spec,
 		LocalSite:     site.Name,
 		Sites:         sites,
@@ -133,7 +133,9 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Now:           now,
 		Started:       started,
 		Read:          read,
-	})
+	}
+	result := decide.Decide(in)
+	shown := startupStatus(result, in.Unread())
 
 	if err := r.syncExportsImports(ctx, &svc, site.Name, report); err != nil {
 		return ctrl.Result{}, err
@@ -151,7 +153,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, result, endpoints, paths, conflict, now); err != nil {
+	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, shown, endpoints, paths, conflict, now); err != nil {
 		return ctrl.Result{}, err
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", endpoints)
@@ -188,6 +190,19 @@ func (r *SiteServiceReconciler) remember(replaced string, svc *straitv1.SiteServ
 	}
 	w.replaced[replaced] = true
 	w.object = svc.DeepCopy()
+}
+
+// startupStatus returns the result that the status shows. Until every site with a member has been read since the
+// controller began to poll peers, the reason is AwaitingPeers and the message gives the decision's reason. The route,
+// and so the endpoints, stay the decision's.
+func startupStatus(result decide.Result, unread []string) decide.Result {
+	if len(unread) == 0 || result.Reason == straitv1.ReasonAwaitingPeers {
+		return result
+	}
+	result.Message = fmt.Sprintf("site %s not read since the controller started; the decision is %s: %s",
+		strings.Join(unread, ", "), result.Reason, result.Message)
+	result.Reason = straitv1.ReasonAwaitingPeers
+	return result
 }
 
 // lastConfirmed returns each member's last confirmed time, from memory or else from status.

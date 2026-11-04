@@ -533,7 +533,8 @@ func (e *env) siteLoss(ctx context.Context, t *testing.T) {
 
 // twoWritable: site b comes back with cluster-b still primary, still cut off from site a, and its controller restarts.
 // With pg's startupHold, b does not route to its local primary before it has read site a, until the hold ends; then it
-// routes as without the hold. Once the cut is removed, both members are writable, so both sites route nowhere.
+// routes as without the hold, with reason AwaitingPeers while site a stays unread. Once the cut is removed, both
+// members are writable, so both sites route nowhere.
 func (e *env) twoWritable(ctx context.Context, t *testing.T) {
 	b := e.b
 	e.unpause(ctx, b)
@@ -553,7 +554,7 @@ func (e *env) twoWritable(ctx context.Context, t *testing.T) {
 	}
 	d := eventually(ctx, t, 2*time.Minute, 250*time.Millisecond, "site b awaits site a", routeIs(b, dbNamespace, "pg", nil, straitv1.ReasonAwaitingPeers))
 	e.times.record(t, "7/awaiting-"+b.name, d)
-	eventually(ctx, t, startupHold+30*time.Second, 250*time.Millisecond, "site b routes pg-b once the hold ends", routeIs(b, dbNamespace, "pg", []string{memberOf(b)}, straitv1.ReasonActive))
+	eventually(ctx, t, startupHold+30*time.Second, 250*time.Millisecond, "site b routes pg-b once the hold ends, awaiting site a", routeIs(b, dbNamespace, "pg", []string{memberOf(b)}, straitv1.ReasonAwaitingPeers))
 	ended := time.Now()
 
 	// The new controller starts holding at its first decision. From then, pg-b is never routed until the hold ends:

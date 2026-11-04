@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -150,7 +151,7 @@ func status(t *testing.T, c client.Client) straitv1.SiteServiceStatus {
 
 func TestLocalActiveMember(t *testing.T) {
 	objs := append(appService("web-a", "10.0.0.1", "10.0.0.2"), site("a", "10.0.9.9"), webService("web-a"))
-	r, c := reconciler(t, peers{}, objs...)
+	r, c := reconciler(t, readB, objs...)
 	run(t, r)
 
 	var svc corev1.Service
@@ -264,7 +265,7 @@ func TestUnknownHeldThenNowhere(t *testing.T) {
 	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
 	imp.Status.GatewayPort = 15001
 	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss, imp)
-	r, c := reconciler(t, peers{}, objs...)
+	r, c := reconciler(t, readB, objs...)
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonHeldUnknown || len(endpointSlices(t, c)) != 1 {
 		t.Fatalf("route = %+v", st.Route)
@@ -314,10 +315,44 @@ func TestStartupHold(t *testing.T) {
 		t.Fatalf("once b is read: route = %+v", st.Route)
 	}
 
+	// After the hold, b still unread: the local member is routed, and the status says that b has not been read.
 	r, c = reconciler(t, peers{started: now.Add(-time.Minute)}, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss.DeepCopy())...)
 	run(t, r)
-	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || len(endpointSlices(t, c)) != 1 {
-		t.Fatalf("after the hold: route = %+v", st.Route)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonAwaitingPeers || !slices.Equal(st.Route.Members, []string{"web-a"}) || len(endpointSlices(t, c)) != 1 {
+		t.Fatalf("after the hold, b unread: route = %+v", st.Route)
+	}
+}
+
+// After a restart, until every site with a member has been read, the status shows AwaitingPeers in place of the
+// decision's reason, however long that takes. The route and the endpoints are the decision's (issue #19).
+func TestStatusAtStartup(t *testing.T) {
+	ss := webService("web-a")
+	// The status from before the restart.
+	ss.Status.Route = straitv1.Route{Members: []string{"web-a"}, Reason: straitv1.ReasonActive, LastChangeTime: &metav1.Time{Time: now.Add(-time.Hour)}, Endpoints: 1}
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss)
+	r, c := reconciler(t, peers{started: now}, objs...)
+
+	for _, after := range []time.Duration{0, 5 * time.Second, 40 * time.Second} {
+		r.Now = func() time.Time { return now.Add(after) }
+		run(t, r)
+		st := status(t, c)
+		routed := meta.FindStatusCondition(st.Conditions, straitv1.ConditionRouted)
+		if st.Route.Reason != straitv1.ReasonAwaitingPeers || !strings.Contains(st.Route.Message, "site b") || !strings.Contains(st.Route.Message, straitv1.ReasonActive) ||
+			!slices.Equal(st.Route.Members, []string{"web-a"}) || st.Route.Endpoints != 1 || len(endpointSlices(t, c)) != 1 ||
+			routed == nil || routed.Status != metav1.ConditionTrue || routed.Reason != straitv1.ReasonAwaitingPeers {
+			t.Fatalf("%s after the start, b unread: route = %+v, routed = %+v", after, st.Route, routed)
+		}
+	}
+
+	r.Peers = peers{
+		started: now,
+		fresh:   map[string]bool{"b": true},
+		view:    map[string]observe.Report{"b": {Declared: "web-a", Members: map[string]observe.Observation{}}},
+	}
+	r.Now = func() time.Time { return now.Add(41 * time.Second) }
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || !slices.Equal(st.Route.Members, []string{"web-a"}) {
+		t.Fatalf("once b is read: route = %+v", st.Route)
 	}
 }
 
