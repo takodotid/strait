@@ -37,6 +37,7 @@ func TestE2E(t *testing.T) {
 		{"1-baseline", e.baseline},
 		{"import", e.importService},
 		{"switch", e.switchThroughNowhere},
+		{"conflict", e.serviceConflict},
 		{"ports", e.portsTogether},
 		{"2-link-failover", e.linkFailover},
 		{"3-switchover", e.switchover},

@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -117,5 +120,47 @@ func (e *env) switchThroughNowhere(ctx context.Context, t *testing.T) {
 		case <-deadline:
 			t.Fatalf("site a: local's EndpointSlices are not two's only after 30s; changes: %v", seen)
 		}
+	}
+}
+
+// serviceConflict: Strait's Service local at site a loses its owner, as when another owner creates a Service of that
+// name. Strait deletes local's EndpointSlices, so none feeds that Service. Once it is gone, Strait writes its own again.
+// The step then deletes local (issue #33).
+func (e *env) serviceConflict(ctx context.Context, t *testing.T) {
+	a := e.a
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "local", Namespace: webNamespace}}
+	if err := a.c.Patch(ctx, svc, client.RawPatch(types.MergePatchType, []byte(`{"metadata":{"ownerReferences":null}}`))); err != nil {
+		t.Fatal(err)
+	}
+	d := eventually(ctx, t, 30*time.Second, 250*time.Millisecond, "site a deletes local's EndpointSlices", func(ctx context.Context) (bool, string) {
+		got, err := localSlices(ctx, a)
+		if err != nil {
+			return false, err.Error()
+		}
+		ss, err := siteService(ctx, a, webNamespace, "local")
+		if err != nil {
+			return false, err.Error()
+		}
+		routed := meta.FindStatusCondition(ss.Status.Conditions, straitv1.ConditionRouted)
+		return len(got) == 0 && routed != nil && routed.Reason == "ServiceConflict", fmt.Sprintf("slices of %v; %s", got, describe(ss))
+	})
+	e.times.record(t, "conflict/slices-deleted", d)
+
+	if err := a.c.Delete(ctx, svc); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 30*time.Second, 250*time.Millisecond, "site a writes local's Service and EndpointSlice again", func(ctx context.Context) (bool, string) {
+		got, err := localSlices(ctx, a)
+		if err != nil {
+			return false, err.Error()
+		}
+		ss, err := siteService(ctx, a, webNamespace, "local")
+		if err != nil {
+			return false, err.Error()
+		}
+		return slices.Equal(got, []string{"two"}) && conditionTrue(ss, straitv1.ConditionRouted), fmt.Sprintf("slices of %v; %s", got, describe(ss))
+	})
+	if err := a.c.Delete(ctx, localService(e, "")); err != nil {
+		t.Fatal(err)
 	}
 }

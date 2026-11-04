@@ -435,7 +435,8 @@ func (a applied) in(svc *straitv1.SiteService, member string) (discoveryv1.Endpo
 }
 
 // apply writes a decision in the order of RFC#0002, and stops at the first read or write that fails:
-//  1. it deletes every EndpointSlice in place that is not the slice of a routed member with a target;
+//  1. it deletes every EndpointSlice in place that is not the slice of a routed member with a target, and every one
+//     when another owner holds the Service;
 //  2. it writes the Exports and Imports, then the Service;
 //  3. it writes the slice of each routed member with a target.
 //
@@ -452,11 +453,14 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	conflict, cerr := r.serviceConflict(ctx, svc)
 	a.conflict = conflict
 	targets, terr := r.targets(ctx, svc, site, members, observations)
-	if terr == nil {
+	switch {
+	case conflict:
+		// Another owner's Service: no slice of this SiteService may feed it (RFC#0002, requirement 9).
+	case terr == nil:
 		for m := range targets {
 			a.owed[m] = true
 		}
-	} else {
+	default:
 		for _, m := range members {
 			a.owed[m] = true
 		}
@@ -481,7 +485,6 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 		return a
 	}
 	if conflict {
-		a.owed = map[string]bool{}
 		return a
 	}
 	if a.err = r.writeService(ctx, svc); a.err != nil {

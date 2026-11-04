@@ -304,6 +304,43 @@ func TestServiceConflict(t *testing.T) {
 	}
 }
 
+// When another owner takes the name of a Service that Strait wrote, the slices that Strait wrote earlier stop feeding
+// it. Once that Service is gone, Strait writes its own again (issue #33).
+func TestServiceConflictDeletesSlices(t *testing.T) {
+	r, c := reconciler(t, readB, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))...)
+	run(t, r)
+	if es := endpointSlices(t, c); len(es) != 1 {
+		t.Fatalf("before the conflict: slices = %v", es)
+	}
+	// The Service loses its owner, as when it is deleted and another owner creates one of the same name.
+	var svc corev1.Service
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &svc); err != nil {
+		t.Fatal(err)
+	}
+	svc.OwnerReferences = nil
+	if err := c.Update(context.Background(), &svc); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	if m := sliceMembers(context.Background(), t, c); len(m) != 0 {
+		t.Fatalf("slices of %v, want none on another owner's Service", m)
+	}
+	// The route shows the decision, as before: on a conflict, no slice is to be written.
+	st := status(t, c)
+	if cond := meta.FindStatusCondition(st.Conditions, straitv1.ConditionRouted); cond == nil || cond.Reason != "ServiceConflict" || st.Route.Endpoints != 0 ||
+		!slices.Equal(st.Route.Members, []string{"web-a"}) {
+		t.Fatalf("route = %+v, routed = %+v", st.Route, cond)
+	}
+
+	if err := c.Delete(context.Background(), &svc); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	if es := endpointSlices(t, c); len(es) != 1 || !meta.IsStatusConditionTrue(status(t, c).Conditions, straitv1.ConditionRouted) {
+		t.Fatalf("after the other Service is gone: slices = %v, conditions = %+v", es, status(t, c).Conditions)
+	}
+}
+
 // With a startup hold, a local member is routed only once the peer has been read since polling began, or once the
 // hold ends.
 func TestStartupHold(t *testing.T) {
