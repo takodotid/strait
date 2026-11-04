@@ -152,8 +152,9 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               gatewayPort:
-                description: GatewayPort is the local gateway port of this import.
-                  Allocated from the Site's importPorts and kept.
+                description: |-
+                  GatewayPort is the local gateway port of this import. Allocated from the Site's importPorts, and held by no other
+                  Import (RFC0005).
                 format: int32
                 type: integer
               remotePort:
@@ -318,8 +319,9 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               gatewayPort:
-                description: GatewayPort is the local gateway port of this import.
-                  Allocated from the Site's importPorts and kept.
+                description: |-
+                  GatewayPort is the local gateway port of this import. Allocated from the Site's importPorts, and held by no other
+                  Import (RFC0005).
                 format: int32
                 type: integer
               remotePort:

@@ -86,6 +86,101 @@ func (e *env) importService(ctx context.Context, t *testing.T) {
 	}
 }
 
+// portsTogether: Exports created at the same moment at site a, and Imports at site b, each get a gateway port that no
+// other one holds, at every moment (issue #26). The creates run in parallel, so the controller reconciles the objects
+// back to back, likely before its cache shows the port it gave the one before. Timing decides, so a pass on a build
+// without the fix is possible.
+func (e *env) portsTogether(ctx context.Context, t *testing.T) {
+	const n = 8
+	a, b := e.a, e.b
+	label := map[string]string{"e2e.strait.tako.id/scenario": "ports"}
+	var exports, imports []client.Object
+	for i := range n {
+		name := fmt.Sprintf("together-%d", i)
+		exports = append(exports, &straitv1.Export{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: webNamespace, Labels: label},
+			Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: name, Port: 8080}},
+		})
+		imports = append(imports, &straitv1.Import{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: webNamespace, Labels: label},
+			Spec:       straitv1.ImportSpec{Site: a.name, Export: name},
+		})
+	}
+	create := func(s *site, objs []client.Object) func() error {
+		return func() error {
+			fns := make([]func() error, len(objs))
+			for i, o := range objs {
+				fns[i] = func() error { return s.c.Create(ctx, o) }
+			}
+			return parallel(fns...)
+		}
+	}
+	if err := parallel(create(a, exports), create(b, imports)); err != nil {
+		t.Fatal(err)
+	}
+
+	// ports reads each object's port, and reports the ports that two objects hold.
+	type holders map[int32][]string
+	ports := func(ctx context.Context, s *site, list client.ObjectList) (holders, int, error) {
+		if err := s.c.List(ctx, list, client.InNamespace(webNamespace), client.MatchingLabels(label)); err != nil {
+			return nil, 0, err
+		}
+		out, missing := holders{}, 0
+		switch l := list.(type) {
+		case *straitv1.ExportList:
+			for _, o := range l.Items {
+				if o.Status.GatewayPort == 0 {
+					missing++
+					continue
+				}
+				out[o.Status.GatewayPort] = append(out[o.Status.GatewayPort], o.Name)
+			}
+		case *straitv1.ImportList:
+			for _, o := range l.Items {
+				if o.Status.GatewayPort == 0 {
+					missing++
+					continue
+				}
+				out[o.Status.GatewayPort] = append(out[o.Status.GatewayPort], o.Name)
+			}
+		}
+		return out, missing, nil
+	}
+	shared := map[string]bool{}
+	for _, c := range []struct {
+		s    *site
+		kind string
+		list func() client.ObjectList
+	}{
+		{a, "Export", func() client.ObjectList { return &straitv1.ExportList{} }},
+		{b, "Import", func() client.ObjectList { return &straitv1.ImportList{} }},
+	} {
+		d := eventually(ctx, t, 30*time.Second, 100*time.Millisecond, fmt.Sprintf("site %s gives each %s a port", c.s.name, c.kind), func(ctx context.Context) (bool, string) {
+			got, missing, err := ports(ctx, c.s, c.list())
+			if err != nil {
+				return false, err.Error()
+			}
+			for p, names := range got {
+				if len(names) > 1 {
+					shared[fmt.Sprintf("site %s: %s %v on port %d", c.s.name, c.kind, names, p)] = true
+				}
+			}
+			return missing == 0, fmt.Sprintf("%d of %d have no port; ports %v", missing, n, got)
+		})
+		e.times.record(t, "ports/"+c.s.name, d)
+	}
+	for msg := range shared {
+		t.Errorf("a gateway port was shared: %s", msg)
+	}
+
+	if err := a.c.DeleteAllOf(ctx, &straitv1.Export{}, client.InNamespace(webNamespace), client.MatchingLabels(label)); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.c.DeleteAllOf(ctx, &straitv1.Import{}, client.InNamespace(webNamespace), client.MatchingLabels(label)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // linkFailover: cutting the direct link moves site b's traffic to the wireguard link, and writes from b keep succeeding.
 func (e *env) linkFailover(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b
