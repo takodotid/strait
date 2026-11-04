@@ -40,6 +40,9 @@ type ExportReconciler struct {
 	client.Client
 	Reader client.Reader
 	Local  Local
+
+	// written keeps what the last status write of each Export returned, until the cache shows it.
+	written written[straitv1.Export, *straitv1.Export]
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -48,10 +51,12 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := r.Get(ctx, req.NamespacedName, &exp); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Local.DeleteExport(req.Namespace, req.Name)
+			r.written.forget(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
+	r.written.latest(&exp)
 	if !exp.DeletionTimestamp.IsZero() {
 		r.Local.DeleteExport(req.Namespace, req.Name)
 		return ctrl.Result{}, nil
@@ -97,7 +102,7 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	r.Local.SetExport(exp.Namespace, exp.Name, exp.Status.GatewayPort, exp.Status.ReadyEndpoints > 0)
 	if !equalStatus(old, &exp.Status) {
-		if err := r.Status().Update(ctx, &exp); err != nil {
+		if _, err := r.written.updateStatus(ctx, r.Client, &exp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -148,14 +153,22 @@ type ImportReconciler struct {
 	Reader client.Reader
 	Peers  Peers
 	Now    func() time.Time
+
+	// written keeps what the last status write of each Import returned, until the cache shows it.
+	written written[straitv1.Import, *straitv1.Import]
 }
 
 // Reconcile implements reconcile.Reconciler.
 func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var imp straitv1.Import
 	if err := r.Get(ctx, req.NamespacedName, &imp); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			r.written.forget(req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
 	}
+	r.written.latest(&imp)
 	site, err := LocalSite(ctx, r.Reader)
 	if err != nil {
 		return ctrl.Result{RequeueAfter: resync}, err
@@ -217,7 +230,7 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if !equalStatus(old, &imp.Status) {
-		if err := r.Status().Update(ctx, &imp); err != nil {
+		if _, err := r.written.updateStatus(ctx, r.Client, &imp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

@@ -47,15 +47,7 @@ type SiteServiceReconciler struct {
 	// confirmed keeps each member's last confirmed time at full precision, by SiteService and member.
 	confirmed map[types.NamespacedName]map[string]time.Time
 	// written keeps what the last status write of each SiteService returned, until the cache shows it.
-	written map[types.NamespacedName]*written
-}
-
-// written is the SiteService that the controller's last status write returned, and the resourceVersions that its
-// writes replaced. Each write replaces the version just before it, so a cached object with one of those versions
-// predates the last write, and any other version is the last write or newer.
-type written struct {
-	object   *straitv1.SiteService
-	replaced map[string]bool
+	written written[straitv1.SiteService, *straitv1.SiteService]
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -66,12 +58,13 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(err) {
 			r.Local.DeleteService(req.Namespace, req.Name)
 			delete(r.confirmed, req.NamespacedName)
-			delete(r.written, req.NamespacedName)
+			r.written.forget(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
-	r.latest(&svc)
+	// The previous route, the status comparison and the events start from the status last written.
+	r.written.latest(&svc)
 	if !svc.DeletionTimestamp.IsZero() {
 		r.Local.DeleteService(req.Namespace, req.Name)
 		return ctrl.Result{}, nil
@@ -158,38 +151,6 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", endpoints)
 	return ctrl.Result{RequeueAfter: r.next(&svc, result, confirmed, started, now)}, nil
-}
-
-// latest replaces a cached SiteService that predates the controller's last status write with what that write returned.
-// The decision's previous route, the status comparison, the events and the next write's resourceVersion then all start
-// from the status last written. A cache that lags behind the controller's own writes would otherwise make the next
-// write conflict.
-func (r *SiteServiceReconciler) latest(svc *straitv1.SiteService) {
-	key := client.ObjectKeyFromObject(svc)
-	w, ok := r.written[key]
-	if !ok {
-		return
-	}
-	if w.replaced[svc.ResourceVersion] {
-		w.object.DeepCopyInto(svc)
-		return
-	}
-	delete(r.written, key)
-}
-
-// remember records what a status write returned, and the resourceVersion it replaced.
-func (r *SiteServiceReconciler) remember(replaced string, svc *straitv1.SiteService) {
-	if r.written == nil {
-		r.written = map[types.NamespacedName]*written{}
-	}
-	key := client.ObjectKeyFromObject(svc)
-	w, ok := r.written[key]
-	if !ok {
-		w = &written{replaced: map[string]bool{}}
-		r.written[key] = w
-	}
-	w.replaced[replaced] = true
-	w.object = svc.DeepCopy()
 }
 
 // startupStatus returns the result that the status shows. Until the first poll of every peer has ended, read or not,
@@ -548,17 +509,10 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	if !statusChanged(old, st, now) {
 		return nil
 	}
-	replaced := svc.ResourceVersion
-	if err := r.Status().Update(ctx, svc); err != nil {
-		if apierrors.IsConflict(err) {
-			// Another writer changed the SiteService after it was read. The cache shows that change soon, and the next
-			// reconcile decides and writes again from it.
-			log.FromContext(ctx).Info("status not written: the SiteService changed since it was read; the next reconcile writes it", "error", err.Error())
-			return nil
-		}
+	wrote, err := r.written.updateStatus(ctx, r.Client, svc)
+	if err != nil || !wrote {
 		return err
 	}
-	r.remember(replaced, svc)
 	for _, e := range events {
 		e()
 	}

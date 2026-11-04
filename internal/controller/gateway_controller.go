@@ -43,6 +43,9 @@ type GatewayReconciler struct {
 	Namespace string
 	// Version is the controller's version, written into the Site's status.
 	Version string
+
+	// written keeps what the last status write of the Site returned, until the cache shows it.
+	written written[straitv1.Site, *straitv1.Site]
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -51,6 +54,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{RequeueAfter: resync}, err
 	}
+	r.written.latest(site)
 	pod, addr, node, err := r.activeGateway(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -100,7 +104,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	}
 	meta.SetStatusCondition(&site.Status.Conditions, active)
 	if !equalStatus(old, &site.Status) {
-		if err := r.Status().Update(ctx, site); err != nil {
+		if _, err := r.written.updateStatus(ctx, r.Client, site); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

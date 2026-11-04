@@ -108,7 +108,7 @@ func fakeClient(t *testing.T, objs ...client.Object) client.Client {
 		t.Fatal(err)
 	}
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
-		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Import{}, &straitv1.Site{}).Build()
+		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Export{}, &straitv1.Import{}, &straitv1.Site{}).Build()
 }
 
 func reconciler(t *testing.T, p peers, objs ...client.Object) (*SiteServiceReconciler, client.Client) {
@@ -370,30 +370,6 @@ func TestStatusAtStartup(t *testing.T) {
 	}
 }
 
-// laggingCache reads SiteServices the way an informer cache can just after the controller's own write: once frozen,
-// Get returns the SiteService as it was then, while writes reach the API server.
-type laggingCache struct {
-	client.Client
-	frozen *straitv1.SiteService
-}
-
-func (l *laggingCache) freeze(t *testing.T) {
-	t.Helper()
-	var ss straitv1.SiteService
-	if err := l.Client.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &ss); err != nil {
-		t.Fatal(err)
-	}
-	l.frozen = &ss
-}
-
-func (l *laggingCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-	if ss, ok := obj.(*straitv1.SiteService); ok && l.frozen != nil && key == client.ObjectKeyFromObject(l.frozen) {
-		l.frozen.DeepCopyInto(ss)
-		return nil
-	}
-	return l.Client.Get(ctx, key, obj, opts...)
-}
-
 func routeChangedEvents(r *SiteServiceReconciler) int {
 	n := 0
 	for {
@@ -416,7 +392,7 @@ func TestStatusWriteOnLaggingCache(t *testing.T) {
 	cache := &laggingCache{Client: c}
 	r.Client = cache
 	run(t, r)
-	cache.freeze(t)
+	cache.freeze(t, &straitv1.SiteService{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web"}})
 
 	// The member loses its endpoint. The route moves to nowhere, in a write that the cache never shows.
 	var es discoveryv1.EndpointSlice
@@ -441,11 +417,11 @@ func TestStatusWriteOnLaggingCache(t *testing.T) {
 		t.Fatalf("RouteChanged events = %d, want 1", n)
 	}
 
-	cache.frozen = nil
+	cache.thaw()
 	r.Now = func() time.Time { return now.Add(statusRefresh + 3*time.Second) }
 	run(t, r)
-	if len(r.written) != 0 {
-		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written)
+	if len(r.written.last) != 0 {
+		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written.last)
 	}
 }
 
@@ -455,7 +431,7 @@ func TestStatusWriteConflict(t *testing.T) {
 	r, c := reconciler(t, readB, objs...)
 	cache := &laggingCache{Client: c}
 	r.Client = cache
-	cache.freeze(t)
+	cache.freeze(t, &straitv1.SiteService{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web"}})
 	var ss straitv1.SiteService
 	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &ss); err != nil {
 		t.Fatal(err)
@@ -472,7 +448,7 @@ func TestStatusWriteConflict(t *testing.T) {
 		t.Fatalf("RouteChanged events = %d before the status is written", n)
 	}
 
-	cache.frozen = nil
+	cache.thaw()
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive {
 		t.Fatalf("next reconcile: route = %+v", st.Route)

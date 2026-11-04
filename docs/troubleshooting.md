@@ -47,6 +47,8 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 
 While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
 
+A peer is unreachable while its controller restarts, as in an upgrade. Upgrade one site at a time: [Upgrade](../README.md#upgrade).
+
 ## Members that are not eligible
 
 | Reason | Means | Next step |
