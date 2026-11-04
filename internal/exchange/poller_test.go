@@ -441,3 +441,53 @@ func TestView(t *testing.T) {
 		t.Errorf("fresh peer without the service: %+v, %v", rd, ok)
 	}
 }
+
+// Polled is true once the first round has ended, though every poll failed, and that round calls Changed for every
+// peer. Later rounds with nothing new do not.
+func TestPolled(t *testing.T) {
+	rec := newRecorder()
+	p := &Poller{Peers: func() []string { return []string{"b", "c"} }, Changed: rec.changed}
+	p.URL = func(string) (string, error) { return "", errors.New("no active gateway") }
+	if p.Polled() {
+		t.Fatal("polled before the first round")
+	}
+	p.round(context.Background(), time.Second, time.Minute)
+	if !p.Polled() {
+		t.Fatal("not polled after the first round")
+	}
+	if got := rec.take(); !slices.Equal(slices.Sorted(slices.Values(got)), []string{"b", "c"}) {
+		t.Errorf("first round: want a call for b and c, have %v", got)
+	}
+	p.round(context.Background(), time.Second, time.Minute)
+	if got := rec.take(); len(got) != 0 {
+		t.Errorf("second round: want no call, have %v", got)
+	}
+}
+
+// With no poll interval set, polling is off, and no first round is awaited.
+func TestPolledWhilePollingIsOff(t *testing.T) {
+	p := &Poller{
+		Peers:    func() []string { return []string{"b"} },
+		URL:      func(string) (string, error) { return "", errors.New("unused") },
+		Exchange: exchangeSpec(0, 0),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- p.Start(ctx) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("Start: %v", err)
+		}
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for !p.Polled() {
+		if time.Now().After(deadline) {
+			t.Fatal("not polled while polling is off")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, state := p.Snapshot("b"); !state.LastErrorTime.IsZero() || !state.LastSuccess.IsZero() {
+		t.Errorf("polled b while polling is off: %+v", state)
+	}
+}

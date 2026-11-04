@@ -54,8 +54,8 @@ type Poller struct {
 	URL func(peer string) (string, error)
 	// Exchange returns the poll interval and the peer timeout. Read every round.
 	Exchange func() straitv1.ExchangeSpec
-	// Changed is called when a peer's document changes, apart from generatedAt, or its freshness flips.
-	// It runs on the poller's goroutine and must not block.
+	// Changed is called when a peer's document changes, apart from generatedAt, or its freshness flips, and for every
+	// peer when the first round since Start ends. It runs on the poller's goroutine and must not block.
 	Changed func(peer string)
 	// Client sends the polls. When nil, a client with no proxy, no keep-alive and no redirect is used.
 	Client *http.Client
@@ -63,6 +63,8 @@ type Poller struct {
 	mu      sync.Mutex
 	peers   map[string]*peer
 	started time.Time
+	// polled is true once the first round since Start has ended.
+	polled bool
 }
 
 // Start polls every peer until ctx is cancelled.
@@ -75,6 +77,7 @@ func (p *Poller) Start(ctx context.Context) error {
 	}
 	p.mu.Lock()
 	p.started = time.Now()
+	p.polled = false
 	p.mu.Unlock()
 	for {
 		start := time.Now()
@@ -83,6 +86,10 @@ func (p *Poller) Start(ctx context.Context) error {
 		if wait > 0 {
 			p.round(ctx, wait, ex.PeerTimeout.Duration)
 		} else {
+			// Polling is off, so no first round is coming.
+			p.mu.Lock()
+			p.polled = true
+			p.mu.Unlock()
 			wait = idle
 		}
 		timer := time.NewTimer(time.Until(start.Add(wait)))
@@ -170,6 +177,10 @@ func (p *Poller) round(ctx context.Context, interval, timeout time.Duration) {
 		s.state.Mismatch = false
 	}
 	changed = append(changed, p.flips(time.Now(), timeout)...)
+	if !p.polled && ctx.Err() == nil {
+		p.polled = true
+		changed = append(changed, names...)
+	}
 	p.mu.Unlock()
 	p.notify(changed)
 }
@@ -268,6 +279,14 @@ func (p *Poller) Started() time.Time {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.started
+}
+
+// Polled reports whether the first round since Start has ended: every peer was polled once, read or not. It is also
+// true while polling is off, with no poll interval set.
+func (p *Poller) Polled() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.polled
 }
 
 // Snapshot returns a peer's last good document, which may be stale, and its poll state.

@@ -135,7 +135,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Read:          read,
 	}
 	result := decide.Decide(in)
-	shown := startupStatus(result, in.Unread())
+	shown := startupStatus(result, in, r.Peers.Polled())
 
 	if err := r.syncExportsImports(ctx, &svc, site.Name, report); err != nil {
 		return ctrl.Result{}, err
@@ -192,14 +192,17 @@ func (r *SiteServiceReconciler) remember(replaced string, svc *straitv1.SiteServ
 	w.object = svc.DeepCopy()
 }
 
-// startupStatus returns the result that the status shows. Until every site with a member has been read since the
-// controller began to poll peers, the reason is AwaitingPeers and the message gives the decision's reason. The route,
-// and so the endpoints, stay the decision's.
-func startupStatus(result decide.Result, unread []string) decide.Result {
-	if len(unread) == 0 || result.Reason == straitv1.ReasonAwaitingPeers {
+// startupStatus returns the result that the status shows. Until the first poll of every peer has ended, read or not,
+// while a site with a member has not been read, the reason is AwaitingPeers and the message gives the decision's
+// reason. With a startup hold, this ends at the latest when the hold ends. The route, and so the endpoints, stay the
+// decision's.
+func startupStatus(result decide.Result, in decide.Input, polled bool) decide.Result {
+	unread := in.Unread()
+	hold := in.Spec.Policy.StartupHold.Duration
+	if polled || len(unread) == 0 || result.Reason == straitv1.ReasonAwaitingPeers || (hold > 0 && in.Now.Sub(in.Started) >= hold) {
 		return result
 	}
-	result.Message = fmt.Sprintf("site %s not read since the controller started; the decision is %s: %s",
+	result.Message = fmt.Sprintf("the first poll of every peer since the controller started has not ended, and site %s is not read yet; the decision is %s: %s",
 		strings.Join(unread, ", "), result.Reason, result.Message)
 	result.Reason = straitv1.ReasonAwaitingPeers
 	return result

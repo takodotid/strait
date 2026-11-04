@@ -34,6 +34,8 @@ type peers struct {
 	// read holds the peers read since started, stale or not. A fresh peer has been read too.
 	read    map[string]bool
 	started time.Time
+	// polled is true once the first round of polls has ended.
+	polled bool
 }
 
 func (p peers) Fresh(peer string, _ time.Time, _ time.Duration) bool { return p.fresh[peer] }
@@ -53,6 +55,8 @@ func (p peers) Snapshot(peer string) (exchange.Document, exchange.PeerState) {
 var readB = peers{read: map[string]bool{"b": true}}
 
 func (p peers) Started() time.Time { return p.started }
+
+func (p peers) Polled() bool { return p.polled }
 
 func site(name, gateway string) *straitv1.Site {
 	s := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: name}}
@@ -315,16 +319,17 @@ func TestStartupHold(t *testing.T) {
 		t.Fatalf("once b is read: route = %+v", st.Route)
 	}
 
-	// After the hold, b still unread: the local member is routed, and the status says that b has not been read.
+	// The hold also ends the status at startup, even before the first poll of every peer has ended.
 	r, c = reconciler(t, peers{started: now.Add(-time.Minute)}, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss.DeepCopy())...)
 	run(t, r)
-	if st := status(t, c); st.Route.Reason != straitv1.ReasonAwaitingPeers || !slices.Equal(st.Route.Members, []string{"web-a"}) || len(endpointSlices(t, c)) != 1 {
-		t.Fatalf("after the hold, b unread: route = %+v", st.Route)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || len(endpointSlices(t, c)) != 1 {
+		t.Fatalf("after the hold: route = %+v", st.Route)
 	}
 }
 
-// After a restart, until every site with a member has been read, the status shows AwaitingPeers in place of the
-// decision's reason, however long that takes. The route and the endpoints are the decision's (issue #19).
+// After a restart, until the first poll of every peer has ended, the status shows AwaitingPeers in place of the
+// decision's reason. Then it shows the decision's reason, also when the poll of a cut-off peer failed. The route and
+// the endpoints are the decision's throughout (issue #19).
 func TestStatusAtStartup(t *testing.T) {
 	ss := webService("web-a")
 	// The status from before the restart.
@@ -340,16 +345,25 @@ func TestStatusAtStartup(t *testing.T) {
 		if st.Route.Reason != straitv1.ReasonAwaitingPeers || !strings.Contains(st.Route.Message, "site b") || !strings.Contains(st.Route.Message, straitv1.ReasonActive) ||
 			!slices.Equal(st.Route.Members, []string{"web-a"}) || st.Route.Endpoints != 1 || len(endpointSlices(t, c)) != 1 ||
 			routed == nil || routed.Status != metav1.ConditionTrue || routed.Reason != straitv1.ReasonAwaitingPeers {
-			t.Fatalf("%s after the start, b unread: route = %+v, routed = %+v", after, st.Route, routed)
+			t.Fatalf("%s after the start, first poll not ended: route = %+v, routed = %+v", after, st.Route, routed)
 		}
+	}
+
+	// The first poll of b failed: b is cut off. The status shows the decision, with web-b Unknown.
+	r.Peers = peers{started: now, polled: true}
+	r.Now = func() time.Time { return now.Add(41 * time.Second) }
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || !slices.Equal(st.Route.Members, []string{"web-a"}) || st.Members[1].State != straitv1.StateUnknown {
+		t.Fatalf("after a failed first poll of b: route = %+v, members = %+v", st.Route, st.Members)
 	}
 
 	r.Peers = peers{
 		started: now,
+		polled:  true,
 		fresh:   map[string]bool{"b": true},
 		view:    map[string]observe.Report{"b": {Declared: "web-a", Members: map[string]observe.Observation{}}},
 	}
-	r.Now = func() time.Time { return now.Add(41 * time.Second) }
+	r.Now = func() time.Time { return now.Add(42 * time.Second) }
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || !slices.Equal(st.Route.Members, []string{"web-a"}) {
 		t.Fatalf("once b is read: route = %+v", st.Route)

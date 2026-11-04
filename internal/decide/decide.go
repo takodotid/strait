@@ -119,7 +119,7 @@ func (in Input) unanimous() string {
 }
 
 // Unread returns the sites that host a member, other than the local site, and have not been read since the controller
-// began to poll peers, sorted. Empty once the controller's first observation round has ended.
+// began to poll peers, sorted.
 func (in Input) Unread() []string {
 	var out []string
 	for _, m := range in.Spec.Members {

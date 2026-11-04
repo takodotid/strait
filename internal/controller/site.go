@@ -43,6 +43,8 @@ type Peers interface {
 	Snapshot(peer string) (exchange.Document, exchange.PeerState)
 	// Started returns when polling began. Zero before.
 	Started() time.Time
+	// Polled reports whether the first round of polls since polling began has ended, every peer read or not.
+	Polled() bool
 }
 
 // Local is where the controller publishes the local site's observations.

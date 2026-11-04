@@ -388,7 +388,7 @@ spec:
                     type: string
                   reason:
                     description: |-
-                      Reason is the decision's reason. Until the controller has read every site with a member since it started, it is
+                      Reason is the decision's reason. After the controller starts, until its first poll of every peer has ended, it is
                       AwaitingPeers, and Message gives the decision's reason.
                     type: string
                 type: object
@@ -778,7 +778,7 @@ spec:
                     type: string
                   reason:
                     description: |-
-                      Reason is the decision's reason. Until the controller has read every site with a member since it started, it is
+                      Reason is the decision's reason. After the controller starts, until its first poll of every peer has ended, it is
                       AwaitingPeers, and Message gives the decision's reason.
                     type: string
                 type: object
