@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -301,9 +302,9 @@ func TestExplainNamespaces(t *testing.T) {
 
 func TestLinks(t *testing.T) {
 	r := cli(t, fakeReader(cluster()...), "", "links").ok(t)
-	diff(t, r.stdout, `PEER  LINK         TRANSPORT  ENCRYPTION  COST  ENDPOINT-DIRECT  HEALTHY  ACTIVE  CHANGED
-b     b-direct     direct     None        10    false            true     true    120m
-b     b-wireguard  wireguard  WireGuard   100   false            true     false   60m
+	diff(t, r.stdout, `PEER  LINK         TRANSPORT  ENCRYPTION  COST  ENDPOINT-DIRECT  HEALTHY  ACTIVE  CHANGED  ENDPOINT-CIDRS
+b     b-direct     direct     None        10    false            true     true    120m     -
+b     b-wireguard  wireguard  WireGuard   100   false            true     false   60m      -
 `)
 
 	r = cli(t, fakeReader(cluster()...), "", "links", "-o", "json").ok(t)
@@ -312,6 +313,29 @@ b     b-wireguard  wireguard  WireGuard   100   false            true     false 
 		t.Fatal(err)
 	}
 	if len(v.Links) != 2 || !v.Links[0].Active || v.Links[1].Interface != "wg0" {
+		t.Errorf("got %+v", v)
+	}
+
+	// Endpoint-direct links show the ranges they accept addresses from, or any.
+	direct := func(peer string, cidrs ...string) client.Object {
+		return &straitv1.SiteLink{
+			ObjectMeta: metav1.ObjectMeta{Name: peer + "-direct"},
+			Spec: straitv1.SiteLinkSpec{Peer: peer, Transport: straitv1.TransportDirect, Encryption: straitv1.EncryptionNone, Cost: 10,
+				Direct: &straitv1.DirectLink{Address: "192.0.2.10", EndpointDirect: true, EndpointCIDRs: cidrs}},
+			Status: straitv1.SiteLinkStatus{Healthy: true, Active: true, LastTransitionTime: ago(2 * time.Hour)},
+		}
+	}
+	objs := []client.Object{direct("c", "10.120.0.0/16", "fd00:120::/64"), direct("d")}
+	r = cli(t, fakeReader(objs...), "", "links").ok(t)
+	diff(t, r.stdout, `PEER  LINK      TRANSPORT  ENCRYPTION  COST  ENDPOINT-DIRECT  HEALTHY  ACTIVE  CHANGED  ENDPOINT-CIDRS
+c     c-direct  direct     None        10    true             true     true    120m     10.120.0.0/16,fd00:120::/64
+d     d-direct  direct     None        10    true             true     true    120m     any
+`)
+	r = cli(t, fakeReader(objs...), "", "links", "-o", "json").ok(t)
+	if err := json.Unmarshal([]byte(r.stdout), &v); err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Links) != 2 || !slices.Equal(v.Links[0].EndpointCIDRs, []string{"10.120.0.0/16", "fd00:120::/64"}) || v.Links[1].EndpointCIDRs != nil {
 		t.Errorf("got %+v", v)
 	}
 
