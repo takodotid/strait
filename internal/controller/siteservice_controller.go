@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -48,6 +49,9 @@ type SiteServiceReconciler struct {
 	confirmed map[types.NamespacedName]map[string]time.Time
 	// written keeps what the last status write of each SiteService returned, until the cache shows it.
 	written written[straitv1.SiteService, *straitv1.SiteService]
+	// inPlace keeps, by SiteService, the EndpointSlices in place after the last apply, so that a slice the cache does
+	// not show yet is still deleted.
+	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -58,6 +62,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(err) {
 			r.Local.DeleteService(req.Namespace, req.Name)
 			delete(r.confirmed, req.NamespacedName)
+			delete(r.inPlace, req.NamespacedName)
 			r.written.forget(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -358,67 +363,103 @@ func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]bool,
 	return out, nil
 }
 
-// syncSlices writes one EndpointSlice per routed member that has a target and deletes the rest.
+// slicesInPlace returns the application name's EndpointSlices by name: those that the cache lists, and those that
+// this controller left in place at its last apply, which the cache may not show yet.
+func (r *SiteServiceReconciler) slicesInPlace(ctx context.Context, svc *straitv1.SiteService) (map[string]discoveryv1.EndpointSlice, error) {
+	var list discoveryv1.EndpointSliceList
+	if err := r.List(ctx, &list, client.InNamespace(svc.Namespace), client.MatchingLabels{LabelSiteService: svc.Name, LabelManagedBy: ManagedBy}); err != nil {
+		return nil, err
+	}
+	out := map[string]discoveryv1.EndpointSlice{}
+	for _, es := range list.Items {
+		out[es.Name] = es
+	}
+	for name, es := range r.inPlace[client.ObjectKeyFromObject(svc)] {
+		out[name] = es
+	}
+	return out, nil
+}
+
+// syncSlices writes one EndpointSlice per routed member that has a target and deletes the rest. It deletes first, and
+// writes nothing once a delete fails, so a member leaves the route before another joins it (RFC#0002).
 // It returns the number of endpoints written, and the path of each member that has endpoints.
 func (r *SiteServiceReconciler) syncSlices(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (int, map[string]straitv1.Path, error) {
 	targets, err := r.targets(ctx, svc, site, members, observations)
 	if err != nil {
 		return 0, nil, err
 	}
+	inPlace, err := r.slicesInPlace(ctx, svc)
+	if err != nil {
+		return 0, nil, err
+	}
+	if r.inPlace == nil {
+		r.inPlace = map[types.NamespacedName]map[string]discoveryv1.EndpointSlice{}
+	}
+	// What is in place when this returns, whatever fails.
+	defer func() { r.inPlace[client.ObjectKeyFromObject(svc)] = inPlace }()
+
+	for _, name := range slices.Sorted(maps.Keys(inPlace)) {
+		es := inPlace[name]
+		if _, ok := targets[es.Labels[LabelMember]]; ok && name == memberObjectName(svc, es.Labels[LabelMember]) {
+			continue
+		}
+		if err := r.Delete(ctx, &es); client.IgnoreNotFound(err) != nil {
+			return 0, nil, fmt.Errorf("delete endpointslice %s: %w", name, err)
+		}
+		delete(inPlace, name)
+	}
+
 	count := 0
 	paths := map[string]straitv1.Path{}
-	for member, t := range targets {
-		name := memberObjectName(svc, member)
-		es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
-			es.Labels = map[string]string{
-				discoveryv1.LabelServiceName: svc.Name,
-				LabelManagedBy:               ManagedBy,
-				LabelSiteService:             svc.Name,
-				LabelMember:                  member,
-			}
-			if es.AddressType == "" {
-				es.AddressType = addressType(t.addresses)
-			}
-			es.Ports = []discoveryv1.EndpointPort{{
-				Name:     ptr.To(svc.Spec.Port.Name),
-				Port:     ptr.To(t.port),
-				Protocol: ptr.To(corev1.ProtocolTCP),
-			}}
-			es.Endpoints = nil
-			for _, a := range t.addresses {
-				if addressType([]string{a}) != es.AddressType {
-					continue
-				}
-				es.Endpoints = append(es.Endpoints, discoveryv1.Endpoint{
-					Addresses:  []string{a},
-					Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)},
-				})
-			}
-			return controllerutil.SetControllerReference(svc, es, r.Scheme())
-		}); err != nil {
-			return 0, nil, fmt.Errorf("endpointslice %s: %w", name, err)
+	for _, member := range slices.Sorted(maps.Keys(targets)) {
+		t := targets[member]
+		es, err := r.writeSlice(ctx, svc, member, t)
+		if err != nil {
+			return 0, nil, err
 		}
+		inPlace[es.Name] = *es
 		count += len(es.Endpoints)
 		if len(es.Endpoints) > 0 {
 			paths[member] = t.path
 		}
 	}
-
-	var existing discoveryv1.EndpointSliceList
-	if err := r.List(ctx, &existing, client.InNamespace(svc.Namespace), client.MatchingLabels{LabelSiteService: svc.Name, LabelManagedBy: ManagedBy}); err != nil {
-		return 0, nil, err
-	}
-	for i := range existing.Items {
-		es := &existing.Items[i]
-		if _, ok := targets[es.Labels[LabelMember]]; ok && es.Name == memberObjectName(svc, es.Labels[LabelMember]) {
-			continue
-		}
-		if err := r.Delete(ctx, es); client.IgnoreNotFound(err) != nil {
-			return 0, nil, err
-		}
-	}
 	return count, paths, nil
+}
+
+// writeSlice writes the EndpointSlice of one routed member.
+func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target) (*discoveryv1.EndpointSlice, error) {
+	name := memberObjectName(svc, member)
+	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
+		es.Labels = map[string]string{
+			discoveryv1.LabelServiceName: svc.Name,
+			LabelManagedBy:               ManagedBy,
+			LabelSiteService:             svc.Name,
+			LabelMember:                  member,
+		}
+		if es.AddressType == "" {
+			es.AddressType = addressType(t.addresses)
+		}
+		es.Ports = []discoveryv1.EndpointPort{{
+			Name:     ptr.To(svc.Spec.Port.Name),
+			Port:     ptr.To(t.port),
+			Protocol: ptr.To(corev1.ProtocolTCP),
+		}}
+		es.Endpoints = nil
+		for _, a := range t.addresses {
+			if addressType([]string{a}) != es.AddressType {
+				continue
+			}
+			es.Endpoints = append(es.Endpoints, discoveryv1.Endpoint{
+				Addresses:  []string{a},
+				Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)},
+			})
+		}
+		return controllerutil.SetControllerReference(svc, es, r.Scheme())
+	}); err != nil {
+		return nil, fmt.Errorf("endpointslice %s: %w", name, err)
+	}
+	return es, nil
 }
 
 func addressType(addresses []string) discoveryv1.AddressType {

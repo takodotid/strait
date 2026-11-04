@@ -58,6 +58,7 @@ They run in this order on one fixture and stop at the first failure.
 |---|---|---|
 | 1 | Baseline | Both sites route `pg` to `pg-a`. A write from each site lands on `cluster-a`. |
 | import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Without `port`, site b deletes the Service. |
+| switch | A route change through nowhere | At site a, the `declared` SiteService `local` has two members on `web-a`, and its route moves from `one` to `two` in one decision. A watch of its EndpointSlices never sees both members at once. `local` stays, routed to `two`. |
 | ports | Ports of objects created together | 8 `Export`s at site a and 8 `Import`s at site b, created in parallel, each get a gateway port. No two hold one port at any read, every 100ms. The race needs a reconcile before the cache shows the last port, so a build without the fix can pass. |
 | 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. |
 | 3 | Switchover with tokens | Site a stops naming `pg-a` within one 500ms sample of the demotion patch, site b within `peerTimeout`. `pg-b` never shows before the promotion patch. Both sites pass through nowhere, then route `pg-b`. |
