@@ -387,7 +387,9 @@ spec:
                     description: Message explains the reason.
                     type: string
                   reason:
-                    description: Reason is the decision's reason.
+                    description: |-
+                      Reason is the decision's reason. After the controller starts, until its first poll of every peer has ended, it is
+                      AwaitingPeers, and Message gives the decision's reason.
                     type: string
                 type: object
             type: object
@@ -775,7 +777,9 @@ spec:
                     description: Message explains the reason.
                     type: string
                   reason:
-                    description: Reason is the decision's reason.
+                    description: |-
+                      Reason is the decision's reason. After the controller starts, until its first poll of every peer has ended, it is
+                      AwaitingPeers, and Message gives the decision's reason.
                     type: string
                 type: object
             type: object

@@ -287,7 +287,8 @@ type Route struct {
 	// Members are the routed members. Empty means the route is nowhere.
 	// +optional
 	Members []string `json:"members,omitempty"`
-	// Reason is the decision's reason.
+	// Reason is the decision's reason. After the controller starts, until its first poll of every peer has ended, it is
+	// AwaitingPeers, and Message gives the decision's reason.
 	// +optional
 	Reason string `json:"reason,omitempty"`
 	// Message explains the reason.

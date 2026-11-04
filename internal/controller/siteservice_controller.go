@@ -46,6 +46,16 @@ type SiteServiceReconciler struct {
 
 	// confirmed keeps each member's last confirmed time at full precision, by SiteService and member.
 	confirmed map[types.NamespacedName]map[string]time.Time
+	// written keeps what the last status write of each SiteService returned, until the cache shows it.
+	written map[types.NamespacedName]*written
+}
+
+// written is the SiteService that the controller's last status write returned, and the resourceVersions that its
+// writes replaced. Each write replaces the version just before it, so a cached object with one of those versions
+// predates the last write, and any other version is the last write or newer.
+type written struct {
+	object   *straitv1.SiteService
+	replaced map[string]bool
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -56,10 +66,12 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(err) {
 			r.Local.DeleteService(req.Namespace, req.Name)
 			delete(r.confirmed, req.NamespacedName)
+			delete(r.written, req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
+	r.latest(&svc)
 	if !svc.DeletionTimestamp.IsZero() {
 		r.Local.DeleteService(req.Namespace, req.Name)
 		return ctrl.Result{}, nil
@@ -111,7 +123,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			read[m.Site] = true
 		}
 	}
-	result := decide.Decide(decide.Input{
+	in := decide.Input{
 		Spec:          svc.Spec,
 		LocalSite:     site.Name,
 		Sites:         sites,
@@ -121,7 +133,9 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Now:           now,
 		Started:       started,
 		Read:          read,
-	})
+	}
+	result := decide.Decide(in)
+	shown := startupStatus(result, in, r.Peers.Polled())
 
 	if err := r.syncExportsImports(ctx, &svc, site.Name, report); err != nil {
 		return ctrl.Result{}, err
@@ -139,11 +153,59 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, result, endpoints, paths, conflict, now); err != nil {
+	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, shown, endpoints, paths, conflict, now); err != nil {
 		return ctrl.Result{}, err
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", endpoints)
 	return ctrl.Result{RequeueAfter: r.next(&svc, result, confirmed, started, now)}, nil
+}
+
+// latest replaces a cached SiteService that predates the controller's last status write with what that write returned.
+// The decision's previous route, the status comparison, the events and the next write's resourceVersion then all start
+// from the status last written. A cache that lags behind the controller's own writes would otherwise make the next
+// write conflict.
+func (r *SiteServiceReconciler) latest(svc *straitv1.SiteService) {
+	key := client.ObjectKeyFromObject(svc)
+	w, ok := r.written[key]
+	if !ok {
+		return
+	}
+	if w.replaced[svc.ResourceVersion] {
+		w.object.DeepCopyInto(svc)
+		return
+	}
+	delete(r.written, key)
+}
+
+// remember records what a status write returned, and the resourceVersion it replaced.
+func (r *SiteServiceReconciler) remember(replaced string, svc *straitv1.SiteService) {
+	if r.written == nil {
+		r.written = map[types.NamespacedName]*written{}
+	}
+	key := client.ObjectKeyFromObject(svc)
+	w, ok := r.written[key]
+	if !ok {
+		w = &written{replaced: map[string]bool{}}
+		r.written[key] = w
+	}
+	w.replaced[replaced] = true
+	w.object = svc.DeepCopy()
+}
+
+// startupStatus returns the result that the status shows. Until the first poll of every peer has ended, read or not,
+// while a site with a member has not been read, the reason is AwaitingPeers and the message gives the decision's
+// reason. With a startup hold, this ends at the latest when the hold ends. The route, and so the endpoints, stay the
+// decision's.
+func startupStatus(result decide.Result, in decide.Input, polled bool) decide.Result {
+	unread := in.Unread()
+	hold := in.Spec.Policy.StartupHold.Duration
+	if polled || len(unread) == 0 || result.Reason == straitv1.ReasonAwaitingPeers || (hold > 0 && in.Now.Sub(in.Started) >= hold) {
+		return result
+	}
+	result.Message = fmt.Sprintf("the first poll of every peer since the controller started has not ended, and site %s is not read yet; the decision is %s: %s",
+		strings.Join(unread, ", "), result.Reason, result.Message)
+	result.Reason = straitv1.ReasonAwaitingPeers
+	return result
 }
 
 // lastConfirmed returns each member's last confirmed time, from memory or else from status.
@@ -443,10 +505,15 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 		st.Declarations = append(st.Declarations, straitv1.Declaration{Site: s, Primary: sites[s].Declared})
 	}
 
+	// Events are recorded once the status that shows them is written, so a write that fails does not repeat them.
+	var events []func()
+	event := func(eventType, reason, action, note string, args ...any) {
+		events = append(events, func() { r.Recorder.Eventf(svc, nil, eventType, reason, action, note, args...) })
+	}
 	if !slices.Equal(old.Route.Members, result.Members) || old.Route.LastChangeTime == nil {
 		st.Route.LastChangeTime = &metav1.Time{Time: now}
 		if old.Route.LastChangeTime != nil {
-			r.Recorder.Eventf(svc, nil, corev1.EventTypeNormal, "RouteChanged", "Route", "route %s -> %s (%s)", routeString(old.Route.Members), routeString(result.Members), result.Reason)
+			event(corev1.EventTypeNormal, "RouteChanged", "Route", "route %s -> %s (%s)", routeString(old.Route.Members), routeString(result.Members), result.Reason)
 		}
 	}
 	st.Route.Members = result.Members
@@ -469,19 +536,33 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	setFlag(&st.Conditions, straitv1.ConditionHeld, len(result.Held) > 0, straitv1.ReasonHeldUnknown, svc.Generation)
 
 	if result.Multiple && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionMultiple) {
-		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, straitv1.ReasonMultipleWritable, "Decide", "%s", result.Message)
+		event(corev1.EventTypeWarning, straitv1.ReasonMultipleWritable, "Decide", "%s", result.Message)
 	}
 	if result.Disagree && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionDeclarationsDisagree) {
-		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, straitv1.ReasonDeclarationsDisagree, "Decide", "%s", result.Message)
+		event(corev1.EventTypeWarning, straitv1.ReasonDeclarationsDisagree, "Decide", "%s", result.Message)
 	}
 	if result.Reason == straitv1.ReasonUnknownTimeout && old.Route.Reason != straitv1.ReasonUnknownTimeout {
-		r.Recorder.Eventf(svc, nil, corev1.EventTypeWarning, straitv1.ReasonUnknownTimeout, "Decide", "%s", result.Message)
+		event(corev1.EventTypeWarning, straitv1.ReasonUnknownTimeout, "Decide", "%s", result.Message)
 	}
 
 	if !statusChanged(old, st, now) {
 		return nil
 	}
-	return r.Status().Update(ctx, svc)
+	replaced := svc.ResourceVersion
+	if err := r.Status().Update(ctx, svc); err != nil {
+		if apierrors.IsConflict(err) {
+			// Another writer changed the SiteService after it was read. The cache shows that change soon, and the next
+			// reconcile decides and writes again from it.
+			log.FromContext(ctx).Info("status not written: the SiteService changed since it was read; the next reconcile writes it", "error", err.Error())
+			return nil
+		}
+		return err
+	}
+	r.remember(replaced, svc)
+	for _, e := range events {
+		e()
+	}
+	return nil
 }
 
 func setFlag(conds *[]metav1.Condition, t string, on bool, reason string, gen int64) {

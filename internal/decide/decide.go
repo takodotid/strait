@@ -118,13 +118,9 @@ func (in Input) unanimous() string {
 	return declared
 }
 
-// awaiting returns the sites with a member that have not been read since the controller started, sorted, while the
-// startup hold lasts. Empty when the hold does not apply.
-func (in Input) awaiting() []string {
-	hold := in.Spec.Policy.StartupHold.Duration
-	if hold <= 0 || in.Now.Sub(in.Started) >= hold {
-		return nil
-	}
+// Unread returns the sites that host a member, other than the local site, and have not been read since the controller
+// began to poll peers, sorted.
+func (in Input) Unread() []string {
 	var out []string
 	for _, m := range in.Spec.Members {
 		if m.Site != in.LocalSite && !in.Read[m.Site] && !contains(out, m.Site) {
@@ -133,6 +129,16 @@ func (in Input) awaiting() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// awaiting returns the sites with a member that have not been read since the controller started, sorted, while the
+// startup hold lasts. Empty when the hold does not apply.
+func (in Input) awaiting() []string {
+	hold := in.Spec.Policy.StartupHold.Duration
+	if hold <= 0 || in.Now.Sub(in.Started) >= hold {
+		return nil
+	}
+	return in.Unread()
 }
 
 // decideSingle applies the startup hold to the route that the table picks: it never routes to a local member while

@@ -5,6 +5,7 @@ import (
 	"net"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -351,6 +352,11 @@ func TestBuildClusters(t *testing.T) {
 			hc.GetNoTrafficInterval().AsDuration().Seconds() != 1 ||
 			hc.GetUnhealthyThreshold().GetValue() != 2 || hc.GetHealthyThreshold().GetValue() != 2 {
 			t.Errorf("%s health check = %v", name, hc)
+		}
+		// An import's check opens a new connection each time, so it reads the peer's current control listener.
+		// A peer's /healthz is the same in every version of that listener, so its check keeps its connection.
+		if reuse := hc.GetReuseConnection(); strings.HasPrefix(name, "import/") != (reuse != nil && !reuse.GetValue()) {
+			t.Errorf("%s reuse_connection = %v", name, reuse)
 		}
 	}
 	if sa := cs["controller"].GetLoadAssignment().GetEndpoints()[0].GetLbEndpoints()[0].GetEndpoint().GetAddress().GetSocketAddress(); sa.GetAddress() != "controller.example" || sa.GetPortValue() != 8080 {

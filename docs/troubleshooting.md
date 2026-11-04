@@ -27,7 +27,13 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 | `NotDeclared` | `Declarations:` and the members table | One member is writable, but a site names another member. Compare each site's declaration with where the primary runs, and fix the workload's configuration. |
 | `MultipleWritable` | The members whose `ROLE` is `primary` and `ELIGIBLE` is true | Two members accept writes, for example after a partition heals. Strait never picks one. Demote one with the workload's own tools, and Strait follows. The `Multiple` condition is True. |
 | `NoEligibleMember` | The `REASON` of each member | No member can take traffic. See [Members that are not eligible](#members-that-are-not-eligible). |
-| `AwaitingPeers` | `strait peers` | `policy.startupHold` is set, and the controller started recently. It has not yet read every site with a member, so it does not route to the local member. The route follows once it reads them, or once the hold ends. |
+| `AwaitingPeers` | `strait peers`, and the route's `Message` | The controller started, and its first poll of every peer has not ended. The route is what it decided before reading any peer, and the message gives that decision's reason. It ends with that first poll, within about one `pollInterval`. With `policy.startupHold`, the controller also does not route to the local member until it has read every site with a member, or until the hold ends. |
+
+## Connections after a route change
+
+| Symptom | Cause and next step |
+|---|---|
+| A client still reaches the previous member, while the `SiteService`'s EndpointSlices no longer name it | A route change never moves an established connection: the client must reconnect. A new connection that reaches the previous member comes from the CNI's connection tracking. For Cilium, check that `cilium-dbg status --verbose` in the agent shows `Socket LB: Enabled`, and that the agent's configuration does not set `bpf-lb-sock-hostns-only` to `"true"`. [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
 
 ## Unknown members
 
