@@ -120,7 +120,7 @@ func Build(m Model, podIP string) (*cache.Snapshot, error) {
 		used[i.Port] = true
 		name := ImportName(i.Namespace, i.Name)
 		listeners = append(listeners, b.tcpListener(name, podIP, i.Port))
-		clusters = append(clusters, edsCluster(name, httpCheck(ExportHealthPath(i.Namespace, i.Export))))
+		clusters = append(clusters, edsCluster(name, exportCheck(i.Namespace, i.Export)))
 		var eps []*endpoint.LocalityLbEndpoints
 		if p, ok := peers[i.Peer]; ok && i.RemotePort > 0 {
 			for _, l := range p.Links {
@@ -316,6 +316,15 @@ func baseCluster(name string) *cluster.Cluster {
 			KeepaliveProbes:   wrapperspb.UInt32(keepaliveProbes),
 		}},
 	}
+}
+
+// exportCheck checks an import's export at the peer, on a new connection each time. The peer replaces its control
+// listener whenever its exports change, and Envoy serves a connection opened before that with the old listener until
+// it drains it. A reused connection opened before the peer had the export's health filter would keep failing.
+func exportCheck(namespace, export string) *core.HealthCheck {
+	c := httpCheck(ExportHealthPath(namespace, export))
+	c.ReuseConnection = wrapperspb.Bool(false)
+	return c
 }
 
 func httpCheck(path string) *core.HealthCheck {
