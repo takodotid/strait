@@ -47,7 +47,7 @@ func newValidate(o *options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate -f PATH",
 		Short: "Check Strait manifests offline, before they are applied",
-		Long: `validate checks Strait manifests with the rules that the CRDs and the controller apply. It needs no cluster.
+		Long: `validate checks Strait manifests with the rules that the CRDs apply. It needs no cluster.
 
 PATH is a file, a directory, or - for standard input. -f may be repeated. A directory is read recursively, for files that end in .yaml, .yml or .json. A file may hold many YAML documents.
 

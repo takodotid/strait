@@ -290,7 +290,7 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 | `strait explain SITESERVICE` | Why one name points where it does: the reason, every member's observation, every site's declaration. |
 | `strait links` | Every link to a peer, its health, and which link carries the traffic. |
 | `strait peers` | Every peer, and whether its observations can be read. |
-| `strait validate -f PATH` | Checks manifests offline, with the rules of the CRDs and the controller. |
+| `strait validate -f PATH` | Checks manifests offline, with the rules of the CRDs. |
 | `strait --skill` | Prints the skill document for AI agents. |
 | `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 

@@ -685,3 +685,40 @@ func TestLocalClustersDisagree(t *testing.T) {
 		t.Errorf("document = %+v", doc.Services)
 	}
 }
+
+// The Routed condition: True with the decision's reason while an endpoint is written; False with NoEndpoints while the
+// route names a member that has no endpoint; False with the decision's reason when the route is nowhere (RFC#0002,
+// requirement 27). ServiceConflict is TestServiceConflict.
+func TestRoutedCondition(t *testing.T) {
+	b := func(eligible bool) peers {
+		return peers{
+			fresh: map[string]bool{"b": true},
+			view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
+				"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, Eligible: eligible, State: straitv1.StateStable, ObservedAt: now},
+			}}},
+		}
+	}
+	tests := []struct {
+		name   string
+		peers  peers
+		port   int32
+		status metav1.ConditionStatus
+		reason string
+	}{
+		{"an endpoint", b(true), 15001, metav1.ConditionTrue, straitv1.ReasonActive},
+		{"routed, no endpoint", b(true), 0, metav1.ConditionFalse, "NoEndpoints"},
+		{"nowhere", b(false), 15001, metav1.ConditionFalse, straitv1.ReasonNoEligibleMember},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+			imp.Status.GatewayPort = tt.port
+			r, c := reconciler(t, tt.peers, site("a", "10.0.9.9"), webService("web-b"), imp)
+			run(t, r)
+			cond := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
+			if cond == nil || cond.Status != tt.status || cond.Reason != tt.reason {
+				t.Fatalf("Routed = %+v, want %s %s", cond, tt.status, tt.reason)
+			}
+		})
+	}
+}
