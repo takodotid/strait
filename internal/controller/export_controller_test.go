@@ -24,6 +24,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/exchange"
 )
 
 var webPort = &straitv1.ServicePort{Name: "http", Port: 8080}
@@ -271,5 +272,88 @@ func TestImportServiceFollowsSite(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("5s after the Site changed, the Import's slice holds %v, want [10.0.9.10]", got)
 		}
+	}
+}
+
+// laggingExport is an export reconciler of app/web-a, whose cache shows the Export as it was before the first write.
+func laggingExport(t *testing.T) (*ExportReconciler, *laggingCache, client.Client) {
+	t.Helper()
+	s := site("a", "")
+	s.Spec.Gateway.ExportPorts = straitv1.PortRange{First: 16000, Last: 16999}
+	exp := &straitv1.Export{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-a", UID: "uid-export"},
+		Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: "web-a", Port: 8080}},
+	}
+	c := fakeClient(t, append(appService("web-a", "10.0.0.1"), s, exp)...)
+	cache := &laggingCache{Client: c}
+	cache.freeze(t, &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-a"}})
+	return &ExportReconciler{Client: cache, Reader: cache, Local: &exchange.Local{}}, cache, c
+}
+
+func runExport(t *testing.T, r *ExportReconciler) {
+	t.Helper()
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-a"}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func exportStatus(t *testing.T, c client.Client) straitv1.ExportStatus {
+	t.Helper()
+	var exp straitv1.Export
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a"}, &exp); err != nil {
+		t.Fatal(err)
+	}
+	return exp.Status
+}
+
+// A cache that has not yet seen the controller's last write of an Export's status does not make the next write
+// conflict (issue #23).
+func TestExportStatusWriteOnLaggingCache(t *testing.T) {
+	r, cache, c := laggingExport(t)
+	// The first reconcile allocates the port. The second has nothing new to write.
+	runExport(t, r)
+	runExport(t, r)
+	// The third writes over the first.
+	var es discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &es); err != nil {
+		t.Fatal(err)
+	}
+	es.Endpoints = nil
+	if err := c.Update(context.Background(), &es); err != nil {
+		t.Fatal(err)
+	}
+	runExport(t, r)
+	if st := exportStatus(t, c); st.GatewayPort != 16000 || st.ReadyEndpoints != 0 || !meta.IsStatusConditionFalse(st.Conditions, ConditionReady) {
+		t.Fatalf("status = %+v", st)
+	}
+
+	cache.thaw()
+	runExport(t, r)
+	if len(r.written.last) != 0 {
+		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written.last)
+	}
+}
+
+// A cache that has not yet seen the controller's last write of an Import's status does not make the next write
+// conflict (issue #23).
+func TestImportStatusWriteOnLaggingCache(t *testing.T) {
+	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(nil))
+	cache := &laggingCache{Client: c}
+	cache.freeze(t, &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-b"}})
+	r.Client, r.Reader = cache, cache
+	// The first reconcile writes the conditions. The second has nothing new to write.
+	runImport(t, r)
+	runImport(t, r)
+	// The third writes over the first: peer b is read, and does not list the export.
+	r.Peers = peers{fresh: map[string]bool{"b": true}}
+	runImport(t, r)
+	if c := meta.FindStatusCondition(importStatus(t, c).Conditions, ConditionReady); c == nil || c.Reason != "ExportNotFound" {
+		t.Fatalf("Ready = %+v", c)
+	}
+
+	cache.thaw()
+	runImport(t, r)
+	if len(r.written.last) != 0 {
+		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written.last)
 	}
 }

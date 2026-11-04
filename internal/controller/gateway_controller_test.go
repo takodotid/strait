@@ -9,6 +9,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -163,5 +164,97 @@ func TestGatewayControllerVersion(t *testing.T) {
 		if site.Status.ControllerVersion != v {
 			t.Errorf("controllerVersion: got %q, want %q", site.Status.ControllerVersion, v)
 		}
+	}
+}
+
+// laggingGateway is a gateway reconciler of version v1.1.2 whose cache shows site a as it was before the first write.
+func laggingGateway(t *testing.T) (*GatewayReconciler, *laggingCache, client.Client) {
+	t.Helper()
+	s := gatewaySite(straitv1.ServiceExposure{})
+	s.Status.ControllerVersion = "v1.1.1"
+	c := fakeClient(t, append(activeGatewayPod(), s)...)
+	cache := &laggingCache{Client: c}
+	cache.freeze(t, &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}})
+	return &GatewayReconciler{Client: cache, Reader: cache, Namespace: gatewayNamespace, Version: "v1.1.2"}, cache, c
+}
+
+func reconcileGateway(t *testing.T, r *GatewayReconciler) {
+	t.Helper()
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func siteStatus(t *testing.T, c client.Client) straitv1.SiteStatus {
+	t.Helper()
+	var s straitv1.Site
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "a"}, &s); err != nil {
+		t.Fatal(err)
+	}
+	return s.Status
+}
+
+// gatewayNotReady makes the gateway pod not ready.
+func gatewayNotReady(t *testing.T, c client.Client) {
+	t.Helper()
+	var pod corev1.Pod
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: "gateway-0"}, &pod); err != nil {
+		t.Fatal(err)
+	}
+	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionFalse}}
+	if err := c.Status().Update(context.Background(), &pod); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A cache that has not yet seen the controller's last write of the Site's status does not make the next write
+// conflict (issue #23).
+func TestSiteStatusWriteOnLaggingCache(t *testing.T) {
+	r, cache, c := laggingGateway(t)
+	// The first reconcile after a start writes the version. The second has nothing new to write.
+	reconcileGateway(t, r)
+	reconcileGateway(t, r)
+	// The third writes over the first.
+	gatewayNotReady(t, c)
+	reconcileGateway(t, r)
+	st := siteStatus(t, c)
+	if st.ControllerVersion != "v1.1.2" || st.Gateway.Address != "" || !meta.IsStatusConditionFalse(st.Conditions, "GatewayActive") {
+		t.Fatalf("status = %+v", st)
+	}
+
+	cache.thaw()
+	reconcileGateway(t, r)
+	if len(r.written.last) != 0 {
+		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written.last)
+	}
+}
+
+// A status write that conflicts with another writer's change of the Site is left to the next reconcile, not returned
+// as an error, and keeps that change. The gateway agent writes the Site's public key that way.
+func TestSiteStatusWriteConflict(t *testing.T) {
+	r, cache, c := laggingGateway(t)
+	reconcileGateway(t, r)
+
+	// The gateway agent publishes the public key with a merge patch.
+	var s straitv1.Site
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "a"}, &s); err != nil {
+		t.Fatal(err)
+	}
+	patch := client.MergeFrom(s.DeepCopy())
+	s.Status.WireGuardPublicKey = "key-a"
+	if err := c.Status().Patch(context.Background(), &s, patch); err != nil {
+		t.Fatal(err)
+	}
+
+	gatewayNotReady(t, c)
+	reconcileGateway(t, r)
+	if st := siteStatus(t, c); st.WireGuardPublicKey != "key-a" || st.Gateway.Address != "10.0.9.9" {
+		t.Fatalf("written over another writer's change: status = %+v", st)
+	}
+
+	cache.thaw()
+	reconcileGateway(t, r)
+	if st := siteStatus(t, c); st.WireGuardPublicKey != "key-a" || st.Gateway.Address != "" {
+		t.Fatalf("next reconcile: status = %+v", st)
 	}
 }
