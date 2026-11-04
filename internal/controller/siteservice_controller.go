@@ -40,7 +40,7 @@ const statusRefresh = 10 * time.Second
 // SiteServiceReconciler decides each SiteService's route and writes its Service and EndpointSlices.
 type SiteServiceReconciler struct {
 	client.Client
-	// Reader is what plugins read through.
+	// Reader is what the controller reads its inputs through. Plugins get it wrapped by plugin.ReadOnly.
 	Reader   client.Reader
 	Recorder events.EventRecorder
 	Peers    Peers
@@ -56,6 +56,8 @@ type SiteServiceReconciler struct {
 	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
 	// decided keeps, by SiteService, the members of the last decision: the next decision's previous route.
 	decided map[types.NamespacedName][]string
+	// pluginFor returns the plugin of a SiteService. Nil means plugin.For. Tests set it.
+	pluginFor func(*straitv1.SiteService) (plugin.Plugin, error)
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -85,11 +87,16 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	now := r.Now()
 
-	p, err := plugin.For(&svc)
+	pluginFor := plugin.For
+	if r.pluginFor != nil {
+		pluginFor = r.pluginFor
+	}
+	p, err := pluginFor(&svc)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	report := p.Observe(ctx, r.Reader, &svc, site.Name, now)
+	// A plugin reads and never writes (RFC#0003, requirement 4), whatever client the controller holds.
+	report := p.Observe(ctx, plugin.ReadOnly(r.Reader), &svc, site.Name, now)
 	local := make([]observe.Observation, 0, len(report.Members))
 	for _, m := range plugin.LocalMembers(&svc, site.Name) {
 		local = append(local, report.Members[m.Name])

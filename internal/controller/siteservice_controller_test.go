@@ -24,6 +24,7 @@ import (
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/observe"
+	"github.com/takodotid/strait/internal/plugin"
 )
 
 var now = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
@@ -586,5 +587,34 @@ func TestEndpointDirectCIDRs(t *testing.T) {
 	routed := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionRouted)
 	if routed == nil || !strings.Contains(routed.Message, "10.2.0.9 (outside endpointCIDRs)") || !strings.Contains(routed.Message, "192.0.2.1 (outside endpointCIDRs)") {
 		t.Fatalf("routed = %+v", routed)
+	}
+}
+
+// spyPlugin records the reader that the controller hands it.
+type spyPlugin struct{ reader client.Reader }
+
+func (s *spyPlugin) Observe(_ context.Context, r client.Reader, _ *straitv1.SiteService, _ string, _ time.Time) observe.Report {
+	s.reader = r
+	return observe.Report{Members: map[string]observe.Observation{}}
+}
+
+// The plugin gets a reader with no write methods, though the controller holds a full client (RFC#0003, requirement 4).
+func TestPluginReaderIsReadOnly(t *testing.T) {
+	r, _ := reconciler(t, readB, site("a", "10.0.9.9"), webService("web-a"))
+	spy := &spyPlugin{}
+	r.pluginFor = func(*straitv1.SiteService) (plugin.Plugin, error) { return spy, nil }
+	run(t, r)
+	if spy.reader == nil {
+		t.Fatal("the plugin was not called")
+	}
+	var v any = spy.reader
+	if _, ok := v.(client.Writer); ok {
+		t.Error("the plugin's reader can write")
+	}
+	if _, ok := v.(client.StatusClient); ok {
+		t.Error("the plugin's reader can write status")
+	}
+	if _, ok := v.(client.SubResourceClientConstructor); ok {
+		t.Error("the plugin's reader can write a subresource")
 	}
 }

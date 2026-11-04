@@ -24,6 +24,20 @@ type Plugin interface {
 	Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteService, site string, now time.Time) observe.Report
 }
 
+// ReadOnly returns a reader that reads through r and has no other method, so no type assertion reaches the write
+// methods of the client behind it. The client is in an unexported field, so reflection cannot hand it out either.
+func ReadOnly(r client.Reader) client.Reader { return readOnly{r: r} }
+
+type readOnly struct{ r client.Reader }
+
+func (o readOnly) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	return o.r.Get(ctx, key, obj, opts...)
+}
+
+func (o readOnly) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return o.r.List(ctx, list, opts...)
+}
+
 // For returns the plugin that svc names.
 func For(svc *straitv1.SiteService) (Plugin, error) {
 	switch {
