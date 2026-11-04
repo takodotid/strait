@@ -104,7 +104,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.Local.SetService(svc.Namespace, svc.Name, report.Declared, local)
 
 	timeout := site.Spec.Exchange.PeerTimeout.Duration
-	sites := map[string]decide.SiteView{site.Name: {Known: true, Declared: report.Declared}}
+	sites := map[string]decide.SiteView{site.Name: {Known: true, Declared: report.Declared, Conflicting: report.Conflicting}}
 	observations := map[string]observe.Observation{}
 	for name, o := range report.Members {
 		observations[name] = o

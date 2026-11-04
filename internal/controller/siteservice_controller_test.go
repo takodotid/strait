@@ -12,6 +12,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -616,5 +617,71 @@ func TestPluginReaderIsReadOnly(t *testing.T) {
 	}
 	if _, ok := v.(client.SubResourceClientConstructor); ok {
 		t.Error("the plugin's reader can write a subresource")
+	}
+}
+
+// cnpgCluster is a CloudNativePG Cluster in namespace app whose spec names primary, and whose current primary
+// instance reports writable or not.
+func cnpgCluster(name, primary string, writable bool) *unstructured.Unstructured {
+	u := &unstructured.Unstructured{Object: map[string]any{
+		"spec": map[string]any{"replica": map[string]any{"primary": primary, "source": "pg-b"}},
+		"status": map[string]any{
+			"phase":                  "Cluster in healthy state",
+			"currentPrimary":         name + "-1",
+			"targetPrimary":          name + "-1",
+			"instancesReportedState": map[string]any{name + "-1": map[string]any{"isPrimary": writable}},
+		},
+	}}
+	u.SetGroupVersionKind(CNPGCluster)
+	u.SetNamespace("app")
+	u.SetName(name)
+	return u
+}
+
+// Two local Clusters that name different primaries route nowhere with DeclarationsDisagree, though one of them is
+// writable. The site still declares none to its peers.
+func TestLocalClustersDisagree(t *testing.T) {
+	svc := &straitv1.SiteService{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web", UID: "uid-web"},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Port:   straitv1.ServicePort{Name: "postgres", Port: 5432},
+			Plugin: straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: straitv1.CNPGRolePrimary}},
+			Members: []straitv1.Member{
+				{Name: "pg-a", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "pg-a"}},
+				{Name: "pg-a2", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "pg-a2"}},
+				{Name: "pg-b", Site: "b", CNPG: &straitv1.CNPGMember{Cluster: "pg-b"}},
+			},
+			Policy: straitv1.Policy{Multiple: straitv1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 10 * time.Second}},
+		},
+	}
+	rw := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "pg-a-rw"}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "postgres", Port: 5432}}}}
+	rwSlice := &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Namespace: "app", Name: "pg-a-rw-x", Labels: map[string]string{discoveryv1.LabelServiceName: "pg-a-rw"}},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Ports:       []discoveryv1.EndpointPort{{Name: ptr.To("postgres"), Port: ptr.To[int32](5432)}},
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}},
+	}
+	local := &exchange.Local{}
+	r, c := reconciler(t, readB, site("a", "10.0.9.9"), svc, rw, rwSlice, cnpgCluster("pg-a", "pg-a", true), cnpgCluster("pg-a2", "pg-b", false))
+	r.Local = local
+	run(t, r)
+
+	st := status(t, c)
+	if st.Route.Reason != straitv1.ReasonDeclarationsDisagree || len(st.Route.Members) != 0 || st.Route.Endpoints != 0 {
+		t.Fatalf("route = %+v", st.Route)
+	}
+	if !strings.Contains(st.Route.Message, "the workloads of site a declare pg-a, pg-b") {
+		t.Errorf("message = %q", st.Route.Message)
+	}
+	if !meta.IsStatusConditionTrue(st.Conditions, straitv1.ConditionDeclarationsDisagree) {
+		t.Errorf("conditions = %+v", st.Conditions)
+	}
+	if len(endpointSlices(t, c)) != 0 {
+		t.Errorf("slices = %v", endpointSlices(t, c))
+	}
+	doc := local.Document("a", now)
+	if len(doc.Services) != 1 || doc.Services[0].DeclaredPrimary != "" {
+		t.Errorf("document = %+v", doc.Services)
 	}
 }

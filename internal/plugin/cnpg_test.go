@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -147,5 +148,21 @@ func TestCNPGClusterMissing(t *testing.T) {
 	rep := CNPG{}.Observe(context.Background(), r, siteService(straitv1.CNPGRolePrimary), "a", time.Now())
 	if o := rep.Members["pg-a"]; o.Eligible || o.Reason != "ClusterNotFound" {
 		t.Fatalf("got %+v", o)
+	}
+}
+
+// Two local Clusters that name different primaries: the site declares none, and the plugin reports both.
+func TestCNPGLocalClustersDisagree(t *testing.T) {
+	svc := siteService(straitv1.CNPGRolePrimary)
+	svc.Spec.Members = append(svc.Spec.Members, straitv1.Member{Name: "pg-a2", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "cluster-a2"}})
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	objs := append(service("cluster-a-rw", "10.0.0.1"),
+		clusterObject("cluster-a", map[string]any{"replica": map[string]any{"primary": "cluster-a", "source": "cluster-b"}}, reported("cluster-a-1", true)),
+		clusterObject("cluster-a2", map[string]any{"replica": map[string]any{"primary": "cluster-b", "source": "cluster-b"}}, reported("cluster-a2-1", false)))
+	r := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	rep := CNPG{}.Observe(context.Background(), r, svc, "a", time.Now())
+	if rep.Declared != "" || !slices.Equal(rep.Conflicting, []string{"pg-a", "pg-b"}) {
+		t.Fatalf("declared %q, conflicting %v", rep.Declared, rep.Conflicting)
 	}
 }
