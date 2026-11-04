@@ -110,7 +110,7 @@ Held                  False   NoHeldUnknown           12m    -
 
 | Item | Value |
 |---|---|
-| Release | v1.1.1 |
+| Release | v1.1.2 |
 | API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
@@ -145,7 +145,7 @@ Each release publishes:
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.1 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.1.2 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -154,7 +154,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v1.1.1
+v=v1.1.2
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -169,7 +169,7 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
 
 ```powershell
-$v = "v1.1.1"
+$v = "v1.1.2"
 $a = "strait_${v}_windows_amd64"
 $url = "https://github.com/takodotid/strait/releases/download/$v"
 Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
@@ -208,7 +208,7 @@ Upgrade one site at a time. Sites on different releases still read each other's 
 | 4. Next site | Back to step 1. |
 
 ```sh
-v=v1.1.1
+v=v1.1.2
 helm template strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" --values values-a.yaml | grep 'image:' | sort -u
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
