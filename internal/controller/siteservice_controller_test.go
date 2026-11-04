@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ var now = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 type peers struct {
 	fresh map[string]bool
 	view  map[string]observe.Report
-	// read holds the peers read since started.
+	// read holds the peers read since started, stale or not. A fresh peer has been read too.
 	read    map[string]bool
 	started time.Time
 }
@@ -41,11 +42,14 @@ func (p peers) View(_, _ string, _ []straitv1.Member, _ time.Time, _ time.Durati
 }
 
 func (p peers) Snapshot(peer string) (exchange.Document, exchange.PeerState) {
-	if p.read[peer] {
-		return exchange.Document{}, exchange.PeerState{LastSuccess: p.started}
+	if p.read[peer] || p.fresh[peer] {
+		return exchange.Document{}, exchange.PeerState{LastSuccess: now}
 	}
 	return exchange.Document{}, exchange.PeerState{}
 }
+
+// readB is an exchange where peer b was read since polling began, and is stale now.
+var readB = peers{read: map[string]bool{"b": true}}
 
 func (p peers) Started() time.Time { return p.started }
 
@@ -314,5 +318,114 @@ func TestStartupHold(t *testing.T) {
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || len(endpointSlices(t, c)) != 1 {
 		t.Fatalf("after the hold: route = %+v", st.Route)
+	}
+}
+
+// laggingCache reads SiteServices the way an informer cache can just after the controller's own write: once frozen,
+// Get returns the SiteService as it was then, while writes reach the API server.
+type laggingCache struct {
+	client.Client
+	frozen *straitv1.SiteService
+}
+
+func (l *laggingCache) freeze(t *testing.T) {
+	t.Helper()
+	var ss straitv1.SiteService
+	if err := l.Client.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &ss); err != nil {
+		t.Fatal(err)
+	}
+	l.frozen = &ss
+}
+
+func (l *laggingCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if ss, ok := obj.(*straitv1.SiteService); ok && l.frozen != nil && key == client.ObjectKeyFromObject(l.frozen) {
+		l.frozen.DeepCopyInto(ss)
+		return nil
+	}
+	return l.Client.Get(ctx, key, obj, opts...)
+}
+
+func routeChangedEvents(r *SiteServiceReconciler) int {
+	n := 0
+	for {
+		select {
+		case e := <-r.Recorder.(*events.FakeRecorder).Events:
+			if strings.Contains(e, "RouteChanged") {
+				n++
+			}
+		default:
+			return n
+		}
+	}
+}
+
+// A cache that has not yet seen the controller's last status write does not make the next write conflict, and does
+// not repeat the route change (issue #18).
+func TestStatusWriteOnLaggingCache(t *testing.T) {
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))
+	r, c := reconciler(t, readB, objs...)
+	cache := &laggingCache{Client: c}
+	r.Client = cache
+	run(t, r)
+	cache.freeze(t)
+
+	// The member loses its endpoint. The route moves to nowhere, in a write that the cache never shows.
+	var es discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &es); err != nil {
+		t.Fatal(err)
+	}
+	es.Endpoints = nil
+	if err := c.Update(context.Background(), &es); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	// The second reconcile is due to refresh the timestamps, so it writes again.
+	for _, after := range []time.Duration{time.Second, statusRefresh + time.Second, statusRefresh + 2*time.Second} {
+		r.Now = func() time.Time { return now.Add(after) }
+		run(t, r)
+	}
+	st := status(t, c)
+	if len(st.Route.Members) != 0 || !st.Route.LastChangeTime.Equal(&metav1.Time{Time: now}) || !st.Members[0].ObservedTime.Equal(&metav1.Time{Time: now.Add(statusRefresh + time.Second)}) {
+		t.Fatalf("status = %+v", st)
+	}
+	if n := routeChangedEvents(r); n != 1 {
+		t.Fatalf("RouteChanged events = %d, want 1", n)
+	}
+
+	cache.frozen = nil
+	r.Now = func() time.Time { return now.Add(statusRefresh + 3*time.Second) }
+	run(t, r)
+	if len(r.written) != 0 {
+		t.Fatalf("written = %+v, want it dropped once the cache shows the last write", r.written)
+	}
+}
+
+// A status write that conflicts with another writer's change is left to the next reconcile, not returned as an error.
+func TestStatusWriteConflict(t *testing.T) {
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))
+	r, c := reconciler(t, readB, objs...)
+	cache := &laggingCache{Client: c}
+	r.Client = cache
+	cache.freeze(t)
+	var ss straitv1.SiteService
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &ss); err != nil {
+		t.Fatal(err)
+	}
+	ss.Labels = map[string]string{"edited": "true"}
+	if err := c.Update(context.Background(), &ss); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != "" {
+		t.Fatalf("written over another writer's change: route = %+v", st.Route)
+	}
+	if n := routeChangedEvents(r); n != 0 {
+		t.Fatalf("RouteChanged events = %d before the status is written", n)
+	}
+
+	cache.frozen = nil
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive {
+		t.Fatalf("next reconcile: route = %+v", st.Route)
 	}
 }
