@@ -258,3 +258,72 @@ func TestSiteStatusWriteConflict(t *testing.T) {
 		t.Fatalf("next reconcile: status = %+v", st)
 	}
 }
+
+// skewedLease is the gateway Lease of a holder whose clock is off by skew, with a 6s duration.
+func skewedLease(t *testing.T, skew time.Duration) (*GatewayReconciler, client.Client, *time.Time) {
+	t.Helper()
+	objs := activeGatewayPod()
+	lease := objs[0].(*coordinationv1.Lease)
+	lease.Spec.LeaseDurationSeconds = ptr.To[int32](6)
+	lease.Spec.RenewTime = &metav1.MicroTime{Time: time.Now().Add(skew)}
+	c := fakeClient(t, append(objs, gatewaySite(straitv1.ServiceExposure{}))...)
+	clock := time.Now()
+	return &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, Now: func() time.Time { return clock }}, c, &clock
+}
+
+// renew renews the gateway Lease, on the holder's clock.
+func renew(t *testing.T, c client.Client, by time.Duration) {
+	t.Helper()
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: GatewayLease}, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Spec.RenewTime = &metav1.MicroTime{Time: lease.Spec.RenewTime.Add(by)}
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gatewayAddress(t *testing.T, r *GatewayReconciler, c client.Client) (string, ctrl.Result) {
+	t.Helper()
+	res, err := r.Reconcile(context.Background(), ctrl.Request{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return siteStatus(t, c).Gateway.Address, res
+}
+
+// The gateway Lease expires by the controller's clock, counted from when the controller saw it renewed. A holder whose
+// clock is behind keeps the Lease while it renews, and one whose clock is ahead loses it once it stops (issue #34).
+func TestGatewayLeaseOnTheControllersClock(t *testing.T) {
+	t.Run("holder an hour behind", func(t *testing.T) {
+		r, c, clock := skewedLease(t, -time.Hour)
+		if addr, res := gatewayAddress(t, r, c); addr != "10.0.9.9" || res.RequeueAfter > 6*time.Second+time.Second/10 {
+			t.Fatalf("just renewed: address %q, requeue after %s; want 10.0.9.9 within 6s", addr, res.RequeueAfter)
+		}
+		// Each renewal is an event that the controller reconciles.
+		*clock = clock.Add(5 * time.Second)
+		renew(t, c, 5*time.Second)
+		if addr, _ := gatewayAddress(t, r, c); addr != "10.0.9.9" {
+			t.Fatalf("at a renewal: address %q, want 10.0.9.9", addr)
+		}
+		*clock = clock.Add(5 * time.Second)
+		if addr, _ := gatewayAddress(t, r, c); addr != "10.0.9.9" {
+			t.Fatalf("5s after a renewal: address %q, want 10.0.9.9", addr)
+		}
+		*clock = clock.Add(2 * time.Second)
+		if addr, _ := gatewayAddress(t, r, c); addr != "" || !meta.IsStatusConditionFalse(siteStatus(t, c).Conditions, "GatewayActive") {
+			t.Fatalf("7s after the last renewal: address %q, want none", addr)
+		}
+	})
+	t.Run("holder an hour ahead", func(t *testing.T) {
+		r, c, clock := skewedLease(t, time.Hour)
+		if addr, _ := gatewayAddress(t, r, c); addr != "10.0.9.9" {
+			t.Fatalf("just renewed: address %q, want 10.0.9.9", addr)
+		}
+		*clock = clock.Add(7 * time.Second)
+		if addr, _ := gatewayAddress(t, r, c); addr != "" {
+			t.Fatalf("7s with no renewal: address %q, want none", addr)
+		}
+	})
+}
