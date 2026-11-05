@@ -200,6 +200,41 @@ func TestNamespacedReads(t *testing.T) {
 	}
 }
 
+// A SiteService in a namespace where the controller reads no Services: its local member is Unknown with the read's
+// error, nothing is written, and the Applied condition names the namespace (RFC0007, requirement 26).
+func TestSiteServiceOutsideNamespacedReads(t *testing.T) {
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))
+	r, c := reconciler(t, readB, objs...)
+	var requests int
+	ns := []string{"db", "strait-system"}
+	reads := NamespacedReads(counting(t, c, &requests), ns)
+	r.Client, r.Reader = NamespacedWrites(reads, ns), reads
+	run(t, r)
+	st := status(t, c)
+	applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied)
+	if applied == nil || applied.Status != metav1.ConditionFalse || applied.Reason != "SyncFailed" || !strings.Contains(applied.Message, `namespace "app" is not one where the controller reads`) {
+		t.Errorf("applied = %+v", applied)
+	}
+	var local straitv1.MemberStatus
+	for _, m := range st.Members {
+		if m.Name == "web-a" {
+			local = m
+		}
+	}
+	if local.State != straitv1.StateUnknown || !strings.Contains(local.Reason, `namespace "app" is not one where the controller reads`) {
+		t.Errorf("web-a = %+v, want Unknown with the read's error", local)
+	}
+	if len(st.Route.Members) != 0 || st.Route.Endpoints != 0 {
+		t.Errorf("route = %+v, want nowhere", st.Route)
+	}
+	if requests != 0 {
+		t.Errorf("%d write requests", requests)
+	}
+	if len(endpointSlices(t, c)) != 0 {
+		t.Errorf("slices = %v", endpointSlices(t, c))
+	}
+}
+
 // An Import without a port, in a namespace where the controller reads no Services, reconciles with no error: the
 // controller wrote nothing there to delete. With a port, its Service condition names the namespace.
 func TestImportOutsideNamespacedReads(t *testing.T) {

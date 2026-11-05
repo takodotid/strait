@@ -45,7 +45,7 @@ With `controller.namespaces` set, `controller.namespacedReads: true` limits the 
 
 | Object in another namespace | With `namespacedReads` |
 |---|---|
-| `SiteService` | Its `Applied` condition is `False` and names the namespace. With `controller.namespaces` alone, the controller cannot write its Service there either. |
+| `SiteService` | Its local members are `Unknown` with the read's error, it routes nowhere, and its `Applied` condition is `False` and names the namespace. With `controller.namespaces` alone, the controller cannot write its Service there either. |
 | `Export` | No ready endpoint: its `Ready` condition is `False`, reason `ReadFailed`, and peers see it not ready. |
 | `Import` with `spec.port` | Its `Service` condition is `False`, reason `SyncFailed`, and names the namespace. |
 | `Import` without `spec.port` | Works as before. |
