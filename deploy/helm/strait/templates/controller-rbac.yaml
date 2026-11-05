@@ -62,9 +62,10 @@ metadata:
   labels:
     {{- include "strait.labels" . | nindent 4 }}
 rules:
+  # patch: the deletion cost of the gateway pods, so that a rollout moves the gateway Lease once.
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
   # The gateway Lease and its own. RBAC cannot limit create to a name.
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]

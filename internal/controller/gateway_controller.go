@@ -3,6 +3,8 @@ package controller
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -23,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -36,6 +39,14 @@ const (
 	GatewayWireGuardService = "strait-gateway-wireguard"
 	LabelComponent          = "app.kubernetes.io/component"
 	ComponentGateway        = "gateway"
+	// LabelName names the application of the chart's pods.
+	LabelName = "app.kubernetes.io/name"
+	// AnnotationDeletionCost ranks the pods of a ReplicaSet for deletion: a ReplicaSet deletes a pod of lower cost
+	// first, among pods that are equally ready. The controller sets it on the active gateway pod only.
+	AnnotationDeletionCost = "controller.kubernetes.io/pod-deletion-cost"
+	// activeDeletionCost is the deletion cost of the active gateway pod. Every other gateway pod has none, which
+	// counts as 0.
+	activeDeletionCost = "1"
 )
 
 // GatewayReconciler finds the active gateway pod and keeps the Services that peers reach the gateway on.
@@ -125,6 +136,10 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
+	// A failure here does not end the reconcile: the requeue below must stay, since no event marks the Lease's expiry.
+	if err := r.syncDeletionCost(ctx, pod); err != nil {
+		log.FromContext(ctx).Error(err, "set the deletion cost of the gateway pods")
+	}
 	// The Lease expires on the controller's clock, and no event marks it, so look again when it would.
 	next := 10 * time.Second
 	if left > 0 && left < next {
@@ -159,6 +174,40 @@ func (r *GatewayReconciler) activeGateway(ctx context.Context) (name, addr, node
 		return name, "", "", left, nil
 	}
 	return name, pod.Status.PodIP, pod.Spec.NodeName, left, nil
+}
+
+// syncDeletionCost sets the deletion cost of the gateway pod that holds the gateway Lease, and removes it from every
+// other gateway pod, so that a rollout or a scale-down of the gateway deletes the standbys first, and moves the Lease
+// once (RFC#0005, requirement 39). It changes nothing else on a pod. A pod being deleted is left alone.
+func (r *GatewayReconciler) syncDeletionCost(ctx context.Context, holder string) error {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(r.Namespace), client.MatchingLabels{LabelName: "strait", LabelComponent: ComponentGateway}); err != nil {
+		return err
+	}
+	var errs []error
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		cost, has := p.Annotations[AnnotationDeletionCost]
+		var value any
+		switch {
+		case !p.DeletionTimestamp.IsZero():
+			continue
+		case p.Name == holder && cost != activeDeletionCost:
+			value = activeDeletionCost
+		case p.Name != holder && has:
+			value = nil
+		default:
+			continue
+		}
+		patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{AnnotationDeletionCost: value}}})
+		if err != nil {
+			return err
+		}
+		if err := r.Patch(ctx, p, client.RawPatch(types.MergePatchType, patch)); client.IgnoreNotFound(err) != nil {
+			errs = append(errs, fmt.Errorf("pod %s: %w", p.Name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // leaseLeft returns how long the gateway lease stays valid unless its spec changes: its duration, counted on the

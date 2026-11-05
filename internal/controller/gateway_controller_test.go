@@ -9,6 +9,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -354,4 +355,81 @@ func TestDirectServiceListsEachPortOnce(t *testing.T) {
 	if len(es.Ports) != 3 {
 		t.Errorf("EndpointSlice ports = %d, want 3", len(es.Ports))
 	}
+}
+
+// gatewayPod is a ready pod of the chart's gateway, with the deletion cost given, or none when cost is "".
+func gatewayPod(name, cost string) *corev1.Pod {
+	p := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: gatewayNamespace, Name: name,
+			Labels: map[string]string{LabelName: "strait", LabelComponent: ComponentGateway, "pod-template-hash": "abc"}},
+		Spec: corev1.PodSpec{NodeName: "node-1", Containers: []corev1.Container{{Name: "agent", Image: "strait:1"}}},
+		Status: corev1.PodStatus{
+			PodIP:      "10.0.9.9",
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+	if cost != "" {
+		p.Annotations = map[string]string{AnnotationDeletionCost: cost, "other": "x"}
+	}
+	return p
+}
+
+// The active gateway pod, and only it, has a deletion cost, so a rollout deletes the standbys first and moves the
+// gateway Lease once. Nothing else on a pod changes, and no pod but the gateway's is touched (RFC#0005, requirement
+// 39).
+func TestDeletionCostOnTheActivePod(t *testing.T) {
+	controllerPod := gatewayPod("strait-controller-0", "5")
+	controllerPod.Labels[LabelComponent] = "controller"
+	lease := activeGatewayPod()[0].(*coordinationv1.Lease)
+	c := fakeClient(t, gatewaySite(straitv1.ServiceExposure{}), lease, gatewayPod("gateway-0", ""), gatewayPod("gateway-1", "1"), controllerPod)
+	r := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace}
+	pods := func() map[string]corev1.Pod {
+		var list corev1.PodList
+		if err := c.List(context.Background(), &list); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]corev1.Pod{}
+		for _, p := range list.Items {
+			out[p.Name] = p
+		}
+		return out
+	}
+	before := pods()
+	check := func(active string) {
+		t.Helper()
+		got := pods()
+		for name, p := range got {
+			want := ""
+			switch name {
+			case active:
+				want = "1"
+			case controllerPod.Name:
+				want = "5"
+			}
+			if cost := p.Annotations[AnnotationDeletionCost]; cost != want {
+				t.Errorf("active %s: pod %s has deletion cost %q, want %q", active, name, cost, want)
+			}
+			b := before[name]
+			if p.Annotations["other"] != b.Annotations["other"] || !equality.Semantic.DeepEqual(p.Labels, b.Labels) ||
+				!equality.Semantic.DeepEqual(p.Spec, b.Spec) || !equality.Semantic.DeepEqual(p.Status, b.Status) {
+				t.Errorf("pod %s changed beyond its deletion cost: %+v", name, p)
+			}
+		}
+	}
+	reconcileGateway(t, r)
+	check("gateway-0")
+
+	lease.Spec.HolderIdentity = ptr.To("gateway-1")
+	if err := c.Update(context.Background(), lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileGateway(t, r)
+	check("gateway-1")
+
+	lease.Spec.HolderIdentity = ptr.To("")
+	if err := c.Update(context.Background(), lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileGateway(t, r)
+	check("")
 }

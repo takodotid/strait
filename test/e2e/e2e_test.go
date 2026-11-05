@@ -41,6 +41,7 @@ func TestE2E(t *testing.T) {
 		{"ports", e.portsTogether},
 		{"envoy-not-ready", e.envoyNotReady},
 		{"gateway-handover", e.gatewayHandover},
+		{"gateway-rollout", e.gatewayRollout},
 		{"2-link-failover", e.linkFailover},
 		{"3-switchover", e.switchover},
 		{"4-partition", e.partition},
