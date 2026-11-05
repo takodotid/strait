@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -60,7 +61,9 @@ type Agent struct {
 	// Changed receives a value when a Site, SitePeer or SiteLink spec changes.
 	Changed <-chan struct{}
 	Resolve func(hostport string) (*net.UDPAddr, error)
-	Log     logr.Logger
+	// Poke sends a packet to a peer's tunnel address after the agent drops the link's session. Nil sends none.
+	Poke func(peer netip.Addr) error
+	Log  logr.Logger
 
 	mu       sync.Mutex
 	cancel   context.CancelFunc
@@ -68,6 +71,9 @@ type Agent struct {
 	held     map[string]string
 	problems map[string]string
 	logged   map[string]string
+	want     []Interface
+	// kernel serializes the changes to the interfaces, so that no change acts on a read taken before another.
+	kernel sync.Mutex
 }
 
 // Run takes part in the gateway Lease until ctx ends, and re-joins the election each time the Lease is lost.
@@ -200,6 +206,10 @@ func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
 	wg.Go(func() { a.loop(ctx, WireGuardInterval, a.Changed, a.syncWireGuard) })
 	wg.Go(func() { a.loop(ctx, HealthInterval, nil, a.reportHealth) })
 	wg.Go(func() {
+		s := sessions{}
+		a.loop(ctx, SessionInterval, nil, func(ctx context.Context) { a.renewStale(ctx, s, time.Now) })
+	})
+	wg.Go(func() {
 		a.loop(ctx, RetryPeriod/4, nil, func(context.Context) {
 			if d := l.sinceRenewed(); d > RenewDeadline {
 				a.Log.Info("the Lease was not renewed in time; stepping down", "since", d.String())
@@ -263,18 +273,58 @@ func (a *Agent) removeAll() {
 		}
 	}
 	var err error
+	a.kernel.Lock()
 	for range 3 {
 		if _, err = Apply(a.Kernel, nil); err == nil {
 			break
 		}
 	}
+	a.kernel.Unlock()
 	if err != nil {
 		a.Log.Error(err, "remove WireGuard interfaces")
 	}
 	a.setLinks(nil, nil)
 	a.mu.Lock()
+	a.want = nil
 	maps.DeleteFunc(a.logged, func(k, _ string) bool { return strings.HasPrefix(k, "link/") })
 	a.mu.Unlock()
+}
+
+// renewStale drops the WireGuard session of each dialing link whose peer sent nothing for StaleSession while this side
+// sent, and sends a packet through the link so that WireGuard starts a handshake. A peer that stays silent is dropped
+// again every StaleRetry.
+func (a *Agent) renewStale(ctx context.Context, s sessions, now func() time.Time) {
+	a.kernel.Lock()
+	defer a.kernel.Unlock()
+	if ctx.Err() != nil {
+		return
+	}
+	devs, err := a.Kernel.Devices()
+	if err != nil {
+		return
+	}
+	a.mu.Lock()
+	want := a.want
+	a.mu.Unlock()
+	drop, answered := s.check(want, devs, now())
+	for _, st := range answered {
+		a.Log.Info("the WireGuard peer answers again", "link", st.W.Link, "interface", st.W.Name, "after", st.Silent.Round(time.Millisecond).String(), "drops", st.Drops)
+	}
+	for _, st := range drop {
+		if err := a.Kernel.Configure(st.W.Name, renewConfig(st.W)); err != nil {
+			a.Log.Error(err, "drop the WireGuard session", "link", st.W.Link, "interface", st.W.Name)
+			continue
+		}
+		s.dropped(st.W.Name, now())
+		if a.Poke != nil {
+			if err := a.Poke(st.W.PeerIP.Addr()); err != nil {
+				a.Log.V(1).Info("send a packet to the WireGuard peer", "link", st.W.Link, "error", err.Error())
+			}
+		}
+		if st.Drops == 0 {
+			a.Log.Info("the WireGuard peer sent nothing; dropping the session to start a new handshake", "link", st.W.Link, "interface", st.W.Name, "silent", st.Silent.Round(time.Millisecond).String())
+		}
+	}
 }
 
 // syncWireGuard brings the interfaces to the desired state and publishes the site's public key.
@@ -292,7 +342,12 @@ func (a *Agent) syncWireGuard(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
+	a.kernel.Lock()
 	failed, err := Apply(a.Kernel, want)
+	a.kernel.Unlock()
+	a.mu.Lock()
+	a.want = want
+	a.mu.Unlock()
 	if err != nil {
 		a.note("apply", err.Error())
 	} else {

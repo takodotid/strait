@@ -131,6 +131,7 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 		HTTP:       httpc,
 		Changed:    changed,
 		Resolve:    func(hostport string) (*net.UDPAddr, error) { return net.ResolveUDPAddr("udp", hostport) },
+		Poke:       gateway.Poke,
 		Log:        log,
 	}
 	return a.Run(ctx)
