@@ -330,11 +330,12 @@ func (r *ImportReconciler) syncService(ctx context.Context, imp *straitv1.Import
 	return false, nil
 }
 
-// deleteOwned deletes the objects named after the Import that the Import owns, and leaves the others.
+// deleteOwned deletes the objects named after the Import that the Import owns, and leaves the others. In a namespace
+// where the controller reads no Services and EndpointSlices, it writes none either, so there is none to delete.
 func (r *ImportReconciler) deleteOwned(ctx context.Context, imp *straitv1.Import, objs ...client.Object) error {
 	for _, o := range objs {
 		if err := r.Get(ctx, client.ObjectKeyFromObject(imp), o); err != nil {
-			if apierrors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) || errors.Is(err, ErrNotRead) {
 				continue
 			}
 			return err

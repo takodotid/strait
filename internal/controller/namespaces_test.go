@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -139,5 +141,98 @@ func TestImportOutsideNamespaces(t *testing.T) {
 	}
 	if es := importSlice(t, c); es != nil {
 		t.Errorf("slice = %+v", es)
+	}
+}
+
+// A read of a Service, an EndpointSlice or a CloudNativePG object outside the namespaces sends no request, is
+// ErrNotRead and names the namespace. Every other read goes through (RFC0007, requirement 26).
+func TestNamespacedReads(t *testing.T) {
+	ctx := context.Background()
+	var reads int
+	base := fakeClient(t, append(appService("web-a", "10.0.0.1"), webImport(nil))...)
+	counted := interceptor.NewClient(base.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			reads++
+			return c.Get(ctx, key, obj, opts...)
+		},
+		List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+			reads++
+			return c.List(ctx, list, opts...)
+		},
+	})
+	c := NamespacedReads(counted, []string{"db", "strait-system"})
+	cluster := &unstructured.Unstructured{}
+	cluster.SetGroupVersionKind(CNPGCluster)
+	clusters := &unstructured.UnstructuredList{}
+	clusters.SetGroupVersionKind(CNPGCluster.GroupVersion().WithKind("ClusterList"))
+	key := types.NamespacedName{Namespace: "app", Name: "web-a"}
+	refused := map[string]error{
+		"get Service":         c.Get(ctx, key, &corev1.Service{}),
+		"get EndpointSlice":   c.Get(ctx, key, &discoveryv1.EndpointSlice{}),
+		"get Cluster":         c.Get(ctx, key, cluster),
+		"list Services":       c.List(ctx, &corev1.ServiceList{}, client.InNamespace("app")),
+		"list EndpointSlices": c.List(ctx, &discoveryv1.EndpointSliceList{}, client.InNamespace("app")),
+		"list Clusters":       c.List(ctx, clusters, client.InNamespace("app")),
+	}
+	for what, err := range refused {
+		if !errors.Is(err, ErrNotRead) || !strings.Contains(err.Error(), `namespace "app" is not one`) {
+			t.Errorf("%s in app: %v, want a refusal", what, err)
+		}
+	}
+	if reads != 0 {
+		t.Fatalf("%d read requests outside the namespaces", reads)
+	}
+	for what, err := range map[string]error{
+		"get Import":                c.Get(ctx, types.NamespacedName{Namespace: "app", Name: "web-b"}, &straitv1.Import{}),
+		"list Services everywhere":  c.List(ctx, &corev1.ServiceList{}),
+		"get Service in db":         client.IgnoreNotFound(c.Get(ctx, types.NamespacedName{Namespace: "db", Name: "pg"}, &corev1.Service{})),
+		"list EndpointSlices in db": c.List(ctx, &discoveryv1.EndpointSliceList{}, client.InNamespace("db")),
+	} {
+		if err != nil {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	if reads != 4 {
+		t.Errorf("%d read requests, want the 4 allowed", reads)
+	}
+	if NamespacedReads(base, nil) != base {
+		t.Error("no namespaces: want the client itself")
+	}
+}
+
+// An Import without a port, in a namespace where the controller reads no Services, reconciles with no error: the
+// controller wrote nothing there to delete. With a port, its Service condition names the namespace.
+func TestImportOutsideNamespacedReads(t *testing.T) {
+	for _, port := range []*straitv1.ServicePort{nil, webPort} {
+		r, c := importReconciler(t, importSite("10.0.9.9"), webImport(port))
+		ns := []string{"db", "strait-system"}
+		r.Client = NamespacedWrites(NamespacedReads(c, ns), ns)
+		_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
+		cond := meta.FindStatusCondition(importStatus(t, c).Conditions, ConditionService)
+		if port == nil {
+			if err != nil || cond != nil {
+				t.Errorf("no port: reconcile %v, service condition %+v; want neither", err, cond)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrNotRead) {
+			t.Errorf("port: reconcile %v, want the refusal, so that it is retried", err)
+		}
+		if cond == nil || cond.Reason != "SyncFailed" || !strings.Contains(cond.Message, `namespace "app" is not one where the controller reads`) {
+			t.Errorf("port: service condition %+v", cond)
+		}
+	}
+}
+
+// An Export in a namespace where the controller reads no Services has no ready endpoint, and says why.
+func TestExportOutsideNamespacedReads(t *testing.T) {
+	r, _, c := laggingExport(t)
+	ns := []string{"db", "strait-system"}
+	r.Client = NamespacedReads(c, ns)
+	r.Reader = r.Client
+	runExport(t, r)
+	ready := meta.FindStatusCondition(exportStatus(t, c).Conditions, ConditionReady)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "ReadFailed" || !strings.Contains(ready.Message, `namespace "app" is not one`) {
+		t.Errorf("ready = %+v", ready)
 	}
 }

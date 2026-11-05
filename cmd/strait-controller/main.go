@@ -9,15 +9,19 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	coordinationv1client "k8s.io/client-go/kubernetes/typed/coordination/v1"
@@ -48,7 +52,7 @@ func main() {
 	var (
 		metricsAddr, probeAddr, observationsAddr, xdsAddr string
 		gatewayNamespace, observationsService, namespaces string
-		leaderElect, cnpg                                 bool
+		leaderElect, cnpg, namespacedReads                bool
 	)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Address of the metrics endpoint.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address of the health probes.")
@@ -58,6 +62,7 @@ func main() {
 	flag.StringVar(&observationsService, "observations-service", "", "Host name of the controller's Service, which the gateway forwards observation requests to.")
 	flag.BoolVar(&leaderElect, "leader-elect", true, "Elect one active controller.")
 	flag.StringVar(&namespaces, "namespaces", "", "Comma-separated namespaces where the controller writes Services and EndpointSlices, besides --gateway-namespace. Empty writes in every namespace. The chart sets it from controller.namespaces, which grants the writes.")
+	flag.BoolVar(&namespacedReads, "namespaced-reads", false, "Read Services, EndpointSlices and CloudNativePG's objects only in --namespaces and --gateway-namespace, so that the controller's cache holds only theirs. Needs --namespaces. The chart sets it from controller.namespacedReads, which grants those reads there only.")
 	flag.BoolVar(&cnpg, "cnpg", true, "Watch and read CloudNativePG's kinds, when their CRDs exist. False reports every member of the cnpg plugin Unknown. The chart sets it from cnpg.enabled, which grants the read.")
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
@@ -68,13 +73,28 @@ func main() {
 		log.Error(errors.New("missing"), "--gateway-namespace or POD_NAMESPACE is required")
 		os.Exit(2)
 	}
-	if err := run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, leaderElect, cnpg, writeNamespaces(namespaces, gatewayNamespace)); err != nil {
+	writes := writeNamespaces(namespaces, gatewayNamespace)
+	var reads []string
+	if namespacedReads {
+		if len(writes) == 0 {
+			log.Error(errors.New("missing"), "--namespaced-reads needs --namespaces")
+			os.Exit(2)
+		}
+		reads = writes
+	}
+	if limit, ok := memoryLimit(os.Getenv("MEMORY_LIMIT"), os.Getenv("GOMEMLIMIT")); ok {
+		debug.SetMemoryLimit(limit)
+		log.Info("Go memory limit", "bytes", limit)
+	}
+	if err := run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, leaderElect, cnpg, writes, reads); err != nil {
 		log.Error(err, "controller stopped")
 		os.Exit(1)
 	}
 }
 
-func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService string, leaderElect, cnpg bool, namespaces []string) error {
+// run runs the controller. It writes Services and EndpointSlices in namespaces only, and reads them, and
+// CloudNativePG's objects, in reads only. Either empty means every namespace.
+func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService string, leaderElect, cnpg bool, namespaces, reads []string) error {
 	log := ctrl.Log.WithName("setup")
 	log.Info("starting", "version", version.Version)
 	scheme := runtime.NewScheme()
@@ -89,17 +109,21 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	if err != nil {
 		return err
 	}
-	mgr, err := ctrl.NewManager(cfg, managerOptions(scheme, lock, gatewayNamespace, metricsAddr, probeAddr, leaderElect))
+	opts := managerOptions(scheme, lock, gatewayNamespace, metricsAddr, probeAddr, leaderElect)
+	readsIn(&opts.Cache, reads, cnpg)
+	mgr, err := ctrl.NewManager(cfg, opts)
 	if err != nil {
 		return err
 	}
 	watchCNPG := cnpgWatched(cnpg, mgr.GetRESTMapper())
 	log.Info("cloudnative-pg", "enabled", cnpg, "watched", watchCNPG)
 	log.Info("writes Services and EndpointSlices", "namespaces", namespaces)
+	log.Info("reads Services, EndpointSlices and CloudNativePG's objects", "namespaces", reads)
+	// Everything reads through it, so a read outside the namespaces shows in status (RFC0007, requirement 26).
+	reader := controller.NamespacedReads(mgr.GetClient(), reads)
 	// Every reconciler writes through it, so a write outside the namespaces shows in status (RFC0007, requirement 16).
-	writer := controller.NamespacedWrites(mgr.GetClient(), namespaces)
+	writer := controller.NamespacedWrites(reader, namespaces)
 
-	reader := mgr.GetClient()
 	local := &exchange.Local{}
 	xdsServer := xds.NewServer(reader, gatewayNamespace, xdsAddr, net.JoinHostPort(observationsService, portOf(observationsAddr)))
 
@@ -340,12 +364,52 @@ func managerOptions(scheme *runtime.Scheme, lock resourcelock.Interface, namespa
 		LeaderElectionReleaseOnCancel:       false,
 		GracefulShutdownTimeout:             ptr.To(time.Duration(-1)),
 		Controller:                          config.Controller{ReconciliationTimeout: reconcileTimeout},
-		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&corev1.Pod{}:           inGateway,
-			&coordinationv1.Lease{}: inGateway,
-		}},
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}:           inGateway,
+				&coordinationv1.Lease{}: inGateway,
+			},
+			// The controller never reads managedFields. An update from a copy without them leaves the API server's.
+			DefaultTransform: cache.TransformStripManagedFields(),
+		},
 		Client: client.Options{Cache: &client.CacheOptions{Unstructured: true}},
 	}
+}
+
+// readsIn limits the cache's Services, EndpointSlices and, with cnpg, CloudNativePG's clusters and poolers to
+// namespaces (RFC0007, requirement 26). With no namespaces, the cache holds those of the cluster.
+func readsIn(opts *cache.Options, namespaces []string, cnpg bool) {
+	if len(namespaces) == 0 {
+		return
+	}
+	in := cache.ByObject{Namespaces: map[string]cache.Config{}}
+	for _, ns := range namespaces {
+		in.Namespaces[ns] = cache.Config{}
+	}
+	if opts.ByObject == nil {
+		opts.ByObject = map[client.Object]cache.ByObject{}
+	}
+	opts.ByObject[&corev1.Service{}] = in
+	opts.ByObject[&discoveryv1.EndpointSlice{}] = in
+	if cnpg {
+		for _, gvk := range []schema.GroupVersionKind{controller.CNPGCluster, controller.CNPGPooler} {
+			u := &unstructured.Unstructured{}
+			u.SetGroupVersionKind(gvk)
+			opts.ByObject[u] = in
+		}
+	}
+}
+
+// memoryLimit returns the Go runtime's soft memory limit: 90% of limit, a byte count, so that the garbage collector
+// keeps the heap under the container's memory limit instead of letting it grow to twice the live heap. The chart sets
+// limit from the container's limits.memory. A GOMEMLIMIT that is set, or a limit that is not a positive byte count,
+// sets none.
+func memoryLimit(limit, gomemlimit string) (int64, bool) {
+	n, err := strconv.ParseInt(limit, 10, 64)
+	if gomemlimit != "" || err != nil || n <= 0 {
+		return 0, false
+	}
+	return n - n/10, true
 }
 
 // leaderLock is the controller's leader election Lease. It records no event: controller-runtime's own lock writes

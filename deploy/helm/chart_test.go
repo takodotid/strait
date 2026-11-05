@@ -274,6 +274,8 @@ type values struct {
 	secret string
 	// namespaces is controller.namespaces.
 	namespaces []string
+	// namespacedReads is controller.namespacedReads.
+	namespacedReads bool
 }
 
 // wanted returns the grants that an RBAC table of RFC0007 gives for the values.
@@ -294,11 +296,21 @@ func wanted(t *testing.T, heading string, v values) []grant {
 		switch row[3] {
 		case "Cluster":
 			cluster = true
-		case "Cluster, while cnpg.enabled":
+		case "Cluster, or each namespace of controller.namespaces and its namespace with controller.namespacedReads":
+			if v.namespacedReads {
+				scopes = append(slices.Clone(v.namespaces), namespace)
+			} else {
+				cluster = true
+			}
+		case "Cluster while cnpg.enabled, or each namespace of controller.namespaces and its namespace with controller.namespacedReads":
 			if !v.cnpg {
 				continue
 			}
-			cluster = true
+			if v.namespacedReads {
+				scopes = append(slices.Clone(v.namespaces), namespace)
+			} else {
+				cluster = true
+			}
 		case "Cluster, or each namespace of controller.namespaces and its namespace":
 			if len(v.namespaces) == 0 {
 				cluster = true
@@ -359,6 +371,10 @@ func TestRBAC(t *testing.T) {
 		{"wireguard secret", []string{"site.spec.wireguard.privateKeySecretRef.name=strait-wg"}, values{cnpg: true, secret: "strait-wg"}},
 		{"namespaces", []string{"controller.namespaces={db,web}"}, values{cnpg: true, namespaces: []string{"db", "web"}}},
 		{"namespaces with its own", []string{"controller.namespaces={db," + namespace + "}"}, values{cnpg: true, namespaces: []string{"db"}}},
+		{"namespaced reads", []string{"controller.namespaces={db,web}", "controller.namespacedReads=true"},
+			values{cnpg: true, namespaces: []string{"db", "web"}, namespacedReads: true}},
+		{"namespaced reads, cnpg disabled", []string{"controller.namespaces={db}", "controller.namespacedReads=true", "cnpg.enabled=false"},
+			values{namespaces: []string{"db"}, namespacedReads: true}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := render(t, tt.set...)
@@ -583,6 +599,42 @@ func TestNamespacesFlagFollowsValue(t *testing.T) {
 			t.Errorf("%v: controller args %v, want %v", tt.set, got, tt.want)
 		}
 	}
+}
+
+// The controller reads where its read Roles grant it, and the chart refuses namespacedReads without namespaces
+// (RFC0007, requirement 26).
+func TestNamespacedReadsFlagFollowsValue(t *testing.T) {
+	for _, tt := range []struct {
+		set  []string
+		want bool
+	}{
+		{nil, false},
+		{[]string{"controller.namespaces={db,web}"}, false},
+		{[]string{"controller.namespaces={db,web}", "controller.namespacedReads=true"}, true},
+	} {
+		pod := render(t, tt.set...).pods["strait-controller"]
+		if got := slices.Contains(pod.Spec.Containers[0].Args, "--namespaced-reads"); got != tt.want {
+			t.Errorf("%v: --namespaced-reads %v, want %v", tt.set, got, tt.want)
+		}
+	}
+	if out, err := helmTemplate(t, "controller.namespacedReads=true"); err == nil || !strings.Contains(out, "controller.namespacedReads needs controller.namespaces") {
+		t.Errorf("namespacedReads without namespaces: %v %s, want a refusal", err, out)
+	}
+}
+
+// The controller learns its container's memory limit, and keeps its Go heap under it (docs/sizing.md).
+func TestControllerMemoryLimit(t *testing.T) {
+	pod := render(t).pods["strait-controller"]
+	for _, e := range pod.Spec.Containers[0].Env {
+		if e.Name == "MEMORY_LIMIT" {
+			ref := e.ValueFrom.ResourceFieldRef
+			if ref == nil || ref.ContainerName != "controller" || ref.Resource != "limits.memory" || !ref.Divisor.IsZero() {
+				t.Errorf("MEMORY_LIMIT from %+v, want the controller's limits.memory in bytes", e.ValueFrom)
+			}
+			return
+		}
+	}
+	t.Error("the controller has no MEMORY_LIMIT")
 }
 
 // releasedChart copies the chart and writes the image digest into it, as make chart does for a release.

@@ -150,7 +150,7 @@ helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait 
   --namespace strait-system --values values-a.yaml --wait
 ```
 
-Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two clusters step by step, from the WireGuard key to a routed name: [Getting started](docs/getting-started.md).
+Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two clusters step by step, from the WireGuard key to a routed name: [Getting started](docs/getting-started.md). The controller's memory grows with the Services of the cluster: [Sizing](docs/sizing.md).
 
 Install the CLI, here for Linux on amd64:
 
@@ -355,6 +355,7 @@ For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skil
 | [Getting started](docs/getting-started.md) | Two clusters, a WireGuard link, and a `SiteService` with the `cnpg` plugin. |
 | [Troubleshooting](docs/troubleshooting.md) | A name routed nowhere, Unknown members, unreachable peers, unhealthy links. |
 | [Metrics and alerts](docs/metrics.md) | Every metric, how to scrape it, the alert rules, and what the probes check. |
+| [Sizing](docs/sizing.md) | The controller's memory per Service of the cluster, its limit, and how to cache fewer objects. |
 | [Runbooks](docs/troubleshooting.md#runbooks) | Site loss and return, WireGuard key rotation, a controller or a gateway that is not ready, rollback, a release. |
 | [Gateway benchmark](docs/benchmark.md) | What the gateway adds per round trip and per connection, and what endpoint-direct saves. |
 | [End-to-end tests](test/e2e/README.md) | The kind fixture and its scenarios. |
