@@ -45,6 +45,7 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 | `NotObserved` | The member's site is reachable, but its document holds no observation of this member. | Apply the same `SiteService`, with the same namespace, name and member names, at the member's site. |
 | `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago, and at least 6s ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
 | `ReadFailed: ...` | The plugin could not read the workload at this site. The rest of the reason is the error. | Follow the error. For `cnpg`, check that CloudNativePG is installed at this site. |
+| `PluginDisabled` | The member's plugin is off at this site: the chart value `cnpg.enabled` is `false`. | Set `cnpg.enabled: true` with `helm upgrade` at the member's site. |
 
 While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
 
@@ -106,7 +107,7 @@ The conditions of the `Site`:
 | Versions | `strait version` for the CLI. `VERSION` in `strait status` for the site's controller. |
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
 | Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
-| CloudNativePG watch | The controller logs `cloudnative-pg` at start. `watched` false means CloudNativePG's CRDs were missing then: restart the controller. `watched` true needs `cnpg.enabled: true` in the chart's values: [Getting started, Prerequisites](getting-started.md#prerequisites). |
+| CloudNativePG watch | The controller logs `cloudnative-pg` at start. `enabled` follows `cnpg.enabled`. `watched` false with `enabled` true means CloudNativePG's CRDs were missing then: restart the controller. [Getting started, Prerequisites](getting-started.md#prerequisites). |
 | Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. |
 | Metrics | Port `metrics`, 8080, of the controller pod. The route, the conditions, peer reachability and link health: [RFC0002, Metrics](../rfcs/RFC0002.md#metrics). A route to nowhere shows as `strait_siteservice_endpoints` 0. |
 

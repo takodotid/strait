@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"errors"
+	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -22,6 +24,7 @@ import (
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/decide"
+	"github.com/takodotid/strait/internal/observe"
 )
 
 // cnpgCluster builds a Cluster as CloudNativePG reports it.
@@ -347,5 +350,37 @@ func TestCNPGPortNotFound(t *testing.T) {
 				t.Fatalf("got state=%s role=%s eligible=%v reason=%q; want Stable, primary, not eligible, PortNotFound", o.State, o.Role, o.Eligible, o.Reason)
 			}
 		})
+	}
+}
+
+// noReads is a reader that fails the test at each read.
+type noReads struct{ t *testing.T }
+
+func (r noReads) Get(_ context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+	r.t.Errorf("read %T %s", obj, key)
+	return errors.New("no read expected")
+}
+
+func (r noReads) List(_ context.Context, list client.ObjectList, _ ...client.ListOption) error {
+	r.t.Errorf("listed %T", list)
+	return errors.New("no read expected")
+}
+
+// With the plugin off, the cnpg plugin reads nothing, and reports each local member Unknown with reason
+// PluginDisabled, and no declaration (RFC#0003, requirement 13).
+func TestCNPGOff(t *testing.T) {
+	now := time.Now()
+	svc := siteService(straitv1.CNPGRolePrimary)
+	p, err := For(svc, Options{CNPGOff: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := p.Observe(context.Background(), noReads{t}, svc, "a", now)
+	want := map[string]observe.Observation{"pg-a": {Member: "pg-a", Site: "a", Role: straitv1.RoleUnknown, State: straitv1.StateUnknown, Reason: ReasonPluginDisabled, ObservedAt: now}}
+	if !maps.EqualFunc(rep.Members, want, func(a, b observe.Observation) bool { return reflect.DeepEqual(a, b) }) {
+		t.Errorf("members = %+v, want %+v", rep.Members, want)
+	}
+	if rep.Declared != "" || rep.Conflicting != nil {
+		t.Errorf("declared %q, conflicting %v; want none", rep.Declared, rep.Conflicting)
 	}
 }

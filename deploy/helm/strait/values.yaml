@@ -61,8 +61,9 @@ site:
   #     privateKeySecretRef: {name: strait-wireguard}
   spec: {}
 
-# Read access for the cnpg plugin. Keep true on every cluster that has CloudNativePG's CRDs, even with no SiteService
-# that uses the plugin: the controller watches CloudNativePG's kinds whenever their CRDs exist (docs/getting-started.md).
+# The cnpg plugin: the controller's read access to CloudNativePG's kinds, and its watch of them. With false, the
+# controller neither reads nor watches them, and reports every member of a SiteService with the cnpg plugin Unknown,
+# reason PluginDisabled (docs/getting-started.md).
 cnpg:
   enabled: true
 

@@ -52,6 +52,8 @@ type SiteServiceReconciler struct {
 	Peers     Peers
 	Local     Local
 	Now       func() time.Time
+	// Plugins are the plugins' settings from the controller's flags.
+	Plugins plugin.Options
 
 	// confirmed keeps each member's last confirmed time at full precision, by SiteService and member.
 	confirmed map[types.NamespacedName]map[string]time.Time
@@ -62,7 +64,7 @@ type SiteServiceReconciler struct {
 	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
 	// decided keeps, by SiteService, the members of the last decision: the next decision's previous route.
 	decided map[types.NamespacedName][]string
-	// pluginFor returns the plugin of a SiteService. Nil means plugin.For. Tests set it.
+	// pluginFor returns the plugin of a SiteService. Nil means plugin.For with Plugins. Tests set it.
 	pluginFor func(*straitv1.SiteService) (plugin.Plugin, error)
 }
 
@@ -93,7 +95,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	now := r.Now()
 
-	pluginFor := plugin.For
+	pluginFor := func(svc *straitv1.SiteService) (plugin.Plugin, error) { return plugin.For(svc, r.Plugins) }
 	if r.pluginFor != nil {
 		pluginFor = r.pluginFor
 	}

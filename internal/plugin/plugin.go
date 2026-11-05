@@ -38,11 +38,17 @@ func (o readOnly) List(ctx context.Context, list client.ObjectList, opts ...clie
 	return o.r.List(ctx, list, opts...)
 }
 
+// Options are the plugins' settings from the controller's flags. The zero value turns every plugin on.
+type Options struct {
+	// CNPGOff turns the cnpg plugin off: it reads nothing and reports every member Unknown (RFC#0003, requirement 13).
+	CNPGOff bool
+}
+
 // For returns the plugin that svc names.
-func For(svc *straitv1.SiteService) (Plugin, error) {
+func For(svc *straitv1.SiteService, o Options) (Plugin, error) {
 	switch {
 	case svc.Spec.Plugin.CNPG != nil:
-		return CNPG{}, nil
+		return CNPG{Off: o.CNPGOff}, nil
 	case svc.Spec.Plugin.Declared != nil:
 		return Declared{}, nil
 	}

@@ -50,6 +50,8 @@ spec:
             - --gateway-namespace={{ .Release.Namespace }}
             - --observations-service=strait-controller.{{ .Release.Namespace }}.svc
             - --zap-log-level={{ .Values.controller.logLevel }}
+            # Follows the read rule of controller-rbac.yaml: the controller watches and reads only what it may list.
+            - --cnpg={{ .Values.cnpg.enabled }}
           env:
             - name: POD_NAMESPACE
               valueFrom:

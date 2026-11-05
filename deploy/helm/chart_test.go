@@ -467,3 +467,26 @@ func TestContainers(t *testing.T) {
 		}
 	}
 }
+
+// The controller watches and reads CloudNativePG's kinds only while the chart grants the read (RFC0003, requirement
+// 13).
+func TestCNPGFlagFollowsValue(t *testing.T) {
+	for _, tt := range []struct {
+		set  []string
+		want string
+	}{
+		{nil, "--cnpg=true"},
+		{[]string{"cnpg.enabled=false"}, "--cnpg=false"},
+	} {
+		pod := render(t, tt.set...).pods["strait-controller"]
+		var got []string
+		for _, a := range pod.Spec.Containers[0].Args {
+			if strings.HasPrefix(a, "--cnpg") {
+				got = append(got, a)
+			}
+		}
+		if !slices.Equal(got, []string{tt.want}) {
+			t.Errorf("%v: controller args %v, want %s", tt.set, got, tt.want)
+		}
+	}
+}

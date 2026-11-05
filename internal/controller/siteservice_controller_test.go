@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
@@ -902,5 +903,47 @@ func TestEndpointDirectOnlyOnTheActiveHealthyLink(t *testing.T) {
 	c := directPeer(t, nil, "10.1.0.7")
 	if got := sliceAddresses(endpointSlices(t, c)["web-b"]); !slices.Equal(got, []string{"10.1.0.7"}) {
 		t.Fatalf("control: addresses = %v, want [10.1.0.7]", got)
+	}
+}
+
+// With the cnpg plugin off, the controller reads no CloudNativePG kind. A cached read of a kind that RBAC forbids
+// would wait for the reconcile's whole time limit. The local member is Unknown with reason PluginDisabled (RFC#0003,
+// requirement 13).
+func TestCNPGOffReadsNothing(t *testing.T) {
+	svc := &straitv1.SiteService{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web", UID: "uid-web"},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Port:   straitv1.ServicePort{Name: "postgres", Port: 5432},
+			Plugin: straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: straitv1.CNPGRolePrimary}},
+			Members: []straitv1.Member{
+				{Name: "pg-a", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "pg-a"}},
+				{Name: "pg-b", Site: "b", CNPG: &straitv1.CNPGMember{Cluster: "pg-b"}},
+			},
+			Policy: straitv1.Policy{Multiple: straitv1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 10 * time.Second}},
+		},
+	}
+	for _, off := range []bool{false, true} {
+		t.Run(fmt.Sprintf("off=%v", off), func(t *testing.T) {
+			r, c := reconciler(t, readB, site("a", "10.0.9.9"), svc.DeepCopy(), cnpgCluster("pg-a", "pg-a", true))
+			var reads []string
+			r.Reader = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if obj.GetObjectKind().GroupVersionKind().Group == CNPGCluster.Group {
+						reads = append(reads, key.String())
+					}
+					return c.Get(ctx, key, obj, opts...)
+				},
+			})
+			r.Plugins = plugin.Options{CNPGOff: off}
+			run(t, r)
+			m := status(t, c).Members[0]
+			switch {
+			case off && (len(reads) != 0 || m.State != straitv1.StateUnknown || m.Reason != plugin.ReasonPluginDisabled):
+				t.Errorf("read %v; member %+v; want no read, Unknown, PluginDisabled", reads, m)
+			case !off && (len(reads) == 0 || m.Reason == plugin.ReasonPluginDisabled):
+				t.Errorf("read %v; member %+v; want the Cluster read", reads, m)
+			}
+		})
 	}
 }

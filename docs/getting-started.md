@@ -15,13 +15,13 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 | Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](../README.md#install), [on Windows](../README.md#cli-on-windows)). |
 | A shell | The commands are for bash. On Windows, a line that runs only `strait` or `kubectl strait` works as written in PowerShell. The others need bash, for example in WSL. |
 
-The controller watches CloudNativePG's kinds whenever their CRDs exist at its start, through the chart's read-only rule for `postgresql.cnpg.io`. The chart value `cnpg.enabled` turns that rule on.
+The chart value `cnpg.enabled` turns the `cnpg` plugin on: the chart's read-only rule for `postgresql.cnpg.io`, and the controller's flag `--cnpg`. While it is on, the controller watches CloudNativePG's kinds if their CRDs exist at its start ([RFC0003](../rfcs/RFC0003.md#cnpg-on-and-off), requirement 13).
 
 | Cluster | `cnpg.enabled` |
 |---|---|
-| Has CloudNativePG's CRDs | `true`, the default. Also with no `SiteService` that uses the `cnpg` plugin. With `false`, the controller cannot list the kinds it watches: it decides no route, and exits after 2 minutes, at every start. |
-| Has no CloudNativePG CRDs | `true` or `false`. |
-| Gets CloudNativePG after Strait | `true` first, with `helm upgrade`. Then install CloudNativePG, and restart the controller, for example `kubectl --context site-a -n strait-system rollout restart deployment/strait-controller`. |
+| Runs a `SiteService` with the `cnpg` plugin | `true`, the default. With `false`, each of its members at this site is `Unknown`, reason `PluginDisabled`. |
+| Runs no `SiteService` with the `cnpg` plugin | `true` or `false`. |
+| Gets CloudNativePG after Strait | `true`. Install CloudNativePG, then restart the controller, for example `kubectl --context site-a -n strait-system rollout restart deployment/strait-controller`. |
 
 Names used at both sites:
 
