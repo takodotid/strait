@@ -199,7 +199,7 @@ kubectl strait --context site-a status
 
 ### Upgrade
 
-Upgrade one site at a time. Sites on different releases still read each other's observations.
+Upgrade one site at a time. Sites on different 1.x releases still read each other's observations. To go back to an earlier release: [Roll back within 1.x](docs/runbooks/rollback.md).
 
 | Step | What to do |
 |---|---|
