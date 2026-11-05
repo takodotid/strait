@@ -491,3 +491,31 @@ func TestPolledWhilePollingIsOff(t *testing.T) {
 		t.Errorf("polled b while polling is off: %+v", state)
 	}
 }
+
+// A document as a site on 1.2 publishes it, byte for byte, is read by this release, and so is an aged member as this
+// release publishes it: a reader counts it Unknown, as a 1.2 reader does (RFC0004, requirement 15).
+func TestReadDocumentOfOtherReleases(t *testing.T) {
+	v12 := strings.Replace(rfcExample, `"site": "a"`, `"site": "b"`, 1)
+	aged := strings.NewReplacer(`"state": "Stable"`, `"state": "Unknown"`, `"role": "primary"`, `"role": "unknown"`,
+		`"eligible": true`, `"eligible": false`, `"reason": "ClusterPrimary"`, `"reason": "ObservationStale"`).Replace(v12)
+	for _, tc := range []struct {
+		name, body string
+		want       straitv1.State
+	}{
+		{"1.2", v12, straitv1.StateStable},
+		{"aged", aged, straitv1.StateUnknown},
+	} {
+		s, srv := newSite(t, "b", Document{})
+		s.set(Document{}, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(tc.body)) })
+		p := newPoller(map[string]*httptest.Server{"b": srv}, nil)
+		p.round(context.Background(), time.Second, 3*time.Second)
+		doc, state := p.Snapshot("b")
+		if state.LastError != "" {
+			t.Fatalf("%s: %s", tc.name, state.LastError)
+		}
+		view := p.View("app", "pg", []straitv1.Member{{Name: "pg-a", Site: "b"}}, time.Now(), 3*time.Second)
+		if got := view["b"].Members["pg-a"].State; got != tc.want || view["b"].Declared != "pg-a" || len(doc.Exports) != 1 {
+			t.Errorf("%s: member state %q, want %q; declared %q; document %+v", tc.name, got, tc.want, view["b"].Declared, doc)
+		}
+	}
+}
