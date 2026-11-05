@@ -112,7 +112,9 @@ func fakeClient(t *testing.T, objs ...client.Object) client.Client {
 		t.Fatal(err)
 	}
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
-		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Export{}, &straitv1.Import{}, &straitv1.Site{}).Build()
+		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Export{}, &straitv1.Import{}, &straitv1.Site{}).
+		WithIndex(&straitv1.Export{}, IndexExportService, exportService).
+		Build()
 }
 
 func reconciler(t *testing.T, p peers, objs ...client.Object) (*SiteServiceReconciler, client.Client) {
