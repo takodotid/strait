@@ -7,3 +7,6 @@ appVersion: dev
 home: https://github.com/takodotid/strait
 sources:
   - https://github.com/takodotid/strait
+annotations:
+  # The digest of the Strait image that the release pushed. make chart writes it into the packaged chart.
+  strait.tako.id/image-digest: ""

@@ -42,6 +42,12 @@ type rendered struct {
 // error output.
 func helmTemplate(t *testing.T, set ...string) (string, error) {
 	t.Helper()
+	return helmTemplateChart(t, "strait", set...)
+}
+
+// helmTemplateChart runs helm template on the chart in the directory given.
+func helmTemplateChart(t *testing.T, chart string, set ...string) (string, error) {
+	t.Helper()
 	if _, err := exec.LookPath("helm"); err != nil {
 		if os.Getenv("CI") != "" {
 			t.Fatal("helm is not installed; CI must run this test")
@@ -58,7 +64,7 @@ func helmTemplate(t *testing.T, set ...string) (string, error) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"template", "strait", "strait", "--namespace", namespace, "--set", "site.name=a"}
+	args := []string{"template", "strait", chart, "--namespace", namespace, "--set", "site.name=a"}
 	for _, s := range set {
 		args = append(args, "--set", s)
 	}
@@ -75,7 +81,13 @@ func helmTemplate(t *testing.T, set ...string) (string, error) {
 // render runs helm template on the chart with the values given, and decodes what the tests read.
 func render(t *testing.T, set ...string) rendered {
 	t.Helper()
-	out, err := helmTemplate(t, set...)
+	return renderChart(t, "strait", set...)
+}
+
+// renderChart is render on the chart in the directory given.
+func renderChart(t *testing.T, chart string, set ...string) rendered {
+	t.Helper()
+	out, err := helmTemplateChart(t, chart, set...)
 	if err != nil {
 		t.Fatalf("helm template: %v: %s", err, out)
 	}
@@ -570,5 +582,77 @@ func TestNamespacesFlagFollowsValue(t *testing.T) {
 		if !slices.Equal(got, tt.want) {
 			t.Errorf("%v: controller args %v, want %v", tt.set, got, tt.want)
 		}
+	}
+}
+
+// releasedChart copies the chart and writes the image digest into it, as make chart does for a release.
+func releasedChart(t *testing.T, digest string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "strait")
+	if err := os.CopyFS(dir, os.DirFS("strait")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "Chart.yaml")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The line that make chart replaces.
+	const line = "\n  strait.tako.id/image-digest: \"\"\n"
+	if n := strings.Count(string(b), line); n != 1 {
+		t.Fatalf("Chart.yaml holds the line %q %d times, want once: make chart writes the digest there", line, n)
+	}
+	b = []byte(strings.Replace(string(b), line, "\n  strait.tako.id/image-digest: \""+digest+"\"\n", 1))
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// A released chart names the image by the digest its release pushed, while image.tag and image.digest are empty. A
+// values file of an earlier release that sets image.tag keeps its meaning (RFC0007, requirement 21).
+func TestImageDigest(t *testing.T) {
+	released := "sha256:" + strings.Repeat("a", 64)
+	own := "sha256:" + strings.Repeat("b", 64)
+	repo := "ghcr.io/takodotid/strait"
+	for _, tt := range []struct {
+		name     string
+		released bool
+		set      []string
+		want     string
+	}{
+		{"repository chart", false, nil, repo + ":dev"},
+		{"repository chart, digest", false, []string{"image.digest=" + own}, repo + ":dev@" + own},
+		{"released chart", true, nil, repo + ":dev@" + released},
+		{"released chart, tag", true, []string{"image.tag=1.2.1"}, repo + ":1.2.1"},
+		{"released chart, digest", true, []string{"image.digest=" + own}, repo + ":dev@" + own},
+		{"released chart, tag and digest", true, []string{"image.tag=1.2.1", "image.digest=" + own}, repo + ":1.2.1@" + own},
+		{"released chart, mirror", true, []string{"image.repository=mirror.example/strait"}, "mirror.example/strait:dev@" + released},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			chart := "strait"
+			if tt.released {
+				chart = releasedChart(t, released)
+			}
+			r := renderChart(t, chart, tt.set...)
+			var images []string
+			for _, pod := range r.pods {
+				for _, c := range pod.Spec.Containers {
+					if c.Name != "envoy" && !slices.Contains(images, c.Image) {
+						images = append(images, c.Image)
+					}
+				}
+			}
+			if !slices.Equal(images, []string{tt.want}) {
+				t.Errorf("images %v, want %s", images, tt.want)
+			}
+			if len(r.pods) < 3 {
+				t.Errorf("%d pods rendered, want the controller, the gateway and the pre-pull Job", len(r.pods))
+			}
+		})
+	}
+	out, err := helmTemplate(t, "image.digest=sha256:abc")
+	if err == nil || !strings.Contains(out, `image digest "sha256:abc"`) {
+		t.Errorf("a malformed digest: %v: %s, want a failure that names it", err, out)
 	}
 }
