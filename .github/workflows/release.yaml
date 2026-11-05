@@ -9,8 +9,8 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  # A signed tag on main, whose ci run on main succeeded (RFC0007, requirement 17). The environment lets the operator
-  # require a review before anything runs.
+  # A signed tag on main, whose ci run on main succeeded, and a version that no release published (RFC0007,
+  # requirements 17 and 20). The environment lets the operator require a review before anything runs.
   gate:
     runs-on: ubuntu-26.04
     environment: release
@@ -25,6 +25,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: hack/release/gate.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA"
+      - name: Version not published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          hack/release/absent.sh oci "ghcr.io/takodotid/strait:$v" "ghcr.io/takodotid/charts/strait:$v"
+          hack/release/absent.sh release "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
   # Every Go program of the release runs here, before any push, with read access only (RFC0007, requirements 18
   # and 19). The archives go to publish.
   test:
@@ -101,7 +108,8 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-  # The chart, the GitHub release, and the image's tags last. No Go runs here.
+  # The chart, which names the image by its digest, the GitHub release, and the image's tags last. Each step checks
+  # again, right before its push, that its version is not published (RFC0007, requirements 20 and 21). No Go runs here.
   publish:
     runs-on: ubuntu-26.04
     needs: [test, image]
@@ -130,13 +138,15 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${GITHUB_REF_NAME#v}"
-          helm package deploy/helm/strait --version "$v" --app-version "$v" -d dist
+          hack/release/absent.sh oci "ghcr.io/takodotid/charts/strait:$v"
+          hack/release/chart.sh "$GITHUB_REF_NAME" "$DIGEST"
           printf '%s' "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
           helm push "dist/strait-$v.tgz" oci://ghcr.io/takodotid/charts
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          hack/release/absent.sh release "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
           cd dist
           sha256sum *.tar.gz *.zip *.tgz strait-crds.yaml > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.zip *.tgz strait-crds.yaml SHA256SUMS
@@ -144,5 +154,6 @@ jobs:
         env:
           TAGS: ${{ needs.image.outputs.tags }}
         run: |
+          hack/release/absent.sh oci "ghcr.io/takodotid/strait:${GITHUB_REF_NAME#v}"
           mapfile -t tags <<<"$TAGS"
           hack/release/tags.sh "ghcr.io/takodotid/strait@$DIGEST" "${tags[@]}"
