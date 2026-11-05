@@ -23,6 +23,8 @@ spec:
         app.kubernetes.io/component: pre-pull
     spec:
       restartPolicy: Never
+      # The controller's, for the same image pull secrets. No token.
+      serviceAccountName: strait-controller
       automountServiceAccountToken: false
       {{- with .Values.controller.priorityClassName }}
       priorityClassName: {{ . }}
