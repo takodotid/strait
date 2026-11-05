@@ -267,3 +267,37 @@ func TestChart(t *testing.T) {
 		}
 	}
 }
+
+// pinned.sh refuses an action that is not pinned by commit SHA (RFC0007, requirement 24), and passes the repository.
+func TestPinned(t *testing.T) {
+	sha := strings.Repeat("0", 40)
+	for _, tt := range []struct {
+		uses string
+		ok   bool
+	}{
+		{"actions/checkout@" + sha + " # v7.0.1", true},
+		{"actions/checkout@" + sha, true},
+		{"./.github/actions/setup-helm", true},
+		{"actions/checkout@v7", false},
+		{"actions/checkout@main", false},
+		{"actions/checkout@" + sha[:39], false},
+		{"docker://alpine:3", false},
+	} {
+		root := t.TempDir()
+		dir := filepath.Join(root, ".github", "workflows")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		workflow := "jobs:\n  a:\n    steps:\n      - uses: " + tt.uses + "\n"
+		if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte(workflow), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, ok := run(t, nil, nil, "pinned.sh", root)
+		if ok != tt.ok {
+			t.Errorf("uses: %s: exit 0: %v, want %v: %s", tt.uses, ok, tt.ok, out)
+		}
+	}
+	if out, ok := run(t, nil, nil, "pinned.sh"); !ok {
+		t.Errorf("the repository: %s", out)
+	}
+}

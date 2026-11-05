@@ -438,7 +438,7 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	d := eventually(ctx, t, peerTimeout+10*time.Second, 250*time.Millisecond, "site a holds pg-b",
 		routeIs(a, dbNamespace, "pg", pgB, straitv1.ReasonHeldUnknown))
 	e.times.record(t, "4/held-"+a.name, d)
-	d = eventually(ctx, t, peerTimeout+unknownHold+10*time.Second, 250*time.Millisecond, "site a routes nowhere",
+	eventually(ctx, t, peerTimeout+unknownHold+10*time.Second, 250*time.Millisecond, "site a routes nowhere",
 		routeIs(a, dbNamespace, "pg", nil, timedOut...))
 	nowhere := time.Now()
 	e.times.record(t, "4/nowhere-"+a.name, nowhere.Sub(cut))
