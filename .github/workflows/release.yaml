@@ -5,9 +5,29 @@ on:
     tags: ['v*']
 permissions:
   contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
+  # A signed tag on main, whose ci run on main succeeded (RFC0007, requirement 17). The environment lets the operator
+  # require a review before anything runs.
+  gate:
+    runs-on: ubuntu-26.04
+    environment: release
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Signed tag on main, with ci green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: hack/release/gate.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA"
   image:
     runs-on: ubuntu-26.04
+    needs: gate
     permissions:
       contents: read
       packages: write
