@@ -76,6 +76,14 @@ func Site(s *straitv1.Site) field.ErrorList {
 			"externalTrafficPolicy needs type NodePort or LoadBalancer")...)
 	}
 
+	l, lp := g.Lease, gp.Child("lease")
+	errs = append(errs, rule(lp, l.Duration.Duration >= 2*time.Second && l.Duration.Duration <= 5*time.Minute, "duration must be from 2s to 5m")...)
+	errs = append(errs, rule(lp, l.Duration.Milliseconds()%1000 == 0, "duration must be a whole number of seconds")...)
+	errs = append(errs, rule(lp, l.RenewDeadline.Duration >= time.Second, "renewDeadline must be at least 1s")...)
+	errs = append(errs, rule(lp, l.RetryPeriod.Duration >= 200*time.Millisecond, "retryPeriod must be at least 200ms")...)
+	errs = append(errs, rule(lp, l.RenewDeadline.Duration+time.Second <= l.Duration.Duration, "renewDeadline must be at least 1s shorter than duration")...)
+	errs = append(errs, rule(lp, l.RetryPeriod.Milliseconds()*6 < l.RenewDeadline.Milliseconds()*5, "renewDeadline must be more than 1.2 times retryPeriod")...)
+
 	x := s.Spec.Exchange
 	errs = append(errs, rule(spec.Child("exchange"),
 		x.PeerTimeout.Duration == 0 || x.PollInterval.Duration == 0 || x.PeerTimeout.Duration >= 2*x.PollInterval.Duration,

@@ -293,6 +293,41 @@ func TestUnknownHeldThenNowhere(t *testing.T) {
 	}
 }
 
+// After a restart, a hold counts from the last confirmed time in status, which the previous controller wrote on its own
+// node's clock. A time later than now counts as now, so the hold lasts at most unknownHold (RFC0002, requirement 17).
+// The status here was written by a v1.2 controller whose clock ran an hour ahead.
+func TestHoldAfterRestartWithAClockAhead(t *testing.T) {
+	ss := webService("web-b")
+	ss.Status.Route.Members = []string{"web-b"}
+	ss.Status.Members = []straitv1.MemberStatus{{Name: "web-b", Site: "b", LastConfirmedTime: &metav1.Time{Time: now.Add(time.Hour)}}}
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp.Status.GatewayPort = 15001
+	es := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b", Labels: map[string]string{
+			discoveryv1.LabelServiceName: "web", LabelManagedBy: ManagedBy, LabelSiteService: "web", LabelMember: "web-b",
+		}},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"10.0.9.9"}}},
+	}
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss, imp, es)
+	r, c := reconciler(t, readB, objs...)
+	run(t, r)
+	st := status(t, c)
+	if st.Route.Reason != straitv1.ReasonHeldUnknown {
+		t.Fatalf("route = %+v, want HeldUnknown", st.Route)
+	}
+	if got := st.Members[1].LastConfirmedTime; got == nil || !got.Time.Equal(now) {
+		t.Errorf("lastConfirmedTime = %v, want now, %v", got, now)
+	}
+
+	// unknownHold is 10s.
+	r.Now = func() time.Time { return now.Add(10 * time.Second) }
+	run(t, r)
+	if st := status(t, c); st.Route.Reason != straitv1.ReasonUnknownTimeout || len(endpointSlices(t, c)) != 0 {
+		t.Fatalf("route = %+v, want UnknownTimeout and no slice, 10s after the restart", st.Route)
+	}
+}
+
 func TestServiceConflict(t *testing.T) {
 	other := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web"}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 80}}}}
 	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"), other)
@@ -680,7 +715,7 @@ func TestLocalClustersDisagree(t *testing.T) {
 	if len(endpointSlices(t, c)) != 0 {
 		t.Errorf("slices = %v", endpointSlices(t, c))
 	}
-	doc := local.Document("a", now)
+	doc := local.Document("a", now, 0)
 	if len(doc.Services) != 1 || doc.Services[0].DeclaredPrimary != "" {
 		t.Errorf("document = %+v", doc.Services)
 	}

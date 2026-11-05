@@ -37,6 +37,9 @@ const resync = 2 * time.Second
 // statusRefresh bounds the age of the timestamps in a SiteService's status.
 const statusRefresh = 10 * time.Second
 
+// statusTimeout bounds the status write that follows a decision. It has its own time, apart from the reconcile's.
+const statusTimeout = 5 * time.Second
+
 // SiteServiceReconciler decides each SiteService's route and writes its Service and EndpointSlices.
 type SiteServiceReconciler struct {
 	client.Client
@@ -119,7 +122,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	confirmed := r.lastConfirmed(&svc)
+	confirmed := r.lastConfirmed(&svc, now)
 	for name, o := range observations {
 		if o.Confirmed() {
 			confirmed[name] = now
@@ -162,7 +165,11 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if a.err != nil {
 		logger.Error(a.err, "route not applied", "route", result.Members)
 	}
-	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, shown, a, now); err != nil {
+	// Status follows every decision (RFC#0002, requirement 39), also when the reconcile's time ran out during the apply.
+	statusCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), statusTimeout)
+	err = r.writeStatus(statusCtx, &svc, sites, observations, confirmed, shown, a, now)
+	cancel()
+	if err != nil {
 		logger.Error(err, "status not written")
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", a.endpoints())
@@ -202,8 +209,10 @@ func (r *SiteServiceReconciler) previousRoute(svc *straitv1.SiteService, inPlace
 	return out
 }
 
-// lastConfirmed returns each member's last confirmed time, from memory or else from status.
-func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService) map[string]time.Time {
+// lastConfirmed returns each member's last confirmed time, from memory or else from status. A time in status was
+// written by the controller that ran before, on its own node's clock. One later than now counts as now, so that a hold
+// after a restart lasts at most unknownHold (RFC#0002, requirement 17).
+func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService, now time.Time) map[string]time.Time {
 	if r.confirmed == nil {
 		r.confirmed = map[types.NamespacedName]map[string]time.Time{}
 	}
@@ -214,6 +223,9 @@ func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService) map[str
 		for _, s := range svc.Status.Members {
 			if s.LastConfirmedTime != nil {
 				m[s.Name] = s.LastConfirmedTime.Time
+				if m[s.Name].After(now) {
+					m[s.Name] = now
+				}
 			}
 		}
 		r.confirmed[key] = m

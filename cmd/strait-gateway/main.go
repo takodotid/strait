@@ -33,6 +33,7 @@ import (
 type options struct {
 	envoyAdmin string
 	probeAddr  string
+	probeIP    string
 	kubeconfig string
 	context    string
 }
@@ -42,6 +43,7 @@ func main() {
 	fs := flag.NewFlagSet("strait-gateway", flag.ExitOnError)
 	fs.StringVar(&o.envoyAdmin, "envoy-admin", "http://127.0.0.1:9901", "base URL of Envoy's admin interface")
 	fs.StringVar(&o.probeAddr, "probe-addr", ":8090", "address that serves /healthz and /readyz")
+	fs.StringVar(&o.probeIP, "probe-ip", "", "IP address that the probe server binds to, in place of the host of --probe-addr; the chart sets the pod's own")
 	fs.StringVar(&o.kubeconfig, "kubeconfig", "", "path to a kubeconfig, to run outside a cluster")
 	fs.StringVar(&o.context, "context", "", "kubeconfig context, to run outside a cluster")
 	_ = fs.Parse(os.Args[1:])
@@ -66,7 +68,11 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 	log.Info("start", "version", version.Version, "pod", pod, "namespace", ns)
 
 	httpc := &http.Client{Timeout: 2 * time.Second}
-	probes := &http.Server{Addr: o.probeAddr, Handler: gateway.Probes(o.envoyAdmin, httpc), ReadHeaderTimeout: 5 * time.Second}
+	probeAddr, err := probeListenAddr(o.probeAddr, o.probeIP)
+	if err != nil {
+		return err
+	}
+	probes := &http.Server{Addr: probeAddr, Handler: gateway.Probes(o.envoyAdmin, httpc), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := probes.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			log.Error(err, "probes")
@@ -135,6 +141,22 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 		Log:        log,
 	}
 	return a.Run(ctx)
+}
+
+// probeListenAddr is the address of the probe server: addr, with ip as its host when ip is set. The chart gives the
+// pod's own address, so that a peer cannot reach the probe server through a WireGuard interface (RFC0007).
+func probeListenAddr(addr, ip string) (string, error) {
+	if ip == "" {
+		return addr, nil
+	}
+	if net.ParseIP(ip) == nil {
+		return "", fmt.Errorf("--probe-ip %q is not an IP address", ip)
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("--probe-addr: %w", err)
+	}
+	return net.JoinHostPort(ip, port), nil
 }
 
 func restConfig(kubeconfig, kubeContext string) (*rest.Config, error) {

@@ -327,3 +327,31 @@ func TestGatewayLeaseOnTheControllersClock(t *testing.T) {
 		}
 	})
 }
+
+// The direct Service lists each port once, also when two Exports hold one port, as a hand edit or a deposed leader can
+// leave them, and when an Export holds the control port. The API server refuses a Service that lists a port twice, and
+// the Service would then take no new export (issue #30, row 35).
+func TestDirectServiceListsEachPortOnce(t *testing.T) {
+	export := func(ns, name string, port int32) *straitv1.Export {
+		e := &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}}
+		e.Status.GatewayPort = port
+		return e
+	}
+	objs := append(activeGatewayPod(), gatewaySite(straitv1.ServiceExposure{Type: "NodePort"}),
+		export("app", "b", 30901), export("app", "a", 30901), export("web", "c", 30902), export("web", "d", 30900))
+	c := runGateway(t, objs...)
+	var ports []int32
+	for _, p := range directService(t, c).Spec.Ports {
+		ports = append(ports, p.Port)
+	}
+	if !slices.Equal(ports, []int32{30900, 30901, 30902}) {
+		t.Errorf("Service ports = %v, want [30900 30901 30902]", ports)
+	}
+	var es discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: GatewayDirectService}, &es); err != nil {
+		t.Fatal(err)
+	}
+	if len(es.Ports) != 3 {
+		t.Errorf("EndpointSlice ports = %d, want 3", len(es.Ports))
+	}
+}

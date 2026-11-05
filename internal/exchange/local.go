@@ -66,11 +66,26 @@ func (l *Local) DeleteExport(namespace, name string) {
 	delete(l.exports, key{namespace, name})
 }
 
+// ReasonObservationStale is the reason of a member that the publishing site last observed longer ago than the age
+// limit when the document was generated.
+const ReasonObservationStale = "ObservationStale"
+
+// MinAgeLimit is the least age limit of an observation. A member is observed again at each decision, at least every
+// 2s, and the decisions of every SiteService share one worker. A shorter limit would age the members of a healthy site.
+const MinAgeLimit = 6 * time.Second
+
 // Document returns the document of the site, sorted by namespace and name.
 // A SiteService with no member at the site is left out.
-func (l *Local) Document(site string, now time.Time) Document {
+// A member whose last observation is older than maxAge at now, or than MinAgeLimit if that is more, is published as
+// Unknown, with no address, so that a reconcile that hangs does not keep an old observation fresh at the peers
+// (RFC#0004). Its declaration stays as last observed. A maxAge of 0 ages nothing. now must come from time.Now, and so
+// must the observation times, so that the age is measured on the monotonic clock.
+func (l *Local) Document(site string, now time.Time, maxAge time.Duration) Document {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if maxAge > 0 {
+		maxAge = max(maxAge, MinAgeLimit)
+	}
 	d := Document{
 		APIVersion:  APIVersion,
 		Kind:        Kind,
@@ -82,9 +97,13 @@ func (l *Local) Document(site string, now time.Time) Document {
 	for k, s := range l.services {
 		svc := Service{Namespace: k.namespace, Name: k.name, DeclaredPrimary: s.declared, Members: []Member{}}
 		for _, o := range s.members {
-			if o.Site == site {
-				svc.Members = append(svc.Members, MemberFrom(o))
+			if o.Site != site {
+				continue
 			}
+			if maxAge > 0 && now.Sub(o.ObservedAt) > maxAge {
+				o = observe.Unknown(o.Member, o.Site, ReasonObservationStale, o.ObservedAt)
+			}
+			svc.Members = append(svc.Members, MemberFrom(o))
 		}
 		if len(svc.Members) == 0 {
 			continue

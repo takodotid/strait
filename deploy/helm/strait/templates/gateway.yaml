@@ -33,7 +33,29 @@ spec:
     spec:
       serviceAccountName: strait-gateway
       automountServiceAccountToken: false
+      {{- with .Values.gateway.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       affinity:
+        {{- if .Values.gateway.affinity }}
+        {{- toYaml .Values.gateway.affinity | nindent 8 }}
+        {{- else if eq .Values.gateway.antiAffinity "required" }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: strait
+                  app.kubernetes.io/component: gateway
+        {{- else if eq .Values.gateway.antiAffinity "preferred" }}
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
@@ -43,6 +65,9 @@ spec:
                   matchLabels:
                     app.kubernetes.io/name: strait
                     app.kubernetes.io/component: gateway
+        {{- else }}
+        {{- fail "gateway.antiAffinity must be preferred or required" }}
+        {{- end }}
       containers:
         - name: envoy
           image: {{ .Values.envoy.image.repository }}:{{ .Values.envoy.image.tag }}
@@ -81,6 +106,8 @@ spec:
           args:
             - --envoy-admin=http://127.0.0.1:9901
             - --probe-addr=:8090
+            # The pod's own address, not the WireGuard interfaces' (RFC0007).
+            - --probe-ip=$(POD_IP)
           env:
             - name: POD_NAME
               valueFrom:
@@ -88,6 +115,9 @@ spec:
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef: {fieldPath: metadata.namespace}
+            - name: POD_IP
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
           ports:
             - {name: probes, containerPort: 8090}
           livenessProbe:
@@ -127,3 +157,23 @@ spec:
                   items:
                     - path: namespace
                       fieldRef: {fieldPath: metadata.namespace}
+{{- if .Values.gateway.podDisruptionBudget.enabled }}
+---
+# A drain evicts one gateway pod at a time, so a standby is ready to take the Lease. A pod that is not ready can be
+# evicted at any time, so it does not block a drain.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: gateway
+{{- end }}

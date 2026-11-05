@@ -18,10 +18,28 @@ controller:
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}
+  # Scheduling of the controller pod. A PriorityClass keeps it from being preempted: while the controller is down,
+  # the other sites count this site's members Unknown.
+  priorityClassName: ""
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 gateway:
   # One replica is active; the others are warm standbys (RFC0005).
   replicas: 2
+  # Scheduling of the gateway pods.
+  priorityClassName: ""
+  nodeSelector: {}
+  tolerations: []
+  # How the replicas spread over nodes: preferred or required. With required, each replica needs a node of its own,
+  # and a rollout needs one node more than replicas, for the new pod it starts first.
+  antiAffinity: preferred
+  # Replaces the chart's affinity, antiAffinity included, when set.
+  affinity: {}
+  # Lets a drain evict one gateway pod at a time, and a pod that is not ready at any time.
+  podDisruptionBudget:
+    enabled: true
   resources:
     # Envoy's latency depends on spare CPU on its node. Size its request to the site's traffic (docs/benchmark.md).
     envoy:
@@ -49,4 +67,18 @@ cnpg:
   enabled: true
 
 networkPolicy:
+  # A policy on the controller pod: only gateway pods reach its observation and xDS ports.
   enabled: true
+  # The sources that may reach the controller's metrics port, 8080, as NetworkPolicy peers, for example
+  # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]. Empty admits every source.
+  # The metrics are plain HTTP.
+  metricsFrom: []
+  gateway:
+    # A policy on the gateway pods that admits every pod of this cluster, peerCIDRs, and the probes only. Off by default: where
+    # peer traffic comes from depends on the gateway Services' type and on the CNI (RFC0007), so a default would cut
+    # the peers off.
+    enabled: false
+    # The addresses that the peer gateways connect from, as CIDRs: their gateway pods' addresses, or their nodes'
+    # addresses where their clusters masquerade traffic that leaves them. With NodePort gateway Services, set
+    # externalTrafficPolicy Local, so that the gateway pod sees the peer's address.
+    peerCIDRs: []

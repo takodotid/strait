@@ -36,6 +36,9 @@ func defaultSite(s *straitv1.SiteSpec) {
 	if g.WireGuardService.Type == "" {
 		g.WireGuardService.Type = "NodePort"
 	}
+	setDuration(&g.Lease.Duration, 6*time.Second)
+	setDuration(&g.Lease.RenewDeadline, 4*time.Second)
+	setDuration(&g.Lease.RetryPeriod, time.Second)
 	setDuration(&s.Exchange.PollInterval, 2*time.Second)
 	setDuration(&s.Exchange.PeerTimeout, 6*time.Second)
 	if s.WireGuard != nil && s.WireGuard.PrivateKeySecretRef.Key == "" {

@@ -77,6 +77,40 @@ type GatewaySpec struct {
 	// +kubebuilder:default={type: NodePort}
 	// +optional
 	WireGuardService ServiceExposure `json:"wireGuardService,omitzero"`
+
+	// Lease sets the timing of the gateway Lease, which elects the one active gateway replica.
+	// +kubebuilder:default={}
+	// +optional
+	Lease GatewayLease `json:"lease,omitzero"`
+}
+
+// GatewayLease sets the timing of the gateway Lease. A gateway replica reads it each time it joins the election.
+// Longer timings let the active replica ride out a longer stall of the API server, and keep a replica that failed
+// active for longer.
+// +kubebuilder:validation:XValidation:rule="!has(self.duration) || (duration(self.duration) >= duration('2s') && duration(self.duration) <= duration('5m'))",message="duration must be from 2s to 5m"
+// +kubebuilder:validation:XValidation:rule="!has(self.duration) || duration(self.duration).getMilliseconds() % 1000 == 0",message="duration must be a whole number of seconds"
+// +kubebuilder:validation:XValidation:rule="!has(self.renewDeadline) || duration(self.renewDeadline) >= duration('1s')",message="renewDeadline must be at least 1s"
+// +kubebuilder:validation:XValidation:rule="!has(self.retryPeriod) || duration(self.retryPeriod) >= duration('200ms')",message="retryPeriod must be at least 200ms"
+// +kubebuilder:validation:XValidation:rule="!has(self.renewDeadline) || !has(self.duration) || duration(self.renewDeadline) + duration('1s') <= duration(self.duration)",message="renewDeadline must be at least 1s shorter than duration"
+// +kubebuilder:validation:XValidation:rule="!has(self.retryPeriod) || !has(self.renewDeadline) || duration(self.retryPeriod).getMilliseconds() * 6 < duration(self.renewDeadline).getMilliseconds() * 5",message="renewDeadline must be more than 1.2 times retryPeriod"
+type GatewayLease struct {
+	// Duration is how long the Lease stays valid after it last changed. A replica that failed stays active for up
+	// to this long. Whole seconds, from 2s to 5m.
+	// +kubebuilder:default="6s"
+	// +optional
+	Duration metav1.Duration `json:"duration,omitzero"`
+
+	// RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A stall of the API
+	// server that lasts longer hands the gateway over to another replica. At least 1s, more than 1.2 times
+	// retryPeriod, and at least 1s shorter than duration.
+	// +kubebuilder:default="4s"
+	// +optional
+	RenewDeadline metav1.Duration `json:"renewDeadline,omitzero"`
+
+	// RetryPeriod is the time between two tries to take or renew the Lease. At least 200ms.
+	// +kubebuilder:default="1s"
+	// +optional
+	RetryPeriod metav1.Duration `json:"retryPeriod,omitzero"`
 }
 
 // ServiceExposure sets the type, annotations and reach of a gateway Service.

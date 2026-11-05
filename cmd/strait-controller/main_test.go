@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
@@ -24,6 +27,7 @@ import (
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
+	"github.com/takodotid/strait/internal/observe"
 	"github.com/takodotid/strait/internal/xds"
 )
 
@@ -99,7 +103,7 @@ func TestStopReleasesLease(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- mgr.Start(ctx) }()
+	go func() { done <- start(ctx, mgr, lock, true) }()
 	select {
 	case <-mgr.Elected():
 	case err := <-done:
@@ -125,6 +129,66 @@ func TestStopReleasesLease(t *testing.T) {
 	}
 	if h := lock.holder(); h != "" {
 		t.Errorf("after stop, the Lease is held by %q, want released", h)
+	}
+}
+
+// renewFails is a lock whose renewals fail once fail is set. A release, an update with no holder, still succeeds.
+type renewFails struct {
+	*memoryLock
+	fail atomic.Bool
+}
+
+func (l *renewFails) Update(ctx context.Context, r resourcelock.LeaderElectionRecord) error {
+	if r.HolderIdentity != "" && l.fail.Load() {
+		return errors.New("injected: the renewal fails")
+	}
+	return l.memoryLock.Update(ctx, r)
+}
+
+// A controller that cannot renew the Lease stops leading and leaves the Lease held: the manager does not wait for its
+// leader-only runnables on that path, so a release would let the next controller start while they still run
+// (RFC0004, requirement 16).
+func TestLostLeaseNotReleased(t *testing.T) {
+	lock := &renewFails{memoryLock: &memoryLock{id: "old"}}
+	scheme := runtime.NewScheme()
+	opts := managerOptions(scheme, lock, "strait-system", "0", "0", true)
+	opts.LeaseDuration, opts.RenewDeadline, opts.RetryPeriod = ptr.To(time.Second), ptr.To(400*time.Millisecond), ptr.To(100*time.Millisecond)
+	opts.NewCache = func(*rest.Config, cache.Options) (cache.Cache, error) {
+		return &informertest.FakeInformers{Scheme: scheme}, nil
+	}
+	opts.MapperProvider = func(*rest.Config, *http.Client) (meta.RESTMapper, error) { return meta.NewDefaultRESTMapper(nil), nil }
+	mgr, err := ctrl.NewManager(&rest.Config{Host: "http://127.0.0.1:1"}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A leader-only runnable that is still running when the manager gives up.
+	if err := mgr.Add(leaderOnly(manager.RunnableFunc(func(ctx context.Context) error {
+		<-ctx.Done()
+		time.Sleep(time.Hour)
+		return nil
+	}))); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- start(context.Background(), mgr, lock, true) }()
+	select {
+	case <-mgr.Elected():
+	case err := <-done:
+		t.Fatalf("the manager stopped before it was elected: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("not elected within 10s")
+	}
+	lock.fail.Store(true)
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("the manager stopped with no error after the Lease was lost")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the manager did not stop within 10s of the first failed renewal")
+	}
+	if h := lock.holder(); h != "old" {
+		t.Errorf("after the Lease was lost, it is held by %q, want old: released while a leader-only runnable still ran", h)
 	}
 }
 
@@ -218,6 +282,43 @@ func TestPeerURL(t *testing.T) {
 			t.Errorf("gateway %q: URL %q, want an error", tc.gateway, got)
 		case tc.want != "" && (err != nil || got != tc.want):
 			t.Errorf("gateway %q: URL %q, error %v; want %q", tc.gateway, got, err, tc.want)
+		}
+	}
+}
+
+// Each reconcile has a time limit, so a request that hangs does not hold the one worker of its kind, and a site whose
+// reconciles hang ages its observations at its peers instead of serving them forever (RFC0004, requirement 15).
+func TestReconcileTimeout(t *testing.T) {
+	opts := managerOptions(runtime.NewScheme(), &memoryLock{id: "a"}, "strait-system", "0", "0", true)
+	if d := opts.Controller.ReconciliationTimeout; d != 10*time.Second {
+		t.Errorf("ReconciliationTimeout = %v, want 10s", d)
+	}
+}
+
+// The document ages each member by the local Site's peerTimeout (RFC0004, requirement 15).
+func TestLocalDocumentAgesByPeerTimeout(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := straitv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	site := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}}
+	site.Spec.Exchange.PeerTimeout = metav1.Duration{Duration: 6 * time.Second}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(site).Build()
+	at := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	local := &exchange.Local{}
+	local.SetService("app", "pg", "pg-a", []observe.Observation{{
+		Member: "pg-a", Site: "a", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, ObservedAt: at,
+	}})
+	for _, tc := range []struct {
+		after time.Duration
+		want  straitv1.State
+	}{
+		{6 * time.Second, straitv1.StateStable},
+		{7 * time.Second, straitv1.StateUnknown},
+	} {
+		d := localDocument(c, local, func() time.Time { return at.Add(tc.after) })()
+		if d.Site != "a" || len(d.Services) != 1 || d.Services[0].Members[0].State != tc.want {
+			t.Errorf("%v after the observation: %+v, want the member %s", tc.after, d, tc.want)
 		}
 	}
 }

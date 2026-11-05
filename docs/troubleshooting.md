@@ -43,6 +43,7 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 |---|---|---|
 | `SiteUnknown` | The member's site is neither this site nor a reachable peer. | `strait peers`. A `SitePeer` must exist whose name is the member's `site`. Then see [Unreachable peers](#unreachable-peers-and-unhealthy-links). |
 | `NotObserved` | The member's site is reachable, but its document holds no observation of this member. | Apply the same `SiteService`, with the same namespace, name and member names, at the member's site. |
+| `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago, and at least 6s ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
 | `ReadFailed: ...` | The plugin could not read the workload at this site. The rest of the reason is the error. | Follow the error. For `cnpg`, check that CloudNativePG is installed at this site. |
 
 While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
@@ -95,7 +96,8 @@ The conditions of the `Site`:
 | Condition | Means | Next step |
 |---|---|---|
 | `GatewayActive` False, `NoActiveGateway` | No ready gateway pod holds the gateway lease. | `kubectl --context site-a -n strait-system get pods,events`. The API server rejects the gateway pods unless the namespace's Pod Security level is `privileged`. |
-| `GatewayServices` False, `DirectServiceFailed` or `WireGuardServiceFailed` | The controller could not write a gateway Service. The message holds the API server's error. | For example, a WireGuard listen port outside the cluster's node port range, with a `NodePort` or `LoadBalancer` Service. |
+| `GatewayServices` False, `DirectServiceFailed` or `WireGuardServiceFailed` | The controller could not write a gateway Service. The message holds the API server's error. | For example, a WireGuard listen port outside the cluster's node port range, with a `NodePort` or `LoadBalancer` Service. Or a node port that another Service already holds: find it with `kubectl --context site-a get services -A`, and move that Service to another port ([RFC0005, Limitations](../rfcs/RFC0005.md#limitations)). |
+| `GatewayActive` moves to another pod while nothing failed | The active gateway replica could not renew the gateway Lease within `spec.gateway.lease.renewDeadline`, 4s by default, for example while the API server stalled. Every connection across the gateway resets. | The API server's availability. A longer `renewDeadline` and `duration` ride out longer stalls, and keep a failed replica active for longer ([RFC0005, Timing of the gateway Lease](../rfcs/RFC0005.md#timing-of-the-gateway-lease)). |
 
 ## Logs, events and metrics
 

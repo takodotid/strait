@@ -16,6 +16,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
@@ -31,10 +33,13 @@ type rendered struct {
 	roleBindings        []rbacv1.RoleBinding
 	serviceAccounts     map[string]corev1.ServiceAccount
 	pods                map[string]corev1.PodTemplateSpec
+	disruptionBudgets   map[string]policyv1.PodDisruptionBudget
+	networkPolicies     map[string]networkingv1.NetworkPolicy
 }
 
-// render runs helm template on the chart with the values given.
-func render(t *testing.T, set ...string) rendered {
+// helmTemplate runs helm template on the chart with the values given. It returns the output, or on a failure the
+// error output.
+func helmTemplate(t *testing.T, set ...string) (string, error) {
 	t.Helper()
 	if _, err := exec.LookPath("helm"); err != nil {
 		if os.Getenv("CI") != "" {
@@ -61,15 +66,27 @@ func render(t *testing.T, set ...string) rendered {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("helm template: %v: %s", err, stderr.String())
+		return stderr.String(), err
+	}
+	return string(out), nil
+}
+
+// render runs helm template on the chart with the values given, and decodes what the tests read.
+func render(t *testing.T, set ...string) rendered {
+	t.Helper()
+	out, err := helmTemplate(t, set...)
+	if err != nil {
+		t.Fatalf("helm template: %v: %s", err, out)
 	}
 	r := rendered{
-		clusterRoles:    map[string]rbacv1.ClusterRole{},
-		roles:           map[string]rbacv1.Role{},
-		serviceAccounts: map[string]corev1.ServiceAccount{},
-		pods:            map[string]corev1.PodTemplateSpec{},
+		clusterRoles:      map[string]rbacv1.ClusterRole{},
+		roles:             map[string]rbacv1.Role{},
+		serviceAccounts:   map[string]corev1.ServiceAccount{},
+		pods:              map[string]corev1.PodTemplateSpec{},
+		disruptionBudgets: map[string]policyv1.PodDisruptionBudget{},
+		networkPolicies:   map[string]networkingv1.NetworkPolicy{},
 	}
-	reader := utilyaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(out)))
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(strings.NewReader(out)))
 	for {
 		doc, err := reader.Read()
 		if errors.Is(err, io.EOF) {
@@ -112,6 +129,14 @@ func render(t *testing.T, set ...string) rendered {
 			var o appsv1.Deployment
 			decode(&o)
 			r.pods[o.Name] = o.Spec.Template
+		case "PodDisruptionBudget":
+			var o policyv1.PodDisruptionBudget
+			decode(&o)
+			r.disruptionBudgets[o.Name] = o
+		case "NetworkPolicy":
+			var o networkingv1.NetworkPolicy
+			decode(&o)
+			r.networkPolicies[o.Name] = o
 		}
 	}
 	return r
@@ -256,6 +281,8 @@ func wanted(t *testing.T, heading string, v values) []grant {
 		case "Its namespace":
 		case "Its namespace, strait-gateway only":
 			names = "strait-gateway"
+		case "Its namespace, strait-controller only":
+			names = "strait-controller"
 		case "Its namespace, the WireGuard Secret only":
 			if v.secret == "" {
 				continue

@@ -32,7 +32,8 @@ import (
 	"github.com/takodotid/strait/internal/controller"
 )
 
-// Timing of the Lease and the loops.
+// Timing of the Lease and the loops. LeaseDuration, RenewDeadline and RetryPeriod are the defaults of
+// Site.spec.gateway.lease.
 const (
 	LeaseDuration     = 6 * time.Second
 	RenewDeadline     = 4 * time.Second
@@ -88,25 +89,38 @@ func (a *Agent) Run(ctx context.Context) error {
 			LockConfig: resourcelock.ResourceLockConfig{Identity: a.Identity},
 		},
 		before: a.stopLeading,
+		ready:  func(ctx context.Context) error { return EnvoyReady(ctx, a.HTTP, a.EnvoyAdmin) },
 	}
 	for ctx.Err() == nil {
 		if !a.waitForEnvoy(ctx) {
 			break
 		}
+		l.reset()
 		term, stepDown := context.WithCancel(ctx)
-		le, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
-			Lock:            l,
-			Name:            controller.GatewayLease,
-			LeaseDuration:   LeaseDuration,
-			RenewDeadline:   RenewDeadline,
-			RetryPeriod:     RetryPeriod,
-			ReleaseOnCancel: true,
-			Callbacks: leaderelection.LeaderCallbacks{
-				OnStartedLeading: func(lctx context.Context) { a.lead(lctx, l, stepDown) },
-				OnStoppedLeading: func() { a.Log.Info("not leading") },
-				OnNewLeader:      func(id string) { a.Log.Info("leader", "identity", id) },
-			},
-		})
+		config := func(t Timing) leaderelection.LeaderElectionConfig {
+			l.setRenewDeadline(t.RenewDeadline)
+			return leaderelection.LeaderElectionConfig{
+				Lock:            l,
+				Name:            controller.GatewayLease,
+				LeaseDuration:   t.LeaseDuration,
+				RenewDeadline:   t.RenewDeadline,
+				RetryPeriod:     t.RetryPeriod,
+				ReleaseOnCancel: true,
+				Callbacks: leaderelection.LeaderCallbacks{
+					OnStartedLeading: func(lctx context.Context) { a.lead(lctx, l, stepDown) },
+					OnStoppedLeading: func() { a.Log.Info("not leading") },
+					OnNewLeader:      func(id string) { a.Log.Info("leader", "identity", id) },
+				},
+			}
+		}
+		t := a.timing(ctx)
+		le, err := leaderelection.NewLeaderElector(config(t))
+		if err != nil {
+			// The CRD rejects such timings. A Site written past it falls back to the defaults.
+			a.Log.Error(err, "the Site's gateway Lease timing cannot be used; using the defaults", "duration", t.LeaseDuration.String(),
+				"renewDeadline", t.RenewDeadline.String(), "retryPeriod", t.RetryPeriod.String())
+			le, err = leaderelection.NewLeaderElector(config(LeaseTiming(nil)))
+		}
 		if err != nil {
 			stepDown()
 			return err
@@ -116,6 +130,34 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.stopLeading()
 	}
 	return nil
+}
+
+// Timing is the timing of the gateway Lease.
+type Timing struct {
+	LeaseDuration, RenewDeadline, RetryPeriod time.Duration
+}
+
+// LeaseTiming returns the timing of the gateway Lease that the Site sets, with the default for each field it leaves
+// unset or that a nil Site leaves out.
+func LeaseTiming(site *straitv1.Site) Timing {
+	t := Timing{LeaseDuration, RenewDeadline, RetryPeriod}
+	if site == nil {
+		return t
+	}
+	l := site.Spec.Gateway.Lease
+	t.LeaseDuration = cmp.Or(l.Duration.Duration, t.LeaseDuration)
+	t.RenewDeadline = cmp.Or(l.RenewDeadline.Duration, t.RenewDeadline)
+	t.RetryPeriod = cmp.Or(l.RetryPeriod.Duration, t.RetryPeriod)
+	return t
+}
+
+// timing reads the timing of the gateway Lease from the one Site. It gives the defaults when the Site cannot be read.
+func (a *Agent) timing(ctx context.Context) Timing {
+	var sites straitv1.SiteList
+	if err := a.Client.List(ctx, &sites); err != nil || len(sites.Items) != 1 {
+		return LeaseTiming(nil)
+	}
+	return LeaseTiming(&sites.Items[0])
 }
 
 // waitForEnvoy returns true once Envoy is ready, and false if ctx ends first.
@@ -138,17 +180,44 @@ func (a *Agent) waitForEnvoy(ctx context.Context) bool {
 	}
 }
 
-// lease is the gateway Lease. It records each renewal, and stops the leader's work before a release.
+// lease is the gateway Lease. It records each renewal, stops the leader's work before a release, and takes the Lease
+// only while ready allows it.
 type lease struct {
 	resourcelock.Interface
 	before func()
+	// ready is checked before each write that takes the Lease, as opposed to one that renews it. Nil allows every one.
+	ready func(context.Context) error
 
 	mu      sync.Mutex
 	renewed time.Time
+	// renewDeadline is how long the active replica may go without a renewal before it steps down.
+	renewDeadline time.Duration
+	// holding is true from a write that took or renewed the Lease in this election round until the Lease is released,
+	// or a read shows another holder or none.
+	holding bool
 }
 
-// Create implements resourcelock.Interface.
+// reset starts an election round: the next write takes the Lease.
+func (l *lease) reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.holding = false
+}
+
+// Get implements resourcelock.Interface.
+func (l *lease) Get(ctx context.Context) (*resourcelock.LeaderElectionRecord, []byte, error) {
+	r, raw, err := l.Interface.Get(ctx)
+	if err == nil && r.HolderIdentity != l.Identity() {
+		l.reset()
+	}
+	return r, raw, err
+}
+
+// Create implements resourcelock.Interface. A create takes the Lease.
 func (l *lease) Create(ctx context.Context, r resourcelock.LeaderElectionRecord) error {
+	if err := l.mayTake(ctx); err != nil {
+		return err
+	}
 	start := time.Now()
 	err := l.Interface.Create(ctx, r)
 	l.record(start, err)
@@ -159,7 +228,19 @@ func (l *lease) Create(ctx context.Context, r resourcelock.LeaderElectionRecord)
 func (l *lease) Update(ctx context.Context, r resourcelock.LeaderElectionRecord) error {
 	if r.HolderIdentity == "" {
 		l.before()
-		return l.Interface.Update(ctx, r)
+		err := l.Interface.Update(ctx, r)
+		if err == nil {
+			l.reset()
+		}
+		return err
+	}
+	l.mu.Lock()
+	holding := l.holding
+	l.mu.Unlock()
+	if !holding {
+		if err := l.mayTake(ctx); err != nil {
+			return err
+		}
 	}
 	start := time.Now()
 	err := l.Interface.Update(ctx, r)
@@ -167,11 +248,23 @@ func (l *lease) Update(ctx context.Context, r resourcelock.LeaderElectionRecord)
 	return err
 }
 
+// mayTake returns an error when ready refuses that this replica take the Lease (RFC#0005, requirement 33).
+func (l *lease) mayTake(ctx context.Context) error {
+	if l.ready == nil {
+		return nil
+	}
+	if err := l.ready(ctx); err != nil {
+		return fmt.Errorf("not taking the gateway Lease: Envoy is not ready: %w", err)
+	}
+	return nil
+}
+
 // record keeps the time a successful write started, since the Lease's renew time is set before the request is sent.
 func (l *lease) record(start time.Time, err error) {
 	if err == nil {
 		l.mu.Lock()
 		l.renewed = start
+		l.holding = true
 		l.mu.Unlock()
 	}
 }
@@ -182,8 +275,21 @@ func (l *lease) sinceRenewed() time.Duration {
 	return time.Since(l.renewed)
 }
 
+func (l *lease) setRenewDeadline(d time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.renewDeadline = d
+}
+
+// deadline is the renew deadline of the election round, RenewDeadline unless set.
+func (l *lease) deadline() time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return cmp.Or(l.renewDeadline, RenewDeadline)
+}
+
 // lead runs the WireGuard and health loops until lctx ends, then removes every interface.
-// It steps down when the Lease goes unrenewed for RenewDeadline, so the interfaces are gone
+// It steps down when the Lease goes unrenewed for the round's renew deadline, so the interfaces are gone
 // before the Lease can expire and another replica take it. It also steps down when Envoy has not been ready for
 // EnvoyNotReady, so that a ready standby can take the Lease.
 func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
@@ -211,7 +317,7 @@ func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
 	})
 	wg.Go(func() {
 		a.loop(ctx, RetryPeriod/4, nil, func(context.Context) {
-			if d := l.sinceRenewed(); d > RenewDeadline {
+			if d := l.sinceRenewed(); d > l.deadline() {
 				a.Log.Info("the Lease was not renewed in time; stepping down", "since", d.String())
 				stepDown()
 				cancel()
