@@ -236,13 +236,15 @@ How to plan:
 
 #### Node drains
 
-A drain moves Strait's pods off a node. The chart sets no PodDisruptionBudget, so `kubectl drain` evicts them at once.
+A drain moves Strait's pods off a node. The chart's PodDisruptionBudget lets a drain evict one gateway pod at a time, and a gateway pod that is not ready at any time (`gateway.podDisruptionBudget`). The controller has none: it runs one replica, and a budget would block every drain of its node.
 
 | The drained node runs | Effect |
 |---|---|
 | The controller | The controller gap, as in an upgrade. The new pod pulls its image on its new node, unless step 1 of the upgrade pulled it there. |
 | The active gateway pod | One move of the gateway Lease, as in an upgrade. |
 | A standby gateway pod | None. |
+
+With `gateway.antiAffinity: required`, each gateway replica runs on a node of its own, so one drain never takes two. A rollout then needs one node more than `gateway.replicas`, for the new pod it starts first. With the default, `preferred`, two replicas can share a node when no other node fits.
 
 Drain the nodes of one site at a time, and plan each drain as an upgrade. After a node that ran the controller or the active gateway pod, wait as in step 3 before the next node. `kubectl --context site-a -n strait-system get pods -o wide` shows each pod's node, and `strait --context site-a status` the active gateway pod.
 
