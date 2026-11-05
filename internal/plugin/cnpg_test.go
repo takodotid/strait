@@ -318,3 +318,34 @@ func TestCNPGPooler(t *testing.T) {
 		})
 	}
 }
+
+// A Cluster's Service, or a Pooler's, that has no port 5432 was read: the member is Stable and not eligible, with
+// PortNotFound, as with the declared plugin (RFC#0003, requirement 3).
+func TestCNPGPortNotFound(t *testing.T) {
+	primary := clusterObject("cluster-a", map[string]any{"replica": map[string]any{"primary": "cluster-a", "source": "cluster-b"}}, reported("cluster-a-1", true))
+	otherPort := func(name string) []client.Object {
+		objs := service(name, "10.0.0.1")
+		objs[0].(*corev1.Service).Spec.Ports[0].Port = 5433
+		return objs
+	}
+	for _, tt := range []struct {
+		name   string
+		pooler string
+		objs   []client.Object
+	}{
+		{"Cluster's Service", "", otherPort("cluster-a-rw")},
+		{"Pooler's Service", "pooler-a", append(otherPort("pooler-a"), pooler("pooler-a", "cluster-a", "rw", false))},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = clientgoscheme.AddToScheme(scheme)
+			r := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(tt.objs, primary.DeepCopy())...).Build()
+			svc := siteService(straitv1.CNPGRolePrimary)
+			svc.Spec.Members[0].CNPG.Pooler = tt.pooler
+			o := CNPG{}.Observe(context.Background(), r, svc, "a", time.Now()).Members["pg-a"]
+			if o.State != straitv1.StateStable || o.Role != straitv1.RolePrimary || o.Eligible || o.Reason != "PortNotFound" {
+				t.Fatalf("got state=%s role=%s eligible=%v reason=%q; want Stable, primary, not eligible, PortNotFound", o.State, o.Role, o.Eligible, o.Reason)
+			}
+		})
+	}
+}
