@@ -1,6 +1,6 @@
 //go:build envoy
 
-// These tests run the configuration in a real Envoy, in docker: go test -tags envoy ./internal/xds/
+// These tests run the configuration in a real Envoy, in docker: make test-envoy.
 package xds
 
 import (
@@ -23,14 +23,32 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
-const (
-	envoyImage = "envoyproxy/envoy:distroless-v1.40.2"
-	probeImage = "busybox:1.37"
-)
+const probeImage = "busybox:1.37"
+
+// envoyImage is the Envoy image that the chart runs, by digest.
+var envoyImage = func() string {
+	data, err := os.ReadFile("../../deploy/helm/strait/values.yaml")
+	if err != nil {
+		panic(err)
+	}
+	var v struct {
+		Envoy struct {
+			Image struct{ Repository, Tag string }
+		}
+	}
+	if err := yaml.Unmarshal(data, &v); err != nil {
+		panic(err)
+	}
+	if v.Envoy.Image.Repository == "" || !strings.Contains(v.Envoy.Image.Tag, "@sha256:") {
+		panic("values.yaml: envoy.image needs a repository and a tag with a digest")
+	}
+	return v.Envoy.Image.Repository + ":" + v.Envoy.Image.Tag
+}()
 
 func docker(args ...string) (string, error) {
 	out, err := exec.Command("docker", args...).CombinedOutput()
