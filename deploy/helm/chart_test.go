@@ -281,6 +281,8 @@ func wanted(t *testing.T, heading string, v values) []grant {
 		case "Its namespace":
 		case "Its namespace, strait-gateway only":
 			names = "strait-gateway"
+		case "Its namespace, strait-controller only":
+			names = "strait-controller"
 		case "Its namespace, the WireGuard Secret only":
 			if v.secret == "" {
 				continue

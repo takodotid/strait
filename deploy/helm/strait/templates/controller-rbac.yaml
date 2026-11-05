@@ -65,9 +65,15 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
+  # The gateway Lease and its own. RBAC cannot limit create to a name.
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
-    verbs: ["get", "list", "watch", "create", "update"]
+    verbs: ["get", "list", "watch", "create"]
+  # Its own leader election only: never the gateway Lease.
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["strait-controller"]
+    verbs: ["update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
