@@ -709,10 +709,8 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	endpoints := a.endpoints()
 	st.Members = nil
 	for _, m := range svc.Spec.Members {
-		o, ok := observations[m.Name]
-		if !ok {
-			o = observe.Unknown(m.Name, m.Site, "NotObserved", now)
-		}
+		// As the decision counts it, so that a member of a stale peer shows SiteUnknown.
+		o := decide.Input{Sites: sites, Observations: observations, Now: now}.Observation(m)
 		ms := straitv1.MemberStatus{
 			Name: m.Name, Site: m.Site, Role: o.Role, Eligible: o.Eligible, State: o.State, Reason: o.Reason,
 			ObservedTime: previous[m.Name].ObservedTime, Path: paths[m.Name],

@@ -947,3 +947,25 @@ func TestCNPGOffReadsNothing(t *testing.T) {
 		})
 	}
 }
+
+// A member whose site is a stale peer shows SiteUnknown in status, as the decision counts it, and a member that a
+// fresh peer does not list shows NotObserved (RFC#0002, requirement 16).
+func TestMemberReasonOfAStalePeer(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		p    peers
+		want string
+	}{
+		{"stale", readB, "SiteUnknown"},
+		{"fresh, not listed", peers{fresh: map[string]bool{"b": true}, view: map[string]observe.Report{"b": {Members: map[string]observe.Observation{}}}}, "NotObserved"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r, c := reconciler(t, tt.p, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))...)
+			run(t, r)
+			m := status(t, c).Members[1]
+			if m.Name != "web-b" || m.State != straitv1.StateUnknown || m.Reason != tt.want {
+				t.Errorf("member = %+v, want web-b Unknown, %s", m, tt.want)
+			}
+		})
+	}
+}
