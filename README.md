@@ -304,6 +304,7 @@ For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skil
 |---|---|
 | [Getting started](docs/getting-started.md) | Two clusters, a WireGuard link, and a `SiteService` with the `cnpg` plugin. |
 | [Troubleshooting](docs/troubleshooting.md) | A name routed nowhere, Unknown members, unreachable peers, unhealthy links. |
+| [Runbooks](docs/troubleshooting.md#runbooks) | Site loss and return, WireGuard key rotation, a controller or a gateway that is not ready, rollback. |
 | [Gateway benchmark](docs/benchmark.md) | What the gateway adds per round trip and per connection, and what endpoint-direct saves. |
 | [End-to-end tests](test/e2e/README.md) | The kind fixture and its scenarios. |
 | [RFC0001](rfcs/RFC0001.md) | Scope, glossary, resources and components. |

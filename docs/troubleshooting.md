@@ -107,3 +107,14 @@ The conditions of the `Site`:
 | CloudNativePG watch | The controller logs `cloudnative-pg` at start. `watched` false means CloudNativePG's CRDs were missing then: restart the controller. |
 | Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. |
 | Metrics | Port `metrics`, 8080, of the controller pod. The route, the conditions, peer reachability and link health: [RFC0002, Metrics](../rfcs/RFC0002.md#metrics). A route to nowhere shows as `strait_siteservice_endpoints` 0. |
+
+## Runbooks
+
+| Case | Runbook |
+|---|---|
+| A site is lost, and a member at another site must become primary. | [Site loss](runbooks/site-loss.md) |
+| A lost site comes back, maybe with its old primary. `startupHold` for production. | [Site return](runbooks/site-return.md) |
+| A site's WireGuard private key must change. | [WireGuard key rotation](runbooks/wireguard-key-rotation.md) |
+| The controller or a gateway pod does not become ready. | [Not ready](runbooks/not-ready.md) |
+| An upgrade, or a node drain. | [Upgrade](../README.md#upgrade) |
+| A site must go back to an earlier 1.x release. | [Roll back within 1.x](runbooks/rollback.md) |
