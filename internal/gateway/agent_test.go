@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,12 +13,14 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -390,4 +393,124 @@ func TestJoinOnlyWhenEnvoyReady(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// A standby that joined the election while its Envoy was ready does not take the Lease once Envoy is not ready, and
+// takes it once Envoy is ready again (RFC0005, requirement 33; issue #38).
+func TestNoTakeoverWhileEnvoyNotReady(t *testing.T) {
+	a, _, _ := newAgent(t, testSite())
+	up := &atomic.Bool{}
+	up.Store(true)
+	a.EnvoyAdmin = envoy(t, up)
+	// Another replica holds the Lease, for 1s from when this one first reads it.
+	other := "gw-1"
+	leases := k8sfake.NewClientset(&coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "strait-gateway"},
+		Spec:       coordinationv1.LeaseSpec{HolderIdentity: &other, LeaseDurationSeconds: ptr.To[int32](1)},
+	}).CoordinationV1()
+	a.Leases = leases
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	holder := func() string {
+		l, err := leases.Leases(ns).Get(context.Background(), "strait-gateway", metav1.GetOptions{})
+		if err != nil || l.Spec.HolderIdentity == nil {
+			return ""
+		}
+		return *l.Spec.HolderIdentity
+	}
+
+	// Joined: wait for the first read of the Lease, then Envoy stops being ready.
+	time.Sleep(RetryPeriod / 2)
+	up.Store(false)
+	time.Sleep(3 * RetryPeriod)
+	if h := holder(); h != other {
+		t.Fatalf("Envoy not ready, the other replica's Lease expired: the Lease is held by %q, want %q", h, other)
+	}
+	up.Store(true)
+	deadline := time.Now().Add(5 * time.Second)
+	for holder() != "gw-0" {
+		if time.Now().After(deadline) {
+			t.Fatalf("Envoy ready again: the Lease is held by %q, want gw-0", holder())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// memLock is a resourcelock.Interface in memory. Get shows holder.
+type memLock struct {
+	holder string
+	writes int
+}
+
+func (l *memLock) Get(context.Context) (*resourcelock.LeaderElectionRecord, []byte, error) {
+	return &resourcelock.LeaderElectionRecord{HolderIdentity: l.holder}, nil, nil
+}
+
+func (l *memLock) Create(_ context.Context, r resourcelock.LeaderElectionRecord) error {
+	l.writes++
+	l.holder = r.HolderIdentity
+	return nil
+}
+
+func (l *memLock) Update(ctx context.Context, r resourcelock.LeaderElectionRecord) error {
+	return l.Create(ctx, r)
+}
+
+func (*memLock) RecordEvent(string) {}
+func (*memLock) Identity() string   { return "gw-0" }
+func (*memLock) Describe() string   { return "memory/strait-gateway" }
+
+// Readiness is checked before a write that takes the Lease, and never before a renewal: an active replica whose Envoy
+// is not ready steps down after EnvoyNotReady, not at the renew deadline (RFC0005, requirements 33 and 34).
+func TestLeaseChecksReadinessOnlyToTake(t *testing.T) {
+	inner := &memLock{holder: "gw-1"}
+	var ready atomic.Bool
+	l := &lease{Interface: inner, before: func() {}, ready: func(context.Context) error {
+		if !ready.Load() {
+			return errors.New("503")
+		}
+		return nil
+	}}
+	ctx := context.Background()
+	self := resourcelock.LeaderElectionRecord{HolderIdentity: "gw-0"}
+	step := func(what string, write func() error, wantErr bool, wantWrites int) {
+		t.Helper()
+		err := write()
+		if (err != nil) != wantErr || inner.writes != wantWrites {
+			t.Fatalf("%s: error %v, %d writes; want error %v, %d writes", what, err, inner.writes, wantErr, wantWrites)
+		}
+	}
+	if _, _, err := l.Get(ctx); err != nil {
+		t.Fatal(err)
+	}
+	step("create while not ready", func() error { return l.Create(ctx, self) }, true, 0)
+	step("take while not ready", func() error { return l.Update(ctx, self) }, true, 0)
+	ready.Store(true)
+	step("take while ready", func() error { return l.Update(ctx, self) }, false, 1)
+	ready.Store(false)
+	step("renew while not ready", func() error { return l.Update(ctx, self) }, false, 2)
+	if _, _, err := l.Get(ctx); err != nil {
+		t.Fatal(err)
+	}
+	step("renew after a read that shows this replica", func() error { return l.Update(ctx, self) }, false, 3)
+	inner.holder = "gw-1"
+	if _, _, err := l.Get(ctx); err != nil {
+		t.Fatal(err)
+	}
+	step("take after a read that shows another holder", func() error { return l.Update(ctx, self) }, true, 3)
+	ready.Store(true)
+	step("take again while ready", func() error { return l.Update(ctx, self) }, false, 4)
+	step("release", func() error { return l.Update(ctx, resourcelock.LeaderElectionRecord{}) }, false, 5)
+	ready.Store(false)
+	step("take after a release", func() error { return l.Update(ctx, self) }, true, 5)
+	ready.Store(true)
+	step("take in a new round", func() error { return l.Update(ctx, self) }, false, 6)
+	l.reset()
+	ready.Store(false)
+	step("take after a new round starts", func() error { return l.Update(ctx, self) }, true, 6)
 }
