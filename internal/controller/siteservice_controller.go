@@ -557,6 +557,16 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	}
 	for _, member := range slices.Sorted(maps.Keys(targets)) {
 		t := targets[member]
+		// A slice's address type cannot change. A slice that would hold none of the member's addresses is deleted,
+		// and written again with their address type (issue #38).
+		if name := memberObjectName(svc, member); !hasFamily(t.addresses, a.slices[name].AddressType) {
+			es := a.slices[name]
+			if err := r.Delete(ctx, &es); client.IgnoreNotFound(err) != nil {
+				a.err = fmt.Errorf("delete endpointslice %s: %w", name, err)
+				return a
+			}
+			delete(a.slices, name)
+		}
 		es, err := r.writeSlice(ctx, svc, member, t)
 		if err != nil {
 			a.err = err
@@ -625,6 +635,12 @@ func (r *SiteServiceReconciler) upsertSlice(ctx context.Context, c client.Client
 		return nil, err
 	}
 	return es, nil
+}
+
+// hasFamily reports whether a slice of address type at holds one of the addresses. A slice that is not in place,
+// with no address type, holds any.
+func hasFamily(addresses []string, at discoveryv1.AddressType) bool {
+	return at == "" || slices.ContainsFunc(addresses, func(a string) bool { return addressType([]string{a}) == at })
 }
 
 func addressType(addresses []string) discoveryv1.AddressType {
