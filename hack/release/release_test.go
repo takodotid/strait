@@ -422,7 +422,8 @@ func before(script, a, b string) bool {
 var runsGo = regexp.MustCompile(`(^|[^a-z_./-])(make|go)( |$)`)
 
 // The release runs every test before any push, and runs Go only in jobs that can write nothing (RFC0007, requirements
-// 17, 18 and 19).
+// 17, 18 and 19). It checks the CLI archives and the image before it publishes them (RFC0006, requirements 10, 13, 15
+// and 16).
 func TestReleaseWorkflow(t *testing.T) {
 	b, err := os.ReadFile("../../.github/workflows/release.yaml")
 	if err != nil {
@@ -501,6 +502,23 @@ func TestReleaseWorkflow(t *testing.T) {
 				t.Errorf("job %s holds %v and runs Go: %s%s", name, w, s.Uses, s.Run)
 			}
 		}
+	}
+
+	// RFC0006 requirements 10, 13, 15 and 16: the archives are checked in test, after they are built, and the image in
+	// a job that can write nothing and that publish needs.
+	built, checked := test.step("make dist"), test.step("hack/distcheck", "archives dist")
+	if built < 0 || checked < built {
+		t.Errorf("test: the archives are built at step %d and checked at %d", built, checked)
+	}
+	image, ok := w.Jobs["image-check"]
+	if !ok || image.step("hack/distcheck", " image ", "linux/$arch") < 0 {
+		t.Error("no job image-check that runs hack/distcheck on each platform of the image")
+	}
+	if !slices.Contains(image.Needs, "image") || !slices.Contains(w.Jobs["publish"].Needs, "image-check") {
+		t.Errorf("image-check needs %v, publish needs %v; want image-check between image and publish", image.Needs, w.Jobs["publish"].Needs)
+	}
+	if got := writes(image.Permissions); len(got) > 0 {
+		t.Errorf("image-check runs the image's code and holds %v", got)
 	}
 
 	// Requirement 20: gate checks the three, and each push checks its own right before it.
