@@ -114,4 +114,13 @@ func TestDocumentAgesObservations(t *testing.T) {
 	if m := member(l.Document("a", at.Add(time.Hour), 0), "pg-a"); m.State != straitv1.StateStable {
 		t.Errorf("with no peerTimeout: %+v, want the observation as it was", m)
 	}
+
+	// A peerTimeout under 6s ages a member after 6s only: a healthy site observes each member at least every 2s, and
+	// every SiteService shares one worker.
+	if m := member(l.Document("a", at.Add(MinAgeLimit), 2*time.Second), "pg-a"); m.State != straitv1.StateStable {
+		t.Errorf("peerTimeout 2s, 6s after the observation: %+v, want the observation as it was", m)
+	}
+	if m := member(l.Document("a", at.Add(MinAgeLimit+time.Millisecond), 2*time.Second), "pg-a"); m.State != straitv1.StateUnknown {
+		t.Errorf("peerTimeout 2s, past 6s after the observation: %+v, want Unknown", m)
+	}
 }

@@ -43,7 +43,7 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 |---|---|---|
 | `SiteUnknown` | The member's site is neither this site nor a reachable peer. | `strait peers`. A `SitePeer` must exist whose name is the member's `site`. Then see [Unreachable peers](#unreachable-peers-and-unhealthy-links). |
 | `NotObserved` | The member's site is reachable, but its document holds no observation of this member. | Apply the same `SiteService`, with the same namespace, name and member names, at the member's site. |
-| `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
+| `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago, and at least 6s ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
 | `ReadFailed: ...` | The plugin could not read the workload at this site. The rest of the reason is the error. | Follow the error. For `cnpg`, check that CloudNativePG is installed at this site. |
 
 While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
