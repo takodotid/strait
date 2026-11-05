@@ -39,3 +39,15 @@ spec:
     wireGuardService:
       type: NodePort
       externalTrafficPolicy: Local
+---
+# The gateway Lease of a site whose API server can stall for up to 10s.
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: d
+spec:
+  gateway:
+    lease:
+      duration: 15s
+      renewDeadline: 10s
+      retryPeriod: 2s

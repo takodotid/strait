@@ -19,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -513,4 +514,76 @@ func TestLeaseChecksReadinessOnlyToTake(t *testing.T) {
 	l.reset()
 	ready.Store(false)
 	step("take after a new round starts", func() error { return l.Update(ctx, self) }, true, 6)
+}
+
+// A stall of the API server longer than the renew deadline hands the gateway over: the active replica removes its
+// interfaces. Site.spec.gateway.lease sets a longer renew deadline, and the same stall then moves nothing (RFC0005,
+// requirement 38). The stall here fails every request on the gateway Lease for 6s.
+func TestLeaseTimingRidesOutAStall(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lease    straitv1.GatewayLease
+		handover bool
+	}{
+		{"defaults", straitv1.GatewayLease{}, true},
+		{"renewDeadline 8s", straitv1.GatewayLease{
+			Duration: metav1.Duration{Duration: 10 * time.Second}, RenewDeadline: metav1.Duration{Duration: 8 * time.Second},
+			RetryPeriod: metav1.Duration{Duration: time.Second},
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			key := newKey(t)
+			wl := wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")
+			p := peer("b", newKey(t).PublicKey().String())
+			site := testSite()
+			site.Spec.Gateway.Lease = tc.lease
+			a, k, _ := newAgent(t, site, keySecret(key.String()), &wl, &p)
+			up := &atomic.Bool{}
+			up.Store(true)
+			a.EnvoyAdmin = envoy(t, up)
+			cs := k8sfake.NewClientset()
+			var stall atomic.Bool
+			cs.PrependReactor("*", "leases", func(k8stesting.Action) (bool, runtime.Object, error) {
+				if stall.Load() {
+					return true, nil, errors.New("injected: the API server does not answer")
+				}
+				return false, nil, nil
+			})
+			a.Leases = cs.CoordinationV1()
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- a.Run(ctx) }()
+			defer func() {
+				cancel()
+				<-done
+			}()
+			waitForInterfaces(t, k, 1)
+
+			stall.Store(true)
+			removed := false
+			for end := time.Now().Add(6 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+				if devs, _ := k.Devices(); len(devs) == 0 {
+					removed = true
+				}
+			}
+			stall.Store(false)
+			if removed != tc.handover {
+				t.Fatalf("a 6s stall removed the interfaces: %v, want %v", removed, tc.handover)
+			}
+			waitForInterfaces(t, k, 1)
+		})
+	}
+}
+
+// Each field of Site.spec.gateway.lease that is unset takes its default, as a Site written before 1.3.0 leaves them.
+func TestLeaseTimingDefaults(t *testing.T) {
+	if got, want := LeaseTiming(nil), (Timing{6 * time.Second, 4 * time.Second, time.Second}); got != want {
+		t.Errorf("no Site: %+v, want %+v", got, want)
+	}
+	site := testSite()
+	site.Spec.Gateway.Lease.RenewDeadline = metav1.Duration{Duration: 3 * time.Second}
+	if got, want := LeaseTiming(site), (Timing{6 * time.Second, 3 * time.Second, time.Second}); got != want {
+		t.Errorf("renewDeadline set: %+v, want %+v", got, want)
+	}
 }

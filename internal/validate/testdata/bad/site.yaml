@@ -162,3 +162,64 @@ spec:
       type: LoadBalancer
       loadBalancerSourceRanges: [192.0.2.0/24, 192.0.2.21]
       externalTrafficPolicy: Remote
+---
+# want: spec.gateway.lease: Invalid value: "object": duration must be from 2s to 5m
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: lease-duration-range
+spec:
+  gateway:
+    lease:
+      duration: 6m
+---
+# want: spec.gateway.lease: Invalid value: "object": duration must be a whole number of seconds
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: lease-duration-whole
+spec:
+  gateway:
+    lease:
+      duration: 6500ms
+---
+# want: spec.gateway.lease: Invalid value: "object": renewDeadline must be at least 1s
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: lease-renew-deadline-min
+spec:
+  gateway:
+    lease:
+      renewDeadline: 900ms
+      retryPeriod: 500ms
+---
+# want: spec.gateway.lease: Invalid value: "object": retryPeriod must be at least 200ms
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: lease-retry-period-min
+spec:
+  gateway:
+    lease:
+      retryPeriod: 100ms
+---
+# want: spec.gateway.lease: Invalid value: "object": renewDeadline must be at least 1s shorter than duration
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: lease-renew-deadline-vs-duration
+spec:
+  gateway:
+    lease:
+      duration: 4s
+---
+# want: spec.gateway.lease: Invalid value: "object": renewDeadline must be more than 1.2 times retryPeriod
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: lease-renew-deadline-vs-retry-period
+spec:
+  gateway:
+    lease:
+      retryPeriod: 3500ms

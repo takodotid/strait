@@ -183,6 +183,50 @@ spec:
                     x-kubernetes-validations:
                     - message: first must not exceed last
                       rule: self.first <= self.last
+                  lease:
+                    default: {}
+                    description: Lease sets the timing of the gateway Lease, which
+                      elects the one active gateway replica.
+                    properties:
+                      duration:
+                        default: 6s
+                        description: |-
+                          Duration is how long the Lease stays valid after it last changed. A replica that failed stays active for up
+                          to this long. Whole seconds, from 2s to 5m.
+                        type: string
+                      renewDeadline:
+                        default: 4s
+                        description: |-
+                          RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A stall of the API
+                          server that lasts longer hands the gateway over to another replica. At least 1s, more than 1.2 times
+                          retryPeriod, and at least 1s shorter than duration.
+                        type: string
+                      retryPeriod:
+                        default: 1s
+                        description: RetryPeriod is the time between two tries to
+                          take or renew the Lease. At least 200ms.
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: duration must be from 2s to 5m
+                      rule: '!has(self.duration) || (duration(self.duration) >= duration(''2s'')
+                        && duration(self.duration) <= duration(''5m''))'
+                    - message: duration must be a whole number of seconds
+                      rule: '!has(self.duration) || duration(self.duration).getMilliseconds()
+                        % 1000 == 0'
+                    - message: renewDeadline must be at least 1s
+                      rule: '!has(self.renewDeadline) || duration(self.renewDeadline)
+                        >= duration(''1s'')'
+                    - message: retryPeriod must be at least 200ms
+                      rule: '!has(self.retryPeriod) || duration(self.retryPeriod)
+                        >= duration(''200ms'')'
+                    - message: renewDeadline must be at least 1s shorter than duration
+                      rule: '!has(self.renewDeadline) || !has(self.duration) || duration(self.renewDeadline)
+                        + duration(''1s'') <= duration(self.duration)'
+                    - message: renewDeadline must be more than 1.2 times retryPeriod
+                      rule: '!has(self.retryPeriod) || !has(self.renewDeadline) ||
+                        duration(self.retryPeriod).getMilliseconds() * 6 < duration(self.renewDeadline).getMilliseconds()
+                        * 5'
                   peerPort:
                     default: 14999
                     description: PeerPort is the local listener that the controller
@@ -536,6 +580,50 @@ spec:
                     x-kubernetes-validations:
                     - message: first must not exceed last
                       rule: self.first <= self.last
+                  lease:
+                    default: {}
+                    description: Lease sets the timing of the gateway Lease, which
+                      elects the one active gateway replica.
+                    properties:
+                      duration:
+                        default: 6s
+                        description: |-
+                          Duration is how long the Lease stays valid after it last changed. A replica that failed stays active for up
+                          to this long. Whole seconds, from 2s to 5m.
+                        type: string
+                      renewDeadline:
+                        default: 4s
+                        description: |-
+                          RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A stall of the API
+                          server that lasts longer hands the gateway over to another replica. At least 1s, more than 1.2 times
+                          retryPeriod, and at least 1s shorter than duration.
+                        type: string
+                      retryPeriod:
+                        default: 1s
+                        description: RetryPeriod is the time between two tries to
+                          take or renew the Lease. At least 200ms.
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: duration must be from 2s to 5m
+                      rule: '!has(self.duration) || (duration(self.duration) >= duration(''2s'')
+                        && duration(self.duration) <= duration(''5m''))'
+                    - message: duration must be a whole number of seconds
+                      rule: '!has(self.duration) || duration(self.duration).getMilliseconds()
+                        % 1000 == 0'
+                    - message: renewDeadline must be at least 1s
+                      rule: '!has(self.renewDeadline) || duration(self.renewDeadline)
+                        >= duration(''1s'')'
+                    - message: retryPeriod must be at least 200ms
+                      rule: '!has(self.retryPeriod) || duration(self.retryPeriod)
+                        >= duration(''200ms'')'
+                    - message: renewDeadline must be at least 1s shorter than duration
+                      rule: '!has(self.renewDeadline) || !has(self.duration) || duration(self.renewDeadline)
+                        + duration(''1s'') <= duration(self.duration)'
+                    - message: renewDeadline must be more than 1.2 times retryPeriod
+                      rule: '!has(self.retryPeriod) || !has(self.renewDeadline) ||
+                        duration(self.retryPeriod).getMilliseconds() * 6 < duration(self.renewDeadline).getMilliseconds()
+                        * 5'
                   peerPort:
                     default: 14999
                     description: PeerPort is the local listener that the controller
