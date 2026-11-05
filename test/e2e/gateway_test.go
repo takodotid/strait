@@ -9,9 +9,12 @@ import (
 	"testing"
 	"time"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
@@ -101,4 +104,136 @@ func (e *env) envoyNotReady(ctx context.Context, t *testing.T) {
 		}
 		return addr != "" && ready == 2, fmt.Sprintf("active %q at %q, %d ready", pod, addr, ready)
 	})
+}
+
+// handoverRecovery bounds the time from a gateway takeover at one site until writes from the other site land again
+// over a wireguard link. On kind it took 1.1 to 4.8s, and 15.8 to 17.7s without the drop of a stale session (RFC0005,
+// requirement 37).
+const handoverRecovery = 8 * time.Second
+
+// gatewayLease returns the holder of site s's gateway Lease and when it took it.
+func gatewayLease(ctx context.Context, s *site) (string, time.Time, error) {
+	var l coordinationv1.Lease
+	if err := s.c.Get(ctx, types.NamespacedName{Namespace: straitNamespace, Name: "strait-gateway"}, &l); err != nil {
+		return "", time.Time{}, err
+	}
+	var at time.Time
+	if l.Spec.AcquireTime != nil {
+		at = l.Spec.AcquireTime.Time
+	}
+	return ptr.Deref(l.Spec.HolderIdentity, ""), at, nil
+}
+
+// handshake returns the last WireGuard handshake that site s's agent reports on its link.
+func handshake(ctx context.Context, s *site, link string) string {
+	links, err := linkState(ctx, s)
+	if err != nil {
+		return err.Error()
+	}
+	if hs := links[link].LastHandshakeTime; hs != nil {
+		return hs.UTC().Format(time.TimeOnly)
+	}
+	return "none"
+}
+
+// gatewayHandover: with the direct link cut, site b reaches site a over the wireguard link only, which site a's side
+// waits on. Site a's active gateway pod is deleted and the standby takes the gateway Lease. A write from site b lands on
+// cluster-a within handoverRecovery of the takeover (issue #44).
+func (e *env) gatewayHandover(ctx context.Context, t *testing.T) {
+	a, b := e.a, e.b
+	direct, wan := a.name+"-direct", a.name+"-wan"
+	for _, s := range e.sites() {
+		eventually(ctx, t, time.Minute, time.Second, "links steady", func(ctx context.Context) (bool, string) { return e.linksSteady(ctx, s) })
+	}
+	eventually(ctx, t, 2*time.Minute, time.Second, "site a has an active gateway and a ready standby", func(ctx context.Context) (bool, string) {
+		pod, addr, ready, err := gatewayState(ctx, a)
+		if err != nil {
+			return false, err.Error()
+		}
+		return addr != "" && ready == 2, fmt.Sprintf("active %q at %q, %d ready", pod, addr, ready)
+	})
+	eventually(ctx, t, time.Minute, time.Second, "a write from site b lands on cluster-a", writesLandOn(b, clusterOf(a)))
+	if err := e.cutDirectLink(ctx); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 10*time.Second, 200*time.Millisecond, "site b uses the wireguard link", func(ctx context.Context) (bool, string) {
+		links, err := linkState(ctx, b)
+		if err != nil {
+			return false, err.Error()
+		}
+		return !links[direct].Healthy && links[wan].Active, linkString(links)
+	})
+	w, err := startWriter(ctx, b, 3*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Stop(context.Background())
+	eventually(ctx, t, 30*time.Second, 200*time.Millisecond, "writes from b over the wireguard link", func(context.Context) (bool, string) {
+		n := 0
+		for _, at := range w.attempts() {
+			if at.ok && at.cluster == clusterOf(a) {
+				n++
+			}
+		}
+		return n >= 3, fmt.Sprintf("%d writes on %s", n, clusterOf(a))
+	})
+
+	old, _, err := gatewayLease(ctx, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := handshake(ctx, b, wan)
+	deleted := time.Now()
+	if err := a.c.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: straitNamespace, Name: old}}); err != nil {
+		t.Fatal(err)
+	}
+	// The Lease's acquire time comes from the new holder's clock, and the writes' times from the client pod's. Every kind
+	// node shares the host's clock.
+	var holder string
+	var takeover time.Time
+	eventually(ctx, t, 30*time.Second, 100*time.Millisecond, "a standby takes site a's gateway Lease", func(ctx context.Context) (bool, string) {
+		var err error
+		holder, takeover, err = gatewayLease(ctx, a)
+		if err != nil {
+			return false, err.Error()
+		}
+		return holder != "" && holder != old && !takeover.IsZero(), fmt.Sprintf("holder %q, was %q", holder, old)
+	})
+	e.times.record(t, "handover/takeover", takeover.Sub(deleted))
+	var recovered time.Time
+	eventually(ctx, t, time.Minute, 100*time.Millisecond, "a write from b lands on cluster-a after the takeover", func(context.Context) (bool, string) {
+		for _, at := range w.attempts() {
+			if at.ok && at.cluster == clusterOf(a) && at.end.After(takeover) {
+				recovered = at.end
+				return true, ""
+			}
+		}
+		return false, "no write since the takeover"
+	})
+	recovery := recovered.Sub(takeover)
+	e.times.record(t, "handover/recovery", recovery)
+	after := handshake(ctx, b, wan)
+	all := w.Stop(ctx)
+	gap, failed := longestGap(all, deleted)
+	e.times.record(t, "handover/write-gap", gap)
+	t.Logf("site a: %s took the gateway Lease from %s at %s, %s after the delete", holder, old, takeover.UTC().Format(time.StampMilli), takeover.Sub(deleted).Round(time.Millisecond))
+	t.Logf("site b: last handshake on %s %s before the delete, %s after the recovery", wan, before, after)
+	t.Logf("site b writes, from the delete: %s; %d failed", attemptSummary(all, deleted), failed)
+
+	if err := e.restore(ctx, cutDirect); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range e.sites() {
+		eventually(ctx, t, time.Minute, time.Second, "links steady again", func(ctx context.Context) (bool, string) { return e.linksSteady(ctx, s) })
+	}
+	eventually(ctx, t, 2*time.Minute, time.Second, "site a has a ready standby again", func(ctx context.Context) (bool, string) {
+		pod, addr, ready, err := gatewayState(ctx, a)
+		if err != nil {
+			return false, err.Error()
+		}
+		return addr != "" && ready == 2, fmt.Sprintf("active %q at %q, %d ready", pod, addr, ready)
+	})
+	if recovery > handoverRecovery {
+		t.Errorf("writes from site b recovered %s after the takeover, want at most %s", recovery.Round(time.Millisecond), handoverRecovery)
+	}
 }
