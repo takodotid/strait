@@ -3,6 +3,8 @@ package decide
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +19,9 @@ type SiteView struct {
 	Known bool
 	// Declared is the member the site declares primary. Empty when it declares none.
 	Declared string
+	// Conflicting holds the members that the site's workloads declare primary, when they name more than one. Only the
+	// local site's view holds it: the site declares none to its peers then.
+	Conflicting []string
 }
 
 // Input holds every input of a decision.
@@ -46,7 +51,7 @@ type Result struct {
 	Message string
 	// Multiple is true when two or more members are writable. Single mode only.
 	Multiple bool
-	// Disagree is true when two known sites declare different primaries. Single mode only.
+	// Disagree is true when two known sites declare different primaries, or the workloads of one site do. Single mode only.
 	Disagree bool
 	// Held are the routed members kept while Unknown.
 	Held []string
@@ -86,12 +91,18 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// declarations returns the distinct primaries declared by known sites, sorted.
+// declarations returns the distinct primaries declared by known sites, and by the workloads of a site that name more
+// than one, sorted.
 func (in Input) declarations() []string {
 	seen := map[string]bool{}
 	for _, s := range in.Sites {
 		if s.Known && s.Declared != "" {
 			seen[s.Declared] = true
+		}
+		for _, d := range s.Conflicting {
+			if s.Known {
+				seen[d] = true
+			}
 		}
 	}
 	out := make([]string, 0, len(seen))
@@ -187,6 +198,11 @@ func singleTable(in Input) Result {
 	if r.Disagree {
 		r.Reason = straitv1.ReasonDeclarationsDisagree
 		r.Message = fmt.Sprintf("sites declare different primaries: %s", strings.Join(decl, ", "))
+		for _, name := range slices.Sorted(maps.Keys(in.Sites)) {
+			if s := in.Sites[name]; s.Known && len(s.Conflicting) > 0 {
+				r.Message += fmt.Sprintf("; the workloads of site %s declare %s", name, strings.Join(s.Conflicting, ", "))
+			}
+		}
 		return r
 	}
 	// Rows 2 and 3.

@@ -27,6 +27,9 @@ func (Declared) Observe(ctx context.Context, r client.Reader, svc *straitv1.Site
 		switch {
 		case errors.Is(err, ErrNoService):
 			o.Reason = "ServiceNotFound"
+		case errors.Is(err, ErrNoPort):
+			// The Service was read: the member is Stable and not eligible (RFC#0003, requirement 12).
+			o.Reason = "PortNotFound"
 		case err != nil:
 			o = observe.Unknown(m.Name, site, "ReadFailed: "+err.Error(), now)
 		case len(ep.Addresses) == 0:

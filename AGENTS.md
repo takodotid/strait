@@ -131,7 +131,8 @@ Commit and push only when the operator asks.
 | `make generate` | Generates deepcopy code and CRDs from `api/`, and copies them into the chart. |
 | `make verify` | Fails if generated files are stale, `gofmt` or `go vet` complain. |
 | `make build` | Builds every binary into `bin/`. |
-| `make test` | Runs unit tests. |
+| `make test` | Runs unit tests, with envtest's API server for the CRDs' rules. Downloads it into `bin/envtest` on first use. |
+| `make test-envoy` | Runs the xDS configuration in a real Envoy, the chart's image, in docker. |
 | `make docs` | Writes the man pages and the skill document into `bin/`. |
 | `make images` | Builds the container image. |
 | `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |

@@ -163,12 +163,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		}
 		return local.Document(name, time.Now())
 	}
-	for _, r := range []manager.Runnable{
-		leaderOnly(&httpServer{addr: observationsAddr, handler: exchange.NewHandler(document)}),
-		leaderOnly(poller),
-		leaderOnly(&exchange.StatusWriter{Client: mgr.GetClient(), Poller: poller}),
-		xdsServer,
-	} {
+	for _, r := range runnables(observationsAddr, document, poller, mgr.GetClient(), xdsServer) {
 		if err := mgr.Add(r); err != nil {
 			return err
 		}
@@ -191,6 +186,18 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		return err
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())
+}
+
+// runnables are the document server, the poller, the SitePeer status writer and the xDS server. Each runs on the
+// elected controller only: one that is not elected holds no observations, and its empty document would read as a site
+// with no members (RFC0004, requirement 12).
+func runnables(observationsAddr string, document func() exchange.Document, poller *exchange.Poller, c client.Client, xdsServer *xds.Server) []manager.Runnable {
+	return []manager.Runnable{
+		leaderOnly(&httpServer{addr: observationsAddr, handler: exchange.NewHandler(document)}),
+		leaderOnly(poller),
+		leaderOnly(&exchange.StatusWriter{Client: c, Poller: poller}),
+		xdsServer,
+	}
 }
 
 // leaderElectionID names the controller's leader election Lease.

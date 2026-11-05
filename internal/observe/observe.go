@@ -51,6 +51,9 @@ func Unknown(member, site, reason string, at time.Time) Observation {
 type Report struct {
 	// Declared is the member the site declares primary. Empty when it declares none.
 	Declared string
+	// Conflicting holds the members that the site's workloads declare primary, sorted, when they name more than one.
+	// Declared is empty then, so the site declares none to its peers.
+	Conflicting []string
 	// Members are the observations, by member name.
 	Members map[string]Observation
 }

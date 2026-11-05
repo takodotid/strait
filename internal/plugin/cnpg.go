@@ -65,8 +65,11 @@ func (CNPG) Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteServ
 	}
 	slices.Sort(names)
 	names = slices.Compact(names)
-	if len(names) == 1 {
+	switch {
+	case len(names) == 1:
 		rep.Declared = names[0]
+	case len(names) > 1:
+		rep.Conflicting = names
 	}
 	return rep
 }

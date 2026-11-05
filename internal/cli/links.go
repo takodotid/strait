@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +20,10 @@ type linkView struct {
 	Cost       int32               `json:"cost"`
 	// EndpointDirect is true on a direct link with endpointDirect.
 	EndpointDirect bool `json:"endpointDirect"`
-	Healthy        bool `json:"healthy"`
+	// EndpointCIDRs are the ranges that endpoint-direct accepts the peer's member addresses from. Empty accepts any
+	// address that is not special.
+	EndpointCIDRs []string `json:"endpointCIDRs,omitempty"`
+	Healthy       bool     `json:"healthy"`
 	// Active is true while this link carries the pair's traffic.
 	Active             bool         `json:"active"`
 	LastTransitionTime *metav1.Time `json:"lastTransitionTime,omitempty"`
@@ -38,6 +42,8 @@ Links are grouped by peer, in the order traffic prefers them: lowest COST first,
 ENCRYPTION is None on a direct link, which carries traffic in clear on a private path, and WireGuard on a wireguard link.
 
 ENDPOINT-DIRECT is true on a direct link with endpointDirect. While that link is ACTIVE, application names point at the remote member's own pods, with no gateway hop. strait explain shows it as PATH EndpointDirect.
+
+ENDPOINT-CIDRS is direct.endpointCIDRs: endpoint-direct writes only the peer's member addresses in these ranges. It is any on a link with endpointDirect and no endpointCIDRs: endpoint-direct then writes any IP address that is not unspecified, loopback, link-local or multicast. It is - on a link without endpointDirect.
 
 SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 		Example: `  strait links --context site-a
@@ -65,6 +71,7 @@ SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 					Encryption:         enc,
 					Cost:               l.Spec.Cost,
 					EndpointDirect:     l.Spec.Direct != nil && l.Spec.Direct.EndpointDirect,
+					EndpointCIDRs:      endpointCIDRs(l.Spec.Direct),
 					Healthy:            l.Status.Healthy,
 					Active:             l.Status.Active,
 					LastTransitionTime: l.Status.LastTransitionTime,
@@ -89,11 +96,26 @@ SiteLinks are cluster-scoped, so -n and -A do not apply.`,
 				}
 				var rows [][]string
 				for _, l := range v {
+					cidrs := "-"
+					switch {
+					case len(l.EndpointCIDRs) > 0:
+						cidrs = strings.Join(l.EndpointCIDRs, ",")
+					case l.EndpointDirect:
+						cidrs = "any"
+					}
 					rows = append(rows, []string{l.Peer, l.Name, string(l.Transport), dash(string(l.Encryption)), number(l.Cost),
-						boolean(l.EndpointDirect), boolean(l.Healthy), boolean(l.Active), o.age(l.LastTransitionTime)})
+						boolean(l.EndpointDirect), boolean(l.Healthy), boolean(l.Active), o.age(l.LastTransitionTime), cidrs})
 				}
-				table(w, []string{"PEER", "LINK", "TRANSPORT", "ENCRYPTION", "COST", "ENDPOINT-DIRECT", "HEALTHY", "ACTIVE", "CHANGED"}, rows)
+				table(w, []string{"PEER", "LINK", "TRANSPORT", "ENCRYPTION", "COST", "ENDPOINT-DIRECT", "HEALTHY", "ACTIVE", "CHANGED", "ENDPOINT-CIDRS"}, rows)
 			})
 		},
 	}
+}
+
+// endpointCIDRs returns the endpointCIDRs of a direct link with endpointDirect, or nil.
+func endpointCIDRs(d *straitv1.DirectLink) []string {
+	if d == nil || !d.EndpointDirect {
+		return nil
+	}
+	return d.EndpointCIDRs
 }

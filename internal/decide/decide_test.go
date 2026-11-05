@@ -868,3 +868,20 @@ func TestUnread(t *testing.T) {
 		})
 	}
 }
+
+// Local workloads that declare different primaries route nowhere, as two sites that disagree do (RFC#0002, row 1).
+func TestLocalWorkloadsDisagree(t *testing.T) {
+	spec := pgSpec(straitv1.RouteNowhere, hold, "a", "b")
+	spec.Members = append(spec.Members, straitv1.Member{Name: "pg-a2", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "pg-a2"}})
+	in := decide.Input{
+		Spec: spec, LocalSite: "a",
+		Sites:        map[string]decide.SiteView{"a": {Known: true, Conflicting: []string{"pg-a", "pg-b"}}, "b": declares("pg-b")},
+		Observations: observations(writable("pg-a", "a"), replica("pg-a2", "a"), replica("pg-b", "b")),
+		Previous:     []string{"pg-a"},
+	}
+	got := decide.Decide(in)
+	check(t, got, decide.Result{Reason: straitv1.ReasonDeclarationsDisagree, Disagree: true})
+	if want := "sites declare different primaries: pg-a, pg-b; the workloads of site a declare pg-a, pg-b"; got.Message != want {
+		t.Errorf("message = %q, want %q", got.Message, want)
+	}
+}

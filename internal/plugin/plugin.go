@@ -24,6 +24,20 @@ type Plugin interface {
 	Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteService, site string, now time.Time) observe.Report
 }
 
+// ReadOnly returns a reader that reads through r and has no other method, so no type assertion reaches the write
+// methods of the client behind it. The client is in an unexported field, so reflection cannot hand it out either.
+func ReadOnly(r client.Reader) client.Reader { return readOnly{r: r} }
+
+type readOnly struct{ r client.Reader }
+
+func (o readOnly) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	return o.r.Get(ctx, key, obj, opts...)
+}
+
+func (o readOnly) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return o.r.List(ctx, list, opts...)
+}
+
 // For returns the plugin that svc names.
 func For(svc *straitv1.SiteService) (Plugin, error) {
 	switch {
@@ -49,8 +63,20 @@ func LocalMembers(svc *straitv1.SiteService, site string) []straitv1.Member {
 // ErrNoService means the endpoint Service does not exist.
 var ErrNoService = fmt.Errorf("service not found")
 
+// ErrNoPort means the endpoint Service exists and has no port of the number asked for.
+var ErrNoPort = fmt.Errorf("service port not found")
+
+// noPort is the error of a Service that has no port of the number asked for. It is ErrNoPort.
+type noPort struct {
+	service string
+	port    int32
+}
+
+func (e noPort) Error() string      { return fmt.Sprintf("service %s has no port %d", e.service, e.port) }
+func (noPort) Is(target error) bool { return target == ErrNoPort }
+
 // ReadyEndpoint returns the ready addresses of a Service and the target port of its port.
-// It returns ErrNoService when the Service does not exist.
+// It returns ErrNoService when the Service does not exist, and an error that is ErrNoPort when it has no such port.
 func ReadyEndpoint(ctx context.Context, r client.Reader, namespace, name string, port int32) (observe.Endpoint, error) {
 	ep := observe.Endpoint{Service: name, ServicePort: port}
 	var svc corev1.Service
@@ -67,7 +93,7 @@ func ReadyEndpoint(ctx context.Context, r client.Reader, namespace, name string,
 		}
 	}
 	if sp == nil {
-		return ep, fmt.Errorf("service %s has no port %d", name, port)
+		return ep, noPort{service: name, port: port}
 	}
 	var slices discoveryv1.EndpointSliceList
 	if err := r.List(ctx, &slices, client.InNamespace(namespace), client.MatchingLabels{discoveryv1.LabelServiceName: name}); err != nil {

@@ -11,7 +11,7 @@ var reasons = map[string]string{
 	straitv1.ReasonActive:               "Single mode. Exactly one member is writable, and no known site declares another. The name points at it.",
 	straitv1.ReasonPreferDeclared:       "Single mode. Two or more members are writable. The policy PreferDeclaredIfConsistent is set, every site with a member declares the same primary, and that member is writable. The name points at it.",
 	straitv1.ReasonMultipleWritable:     "Single mode. Two or more members are writable. Routed nowhere.",
-	straitv1.ReasonDeclarationsDisagree: "Single mode. Two known sites declare different primaries. Routed nowhere. No policy relaxes this.",
+	straitv1.ReasonDeclarationsDisagree: "Single mode. Two known sites declare different primaries, or the workloads of this site do. Routed nowhere. No policy relaxes this.",
 	straitv1.ReasonNotDeclared:          "Single mode. Exactly one member is writable, but a known site declares another member. Routed nowhere.",
 	straitv1.ReasonTransitioning:        "Single mode. No member is confirmed writable and a member is moving, for example during a switchover. Routed nowhere.",
 	straitv1.ReasonHeldUnknown:          "The routed members are Unknown, but each was confirmed less than policy.unknownHold ago. The previous route is kept.",

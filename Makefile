@@ -26,6 +26,7 @@ verify: generate ## Fail if generated files are out of date.
 	gofmt -l . | (! grep .)
 	go vet ./...
 	go vet -tags e2e ./test/e2e/...
+	go vet -tags envoy ./internal/xds/
 	git diff --exit-code -- api config deploy/helm/strait/crds deploy/helm/strait/files
 
 .PHONY: build
@@ -56,9 +57,17 @@ else
 	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
 endif
 
+# The Kubernetes version of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test.
+ENVTEST_K8S_VERSION ?= 1.37.0
+
 .PHONY: test
-test: ## Run unit tests.
-	go test ./...
+test: ## Run unit tests. Downloads envtest's API server into bin/envtest on first use.
+	assets=$$(go tool setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path); \
+	KUBEBUILDER_ASSETS=$$assets go test ./...
+
+.PHONY: test-envoy
+test-envoy: ## Run the xDS configuration in a real Envoy, the chart's image, in docker.
+	go test -tags envoy -count=1 ./internal/xds/
 
 .PHONY: images
 images: ## Build the container image.
