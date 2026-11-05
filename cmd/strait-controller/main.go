@@ -171,7 +171,47 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	}); err != nil {
 		return err
 	}
-	return mgr.Start(ctrl.SetupSignalHandler())
+	return start(ctrl.SetupSignalHandler(), mgr, lock, leaderElect)
+}
+
+// start runs the manager until ctx ends or the manager fails. Once it has stopped on ctx, it releases the Lease if this
+// controller still holds it, so the next controller takes it at once instead of after the lease duration (RFC0004,
+// requirement 14). The manager then waits for every runnable to stop, with no timeout, so no leader-only work runs any
+// more. On a failure, as when the Lease could not be renewed, the manager does not wait for its runnables, so the
+// Lease stays held until it expires (requirement 16). client-go's own release on cancel would come first in that case.
+// The release is safe only because the process exits right after: main returns once run does.
+func start(ctx context.Context, mgr manager.Manager, lock resourcelock.Interface, leaderElect bool) error {
+	if err := mgr.Start(ctx); err != nil {
+		return err
+	}
+	if !leaderElect {
+		return nil
+	}
+	if err := release(lock); err != nil {
+		ctrl.Log.WithName("setup").Error(err, "release the leader election Lease")
+	}
+	return nil
+}
+
+// release gives up the Lease when this controller holds it, with the record that client-go's leader election writes:
+// no holder, and a duration of 1s.
+func release(lock resourcelock.Interface) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rec, _, err := lock.Get(ctx)
+	if err != nil {
+		return err
+	}
+	if rec.HolderIdentity != lock.Identity() {
+		return nil
+	}
+	now := metav1.NewTime(time.Now())
+	return lock.Update(ctx, resourcelock.LeaderElectionRecord{
+		LeaderTransitions:    rec.LeaderTransitions,
+		LeaseDurationSeconds: 1,
+		RenewTime:            now,
+		AcquireTime:          now,
+	})
 }
 
 // runnables are the document server, the poller, the SitePeer status writer and the xDS server. Each runs on the
@@ -219,9 +259,8 @@ const leaderElectionID = "strait-controller"
 // equals the leader election's renew deadline: an API server that takes longer to answer costs the Lease anyway.
 const reconcileTimeout = 10 * time.Second
 
-// managerOptions are the manager's options. A manager that stops releases the Lease once its leader-only runnables
-// have stopped, so the next controller takes it at once instead of after the lease duration (RFC0004). That is safe
-// only because the process exits as soon as the manager stops: main returns right after run.
+// managerOptions are the manager's options. The manager never releases the Lease itself: client-go would release it
+// on a failed renewal too, before the manager stops its runnables. start releases it once they have stopped.
 // The manager waits for every runnable to stop, with no timeout: a release while one still runs would let the next
 // controller overlap with it. A runnable that hangs is ended by the pod's termination grace period, and the Lease
 // then expires.
@@ -235,7 +274,7 @@ func managerOptions(scheme *runtime.Scheme, lock resourcelock.Interface, namespa
 		LeaderElectionID:                    leaderElectionID,
 		LeaderElectionNamespace:             namespace,
 		LeaderElectionResourceLockInterface: lock,
-		LeaderElectionReleaseOnCancel:       true,
+		LeaderElectionReleaseOnCancel:       false,
 		GracefulShutdownTimeout:             ptr.To(time.Duration(-1)),
 		Controller:                          config.Controller{ReconciliationTimeout: reconcileTimeout},
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
