@@ -10,6 +10,8 @@ ARG VERSION=dev
 # The build context holds no .git, so the commit comes in as a build argument.
 ARG COMMIT=unknown
 ARG TARGETOS TARGETARCH
+# The commit's time: the man pages carry it as their date, so that two builds of one commit match.
+ARG SOURCE_DATE_EPOCH
 RUN --mount=type=cache,target=/root/.cache/go-build \
     go run ./hack/gendocs /out/man/man1 \
  && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X github.com/takodotid/strait/internal/version.Version=${VERSION} -X github.com/takodotid/strait/internal/version.Commit=${COMMIT}" -o /out/ ./cmd/...
