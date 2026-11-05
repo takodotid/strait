@@ -1,0 +1,18 @@
+name: setup-cosign
+description: Installs cosign, pinned by version and SHA-256 (RFC0007, requirement 24).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: v3.1.4
+        SHA256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa
+      run: |
+        [[ $RUNNER_OS == Linux && $RUNNER_ARCH == X64 ]] || { echo "cosign is pinned for Linux on amd64 only" >&2; exit 1; }
+        dir="$RUNNER_TEMP/cosign-$VERSION"
+        mkdir -p "$dir"
+        curl -fsSLo "$dir/cosign" "https://github.com/sigstore/cosign/releases/download/$VERSION/cosign-linux-amd64"
+        echo "$SHA256  $dir/cosign" | sha256sum -c
+        chmod +x "$dir/cosign"
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/cosign" version

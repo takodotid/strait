@@ -62,14 +62,16 @@ jobs:
             dist/*.zip
             dist/strait-crds.yaml
           if-no-files-found: error
-  # The image, pushed by its digest with no tag. publish moves the tags last (RFC0007, requirement 22). The build runs
-  # Go in BuildKit's build containers, which get neither this job's environment nor its credentials.
+  # The image, pushed by its digest with no tag, and signed keyless with this workflow's identity (RFC0007,
+  # requirements 22 and 23). publish moves the tags last. The build runs Go in BuildKit's build containers, which get
+  # neither this job's environment nor its credentials.
   image:
     runs-on: ubuntu-26.04
     needs: test
     permissions:
       contents: read
       packages: write
+      id-token: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       tags: ${{ steps.meta.outputs.tags }}
@@ -108,14 +110,22 @@ jobs:
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-  # The chart, which names the image by its digest, the GitHub release, and the image's tags last. Each step checks
-  # again, right before its push, that its version is not published (RFC0007, requirements 20 and 21). No Go runs here.
+      - uses: ./.github/actions/setup-cosign
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/takodotid/strait@$DIGEST"
+  # The chart, which names the image by its digest, the attestations, the GitHub release, and the image's tags last.
+  # Everything that can fail without a push runs first. Each push checks again, right before it, that its version is
+  # not published (RFC0007, requirements 20 to 23). No Go runs here.
   publish:
     runs-on: ubuntu-26.04
     needs: [test, image]
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
     env:
       DIGEST: ${{ needs.image.outputs.digest }}
     steps:
@@ -127,28 +137,44 @@ jobs:
           name: dist
           path: dist
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: ./.github/actions/setup-cosign
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Helm chart
+      - name: Package the chart
+        run: hack/release/chart.sh "$GITHUB_REF_NAME" "$DIGEST"
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz *.zip *.tgz strait-crds.yaml > SHA256SUMS
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.tgz
+            dist/strait-crds.yaml
+            dist/SHA256SUMS
+      - name: Push and sign the chart
         env:
           ACTOR: ${{ github.actor }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${GITHUB_REF_NAME#v}"
           hack/release/absent.sh oci "ghcr.io/takodotid/charts/strait:$v"
-          hack/release/chart.sh "$GITHUB_REF_NAME" "$DIGEST"
           printf '%s' "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          helm push "dist/strait-$v.tgz" oci://ghcr.io/takodotid/charts
+          helm push "dist/strait-$v.tgz" oci://ghcr.io/takodotid/charts | tee "$RUNNER_TEMP/push.txt"
+          chart=$(sed -n 's/^Digest: //p' "$RUNNER_TEMP/push.txt")
+          [[ $chart =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "helm push printed no digest" >&2; exit 1; }
+          cosign sign --yes "ghcr.io/takodotid/charts/strait@$chart"
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           hack/release/absent.sh release "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
           cd dist
-          sha256sum *.tar.gz *.zip *.tgz strait-crds.yaml > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.zip *.tgz strait-crds.yaml SHA256SUMS
       - name: Image tags
         env:
