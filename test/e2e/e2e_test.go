@@ -40,6 +40,7 @@ func TestE2E(t *testing.T) {
 		{"conflict", e.serviceConflict},
 		{"ports", e.portsTogether},
 		{"envoy-not-ready", e.envoyNotReady},
+		{"gateway-handover", e.gatewayHandover},
 		{"2-link-failover", e.linkFailover},
 		{"3-switchover", e.switchover},
 		{"4-partition", e.partition},
