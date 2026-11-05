@@ -365,7 +365,33 @@ func (n *needs) UnmarshalJSON(b []byte) error {
 type releaseJob struct {
 	Needs       needs
 	Permissions map[string]string
-	Steps       []struct{ Uses, Run string }
+	Steps       []releaseStep
+}
+
+// releaseStep is a step of a job of release.yaml.
+type releaseStep struct {
+	Uses, Run string
+	With      map[string]string
+}
+
+// step returns the index of the first step whose script holds all the strings given, or -1.
+func (j releaseJob) step(holds ...string) int {
+	for i, s := range j.Steps {
+		ok := true
+		for _, h := range holds {
+			ok = ok && strings.Contains(s.Run, h)
+		}
+		if ok {
+			return i
+		}
+	}
+	return -1
+}
+
+// before reports whether the script holds a before b.
+func before(script, a, b string) bool {
+	i, j := strings.Index(script, a), strings.Index(script, b)
+	return i >= 0 && j > i
 }
 
 // runsGo matches a step that runs Go on the runner. make counts, since the Makefile runs go env as it loads.
@@ -404,15 +430,15 @@ func TestReleaseWorkflow(t *testing.T) {
 	if w.Concurrency.CancelInProgress {
 		t.Error("a new run cancels a release in progress")
 	}
-	// before reports whether job a needs job b, directly or not.
-	var before func(a, b string, seen map[string]bool) bool
-	before = func(a, b string, seen map[string]bool) bool {
+	// after reports whether job a needs job b, directly or not.
+	var after func(a, b string, seen map[string]bool) bool
+	after = func(a, b string, seen map[string]bool) bool {
 		if seen[a] {
 			return false
 		}
 		seen[a] = true
 		for _, n := range w.Jobs[a].Needs {
-			if n == b || before(n, b, seen) {
+			if n == b || after(n, b, seen) {
 				return true
 			}
 		}
@@ -436,20 +462,69 @@ func TestReleaseWorkflow(t *testing.T) {
 		}
 	}
 	for name, job := range w.Jobs {
-		if name != "gate" && !before(name, "gate", map[string]bool{}) {
+		if name != "gate" && !after(name, "gate", map[string]bool{}) {
 			t.Errorf("job %s does not need gate", name)
 		}
 		w := writes(job.Permissions)
 		if len(w) == 0 {
 			continue
 		}
-		if !before(name, "test", map[string]bool{}) {
+		if !after(name, "test", map[string]bool{}) {
 			t.Errorf("job %s holds %v and does not need test", name, w)
 		}
 		for _, s := range job.Steps {
 			if strings.HasPrefix(s.Uses, "actions/setup-go@") || runsGo.MatchString(s.Run) {
 				t.Errorf("job %s holds %v and runs Go: %s%s", name, w, s.Uses, s.Run)
 			}
+		}
+	}
+
+	// Requirement 20: gate checks the three, and each push checks its own right before it.
+	if gate.step("absent.sh oci", "absent.sh release") < 0 {
+		t.Error("gate does not check that the version is absent")
+	}
+	publish := w.Jobs["publish"]
+	chart := publish.step("helm push")
+	release := publish.step("gh release create")
+	tags := publish.step("tags.sh")
+	if chart < 0 || release < 0 || tags < 0 {
+		t.Fatalf("publish: the chart's push at step %d, the release at %d, the tags at %d", chart, release, tags)
+	}
+	for _, c := range []struct {
+		i           int
+		check, push string
+	}{
+		{chart, "absent.sh oci", "helm push"},
+		{release, "absent.sh release", "gh release create"},
+		{tags, "absent.sh oci", "tags.sh"},
+	} {
+		if !before(publish.Steps[c.i].Run, c.check, c.push) {
+			t.Errorf("publish: %s is not checked right before it", c.push)
+		}
+	}
+	// Requirement 22: the tags last, once the image and the chart are signed.
+	if !(chart < release && release < tags) {
+		t.Errorf("publish: the chart's push at step %d, the release at %d, the tags at %d, want this order", chart, release, tags)
+	}
+	if !before(publish.Steps[chart].Run, "helm push", "cosign sign") {
+		t.Error("publish: the chart is not signed after its push")
+	}
+	if w.Jobs["image"].step("cosign sign") < 0 {
+		t.Error("image: the image is not signed")
+	}
+	// Requirement 23: every asset of the GitHub release is attested before the first push.
+	attest := -1
+	for i, s := range publish.Steps {
+		if strings.HasPrefix(s.Uses, "actions/attest@") {
+			attest = i
+		}
+	}
+	if attest < 0 || attest > chart {
+		t.Fatalf("publish: attestations at step %d, the chart's push at %d", attest, chart)
+	}
+	for _, f := range []string{"dist/*.tar.gz", "dist/*.zip", "dist/*.tgz", "dist/strait-crds.yaml", "dist/SHA256SUMS"} {
+		if !slices.Contains(strings.Fields(publish.Steps[attest].With["subject-path"]), f) {
+			t.Errorf("publish: %s is not attested", f)
 		}
 	}
 }
