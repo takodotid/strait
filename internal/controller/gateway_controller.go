@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -73,11 +74,18 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	if err := r.List(ctx, &exports); err != nil {
 		return ctrl.Result{}, err
 	}
+	// Each port once: the API server refuses a Service that lists a port twice. Of two Exports that hold one port, the
+	// first by namespace, then name, keeps it, as the gateway serves it (RFC#0005, requirement 31).
+	slices.SortFunc(exports.Items, func(a, b straitv1.Export) int {
+		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
+	})
 	direct := []corev1.ServicePort{tcpPort("control", site.Spec.Gateway.ControlPort)}
 	for _, e := range exports.Items {
-		if p := e.Status.GatewayPort; p > 0 {
-			direct = append(direct, tcpPort(fmt.Sprintf("x-%d", p), p))
+		p := e.Status.GatewayPort
+		if p <= 0 || slices.ContainsFunc(direct, func(sp corev1.ServicePort) bool { return sp.Port == p }) {
+			continue
 		}
+		direct = append(direct, tcpPort(fmt.Sprintf("x-%d", p), p))
 	}
 	var links straitv1.SiteLinkList
 	if err := r.List(ctx, &links); err != nil {
