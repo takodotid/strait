@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,7 @@ func (e *env) portsTogether(ctx context.Context, t *testing.T) {
 }
 
 // linkFailover: cutting the direct link moves site b's traffic to the wireguard link, and writes from b keep succeeding.
+// Every new connection from b that starts 5s or more after the cut reaches cluster-a (RFC0005 requirement 4).
 func (e *env) linkFailover(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b
 	for _, s := range e.sites() {
@@ -192,6 +194,11 @@ func (e *env) linkFailover(ctx context.Context, t *testing.T) {
 		t.Fatal(err)
 	}
 	defer w.Stop(context.Background())
+	dialer, err := startDialer(ctx, b, 4*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dialer.Stop(context.Background())
 	eventually(ctx, t, 30*time.Second, 200*time.Millisecond, "writes from b before the cut", func(context.Context) (bool, string) {
 		n := 0
 		for _, at := range w.attempts() {
@@ -230,6 +237,15 @@ func (e *env) linkFailover(ctx context.Context, t *testing.T) {
 		return run >= 5, fmt.Sprintf("%d writes in a row", run)
 	})
 
+	// New connections until 15s after the cut: ten seconds of them on the wireguard link.
+	select {
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	case <-time.After(time.Until(cut.Add(15 * time.Second))):
+	}
+	dials := dialer.Stop(ctx)
+	e.checkNewConnections(t, dials, cut, clusterOf(a))
+
 	if err := e.restore(ctx, cutDirect); err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +267,39 @@ func (e *env) linkFailover(ctx context.Context, t *testing.T) {
 	// RFC0005 requirement 4 gives a new connection the next link within 5s; one write in flight may wait out its own 5s timeout.
 	if gap > 10*time.Second {
 		t.Errorf("writes from b stopped for %s across the failover, want under 10s", gap)
+	}
+}
+
+// checkNewConnections checks RFC0005 requirement 4 end to end: every new connection that starts 5s or more after the
+// cut reaches the cluster. It records when the last connection that failed started, from the cut.
+func (e *env) checkNewConnections(t *testing.T, dials []attempt, cut time.Time, cluster string) {
+	t.Helper()
+	slices.SortFunc(dials, func(x, y attempt) int { return x.start.Compare(y.start) })
+	var after []attempt
+	for _, d := range dials {
+		if !d.start.Before(cut) {
+			after = append(after, d)
+		}
+	}
+	t.Logf("site b new connections: %s", attemptSummary(after, cut))
+	lastFailed, late := time.Duration(0), 0
+	for _, d := range after {
+		since := d.start.Sub(cut)
+		if !d.ok || d.cluster != cluster {
+			lastFailed = since
+			continue
+		}
+		if since >= 5*time.Second {
+			late++
+		}
+	}
+	e.times.record(t, "2/new-connections-fail-until", lastFailed)
+	if lastFailed >= 5*time.Second {
+		t.Errorf("a new connection from b that started %.1fs after the cut did not reach %s, want every one from 5s on", lastFailed.Seconds(), cluster)
+	}
+	// One every 250ms from 5s to 15s after the cut.
+	if late < 20 {
+		t.Errorf("%d new connections from b reached %s 5s or more after the cut, want at least 20", late, cluster)
 	}
 }
 
@@ -640,6 +689,46 @@ func (e *env) twoWritable(ctx context.Context, t *testing.T) {
 	if err := b.c.Patch(ctx, pgService(e), client.RawPatch(types.MergePatchType, []byte(hold))); err != nil {
 		t.Fatal(err)
 	}
+	// Each start holds anew: the time the controller began to poll, and the peers read since, are in memory only
+	// (RFC0002 requirement 32). The second restart comes after a hold has ended, with pg-b routed.
+	e.restartHeld(ctx, t, "7/awaiting-")
+	e.restartHeld(ctx, t, "7/awaiting-again-")
+
+	up := time.Now()
+	if err := e.removeCut(ctx, b.node, cutSite); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "both sites route nowhere with Multiple", func(ctx context.Context) (bool, string) {
+		ok := true
+		var states []string
+		for _, s := range e.sites() {
+			ss, err := siteService(ctx, s, dbNamespace, "pg")
+			if err != nil {
+				ok = false
+				states = append(states, "site "+s.name+": "+err.Error())
+				continue
+			}
+			ok = ok && len(ss.Status.Route.Members) == 0 && conditionTrue(ss, straitv1.ConditionMultiple)
+			states = append(states, "site "+s.name+": "+describe(ss))
+		}
+		return ok, strings.Join(states, " | ")
+	})
+	e.times.record(t, "7/multiple", time.Since(up))
+	for _, s := range e.sites() {
+		ss, err := siteService(ctx, s, dbNamespace, "pg")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("site %s: %s", s.name, describe(ss))
+	}
+}
+
+// restartHeld restarts site b's controller while b is cut off from site a, with pg's startupHold. The new controller
+// routes nowhere with AwaitingPeers from its first decision, never routes pg-b before the hold ends, then routes pg-b.
+// The time to AwaitingPeers is recorded under the label and the site's name.
+func (e *env) restartHeld(ctx context.Context, t *testing.T, label string) {
+	t.Helper()
+	b := e.b
 	sp := startSampler(ctx, b, dbNamespace, "pg")
 	defer sp.Stop()
 	restarted := time.Now()
@@ -647,7 +736,7 @@ func (e *env) twoWritable(ctx context.Context, t *testing.T) {
 		t.Fatal(err)
 	}
 	d := eventually(ctx, t, 2*time.Minute, 250*time.Millisecond, "site b awaits site a", routeIs(b, dbNamespace, "pg", nil, straitv1.ReasonAwaitingPeers))
-	e.times.record(t, "7/awaiting-"+b.name, d)
+	e.times.record(t, label+b.name, d)
 	eventually(ctx, t, startupHold+30*time.Second, 250*time.Millisecond, "site b routes pg-b once the hold ends", routeIs(b, dbNamespace, "pg", []string{memberOf(b)}, straitv1.ReasonActive))
 	ended := time.Now()
 
@@ -679,33 +768,5 @@ func (e *env) twoWritable(ctx context.Context, t *testing.T) {
 	// Before the first decision of the new controller, the route is the old controller's, pg-b.
 	if !regexp.MustCompile(`^[ben]*w[wn]*b+$`).MatchString(seq) {
 		t.Errorf("site b routes in the order %q, want pg-b at most until the restart, then AwaitingPeers, then pg-b", seq)
-	}
-
-	up := time.Now()
-	if err := e.removeCut(ctx, b.node, cutSite); err != nil {
-		t.Fatal(err)
-	}
-	eventually(ctx, t, 30*time.Second, 500*time.Millisecond, "both sites route nowhere with Multiple", func(ctx context.Context) (bool, string) {
-		ok := true
-		var states []string
-		for _, s := range e.sites() {
-			ss, err := siteService(ctx, s, dbNamespace, "pg")
-			if err != nil {
-				ok = false
-				states = append(states, "site "+s.name+": "+err.Error())
-				continue
-			}
-			ok = ok && len(ss.Status.Route.Members) == 0 && conditionTrue(ss, straitv1.ConditionMultiple)
-			states = append(states, "site "+s.name+": "+describe(ss))
-		}
-		return ok, strings.Join(states, " | ")
-	})
-	e.times.record(t, "7/multiple", time.Since(up))
-	for _, s := range e.sites() {
-		ss, err := siteService(ctx, s, dbNamespace, "pg")
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Logf("site %s: %s", s.name, describe(ss))
 	}
 }

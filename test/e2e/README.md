@@ -65,12 +65,12 @@ They run in this order on one fixture and stop at the first failure.
 | envoy-not-ready | Envoy of the active gateway not ready | The Envoy container of site a's active gateway replica is paused. The standby takes the gateway Lease, and a write from site b lands on `cluster-a` again. Then Envoy resumes. |
 | gateway-handover | A handover at the site whose wireguard link waits | With the direct link cut, site a's active gateway pod is deleted. A write from site b lands on `cluster-a` within 8s of the standby taking the gateway Lease. |
 | gateway-rollout | A rollout of the gateway | Site a's gateway Deployment restarts, as an upgrade rolls it. Only the active pod has a deletion cost, and the rollout moves the gateway Lease once. |
-| 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. |
+| 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. A new connection from b every 250ms: each one that starts 5s or more after the cut reaches `cluster-a` (RFC0005 requirement 4). |
 | 3 | Switchover with tokens | Site a stops naming `pg-a` within one 500ms sample of the demotion patch, site b within `peerTimeout`. `pg-b` never shows before the promotion patch. Both sites pass through nowhere, then route `pg-b`. |
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |
-| 7 | Two writable members | Site b comes back with `cluster-b` still primary, still cut off from site a, and its controller restarts. With `startupHold: 30s` on `pg`, site b routes nowhere with `AwaitingPeers` and never to `pg-b` until the hold ends, then to `pg-b`. Once the cut is removed, within 30s both sites route nowhere and the `Multiple` condition is `True`. |
+| 7 | Two writable members | Site b comes back with `cluster-b` still primary, still cut off from site a, and its controller restarts. With `startupHold: 30s` on `pg`, site b routes nowhere with `AwaitingPeers` and never to `pg-b` until the hold ends, then to `pg-b`. The controller restarts again, and holds again: every start begins a new hold (RFC0002 requirement 32). Once the cut is removed, within 30s both sites route nowhere and the `Multiple` condition is `True`. |
 | rbac | Least privilege | No Strait controller or gateway agent logged a `forbidden` request, though the controller writes Services and EndpointSlices in `db`, `web` and `strait-system` only. |
 
 ## Output
