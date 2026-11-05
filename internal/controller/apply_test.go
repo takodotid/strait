@@ -576,42 +576,60 @@ func TestSliceAddressFamilyChange(t *testing.T) {
 	}
 }
 
-// The slice of a new address type is written also while the cache still shows the deleted one (issue #38, items 1
-// and 2).
+// The slice of a new address type is written also while the cache still shows the deleted one: one that still has
+// an endpoint, or one with none, as a release without this fix leaves it (issue #38, items 1 and 2).
 func TestSliceAddressFamilyChangeWhileCacheLags(t *testing.T) {
-	f := &faults{}
-	r, c := routedToA(t, f)
-	var before discoveryv1.EndpointSlice
-	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &before); err != nil {
-		t.Fatal(err)
-	}
-	var eps discoveryv1.EndpointSlice
-	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
-		t.Fatal(err)
-	}
-	eps.AddressType = discoveryv1.AddressTypeIPv6
-	eps.Endpoints = []discoveryv1.Endpoint{{Addresses: []string{"fd00::1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}}
-	if err := c.Update(context.Background(), &eps); err != nil {
-		t.Fatal(err)
-	}
-	cache := &lagging{Client: c, old: map[string]*discoveryv1.EndpointSlice{"web-web-a": &before}}
-	r.Client, r.Reader, r.APIReader = cache, cache, c
-	f.arm(0)
-	if err := reconcileWeb(r); err != nil {
-		t.Fatal(err)
-	}
-	f.disarm()
-	var after discoveryv1.EndpointSlice
-	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &after); err != nil {
-		t.Fatal(err)
-	}
-	if after.AddressType != discoveryv1.AddressTypeIPv6 || !slices.Equal(sliceAddresses(after), []string{"fd00::1"}) {
-		t.Fatalf("after: address type %s, addresses %v; want IPv6, [fd00::1]", after.AddressType, sliceAddresses(after))
-	}
-	if del, create := slices.Index(f.writes, "delete *v1.EndpointSlice web-web-a"), slices.Index(f.writes, "create *v1.EndpointSlice web-web-a"); del < 0 || create < del {
-		t.Fatalf("writes %v, want a delete of web-web-a, then a create", f.writes)
-	}
-	if applied := meta.FindStatusCondition(status(t, c).Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue {
-		t.Fatalf("Applied = %+v, want True", applied)
+	for _, tc := range []struct {
+		name string
+		// empty empties the slice in place before the change, as a release without the fix leaves it.
+		empty bool
+	}{
+		{"old slice with an endpoint", false},
+		{"old slice with no endpoint", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &faults{}
+			r, c := routedToA(t, f)
+			var before discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &before); err != nil {
+				t.Fatal(err)
+			}
+			if tc.empty {
+				before.Endpoints = nil
+				if err := c.Update(context.Background(), &before); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var eps discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
+				t.Fatal(err)
+			}
+			eps.AddressType = discoveryv1.AddressTypeIPv6
+			eps.Endpoints = []discoveryv1.Endpoint{{Addresses: []string{"fd00::1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}}
+			if err := c.Update(context.Background(), &eps); err != nil {
+				t.Fatal(err)
+			}
+			cache := &lagging{Client: c, old: map[string]*discoveryv1.EndpointSlice{"web-web-a": &before}}
+			r.Client, r.Reader, r.APIReader = cache, cache, c
+			f.arm(0)
+			if err := reconcileWeb(r); err != nil {
+				t.Fatal(err)
+			}
+			f.disarm()
+			var after discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &after); err != nil {
+				t.Fatalf("no slice of web-a after the decision: %v; writes %v", err, f.writes)
+			}
+			if after.AddressType != discoveryv1.AddressTypeIPv6 || !slices.Equal(sliceAddresses(after), []string{"fd00::1"}) {
+				t.Fatalf("after: address type %s, addresses %v; want IPv6, [fd00::1]", after.AddressType, sliceAddresses(after))
+			}
+			if del, create := slices.Index(f.writes, "delete *v1.EndpointSlice web-web-a"), slices.Index(f.writes, "create *v1.EndpointSlice web-web-a"); del < 0 || create < del {
+				t.Fatalf("writes %v, want a delete of web-web-a, then a create", f.writes)
+			}
+			st := status(t, c)
+			if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue || st.Route.Endpoints != 1 {
+				t.Fatalf("Applied = %+v, route %+v; want True with 1 endpoint", applied, st.Route)
+			}
+		})
 	}
 }

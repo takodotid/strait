@@ -558,7 +558,9 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	for _, member := range slices.Sorted(maps.Keys(targets)) {
 		t := targets[member]
 		// A slice's address type cannot change. A slice that would hold none of the member's addresses is deleted,
-		// and written again with their address type (issue #38).
+		// and written again with their address type (issue #38). The cache can still show the deleted slice, so the
+		// new one is written over what the API server holds.
+		deleted := false
 		if name := memberObjectName(svc, member); !hasFamily(t.addresses, a.slices[name].AddressType) {
 			es := a.slices[name]
 			if err := r.Delete(ctx, &es); client.IgnoreNotFound(err) != nil {
@@ -566,8 +568,9 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 				return a
 			}
 			delete(a.slices, name)
+			deleted = true
 		}
-		es, err := r.writeSlice(ctx, svc, member, t)
+		es, err := r.writeSlice(ctx, svc, member, t, deleted)
 		if err != nil {
 			a.err = err
 			return a
@@ -581,9 +584,14 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 // writeSlice writes the EndpointSlice of one routed member. Right after the controller's own last write of the slice,
 // the cache may not show that write yet: a create then finds that the slice exists, and an update finds a newer
 // version, or none after a delete. The slice is then read from the API server, and written once more (issue #38).
-func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target) (*discoveryv1.EndpointSlice, error) {
-	es, err := r.upsertSlice(ctx, r.Client, svc, member, t)
-	if r.APIReader != nil && (apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err) || apierrors.IsNotFound(err)) {
+// Live reads it from the API server at once, as after the controller deleted it.
+func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool) (*discoveryv1.EndpointSlice, error) {
+	c := r.Client
+	if live && r.APIReader != nil {
+		c = liveReads{Client: r.Client, live: r.APIReader}
+	}
+	es, err := r.upsertSlice(ctx, c, svc, member, t)
+	if !live && r.APIReader != nil && (apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err) || apierrors.IsNotFound(err)) {
 		es, err = r.upsertSlice(ctx, liveReads{Client: r.Client, live: r.APIReader}, svc, member, t)
 	}
 	if err != nil {
