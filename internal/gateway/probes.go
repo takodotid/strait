@@ -7,10 +7,17 @@ import (
 	"time"
 )
 
-// Probes serves /healthz, 200 while the process runs, and /readyz, 200 while Envoy's admin /ready answers 200.
-func Probes(envoyAdmin string, c *http.Client) http.Handler {
+// Probes serves /healthz, 200 unless alive returns an error, and /readyz, 200 while Envoy's admin /ready answers 200.
+// A nil alive always passes.
+func Probes(envoyAdmin string, c *http.Client, alive func(time.Time) error) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		if alive != nil {
+			if err := alive(time.Now()); err != nil {
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
 		_, _ = io.WriteString(w, "ok\n")
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

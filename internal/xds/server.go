@@ -52,6 +52,8 @@ type Server struct {
 	// build serializes rebuilds, so an older model never replaces a newer one.
 	build sync.Mutex
 	mu    sync.Mutex
+	// due is when the rebuild loop must next begin a turn. Zero before Start.
+	due time.Time
 	// streams maps an open stream to its node ID.
 	streams map[int64]string
 	// sent holds, by stream and type URL, the nonce and version of the last response.
@@ -125,9 +127,33 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 }
 
+// LoopGrace is how much longer than its own timing the rebuild loop may take before it counts as stuck. Tests shorten
+// it.
+var LoopGrace = 30 * time.Second
+
+// Alive returns an error once the rebuild loop is overdue: more than twice the resync period, plus 30s, after its
+// last turn began. A rebuild reads only the controller's cache, and hands each node's configuration to its stream
+// without waiting for the node, so neither a slow API server nor a gateway that does not answer delays it. Before
+// Start, it returns nil. now must come from time.Now.
+func (s *Server) Alive(now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.due.IsZero() || !now.After(s.due) {
+		return nil
+	}
+	return fmt.Errorf("the xDS rebuild loop is %s overdue", now.Sub(s.due).Round(time.Millisecond))
+}
+
+func (s *Server) turn(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.due = now.Add(2*resync + LoopGrace)
+}
+
 func (s *Server) loop(ctx context.Context) {
 	tick := time.NewTicker(resync)
 	defer tick.Stop()
+	s.turn(time.Now())
 	for {
 		select {
 		case <-ctx.Done():
@@ -144,6 +170,7 @@ func (s *Server) loop(ctx context.Context) {
 			default:
 			}
 		}
+		s.turn(time.Now())
 		s.rebuild(ctx, s.nodes())
 	}
 }

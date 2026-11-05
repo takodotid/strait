@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -215,7 +218,7 @@ func TestStatusPatchCarriesFalse(t *testing.T) {
 
 func TestProbes(t *testing.T) {
 	up := &atomic.Bool{}
-	h := Probes(envoy(t, up), http.DefaultClient)
+	h := Probes(envoy(t, up), http.DefaultClient, nil)
 	code := func(path string) int {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -585,5 +588,145 @@ func TestLeaseTimingDefaults(t *testing.T) {
 	site.Spec.Gateway.Lease.RenewDeadline = metav1.Duration{Duration: 3 * time.Second}
 	if got, want := LeaseTiming(site), (Timing{6 * time.Second, 3 * time.Second, time.Second}); got != want {
 		t.Errorf("renewDeadline set: %+v, want %+v", got, want)
+	}
+}
+
+// leadingAgent leads with one WireGuard interface in place. Once blockWrites is set, every write to the API server
+// hangs until the test ends, and Envoy's /clusters hangs too, while its /ready answers.
+func leadingAgent(t *testing.T) (a *Agent, k *fakeKernel, blockWrites *atomic.Bool) {
+	t.Helper()
+	SessionGrace = 300 * time.Millisecond
+	t.Cleanup(func() { SessionGrace = 30 * time.Second })
+	hung := make(chan struct{})
+	blockWrites = &atomic.Bool{}
+	block := func(ctx context.Context) error {
+		if !blockWrites.Load() {
+			return nil
+		}
+		select {
+		case <-hung:
+		case <-ctx.Done():
+		}
+		return context.DeadlineExceeded
+	}
+	key := newKey(t)
+	wl := wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")
+	p := peer("b", newKey(t).PublicKey().String())
+	a, k, _ = newAgent(t, testSite(), keySecret(key.String()), &wl, &p)
+	inner := a.Client
+	a.Client = interceptor.NewClient(inner.(client.WithWatch), interceptor.Funcs{
+		SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+			if err := block(ctx); err != nil {
+				return err
+			}
+			return c.SubResource(sub).Patch(ctx, obj, patch, opts...)
+		},
+	})
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ready" {
+			_, _ = io.WriteString(w, "LIVE\n")
+			return
+		}
+		select {
+		case <-hung:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(admin.Close)
+	t.Cleanup(func() { close(hung) })
+	a.EnvoyAdmin = admin.URL
+
+	l := &lease{Interface: &recordLock{update: func(resourcelock.LeaderElectionRecord) {}}, before: a.stopLeading}
+	renewing(t, l)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		a.lead(ctx, l, func() {})
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+	waitForInterfaces(t, k, 1)
+	return a, k, blockWrites
+}
+
+// The agent's liveness check passes while the API server and Envoy's admin hang: its session loop waits for neither.
+// The test shortens the grace from 30s to 300ms: with that grace, a loop that missed one turn would fail it.
+func TestAgentAliveWhileAPIServerAndEnvoyHang(t *testing.T) {
+	a, _, blockWrites := leadingAgent(t)
+	blockWrites.Store(true)
+	for end := time.Now().Add(3 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		if !a.Leading() {
+			t.Fatal("the agent stopped leading")
+		}
+		if err := a.Alive(time.Now()); err != nil {
+			t.Fatalf("liveness failed: %v", err)
+		}
+	}
+}
+
+// The agent's liveness check fails while a change of the interfaces hangs, and passes once it ends. A standby passes.
+func TestAgentAliveFailsWhenTheKernelHangs(t *testing.T) {
+	standby, _, _ := newAgent(t, testSite())
+	if err := standby.Alive(time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("a standby: %v", err)
+	}
+	a, _, _ := leadingAgent(t)
+	a.kernel.Lock()
+	time.Sleep(SessionGrace + 2*SessionInterval)
+	err := a.Alive(time.Now())
+	a.kernel.Unlock()
+	if err == nil {
+		t.Fatal("liveness passed while the kernel hung")
+	}
+	t.Logf("liveness: %v", err)
+	time.Sleep(2 * SessionInterval)
+	if err := a.Alive(time.Now()); err != nil {
+		t.Fatalf("after the kernel answered: %v", err)
+	}
+	h := Probes(a.EnvoyAdmin, http.DefaultClient, func(time.Time) error { return errors.New("stuck") })
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("/healthz = %d while stuck, want 503", rec.Code)
+	}
+}
+
+// A link whose health or active state changes is logged at the info level. Another change of its status is logged
+// at V(1) only.
+func TestLinkChangesLogAtInfo(t *testing.T) {
+	var objs []client.Object
+	for _, l := range fixtureLinks() {
+		objs = append(objs, &l)
+	}
+	a, _, _ := newAgent(t, objs...)
+	var mu sync.Mutex
+	var lines []string
+	a.Log = funcr.New(func(_, args string) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, args)
+	}, funcr.Options{Verbosity: 0})
+	logged := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		out := lines
+		lines = nil
+		return out
+	}
+	up := &atomic.Bool{}
+	a.EnvoyAdmin = envoy(t, up)
+	a.setLinks(map[string]string{"b-wg": links.Interface("b-wg")}, nil)
+	ctx := context.Background()
+
+	// Envoy is down: each link's status is written for the first time, unhealthy as before.
+	a.reportHealth(ctx)
+	if got := logged(); len(got) != 0 {
+		t.Fatalf("logged at info with no change of health: %q", got)
+	}
+	up.Store(true)
+	a.reportHealth(ctx)
+	got := strings.Join(logged(), "\n")
+	if !strings.Contains(got, `"link"="b-wg"`) || !strings.Contains(got, `"healthy"=true`) || !strings.Contains(got, `"active"=true`) {
+		t.Fatalf("link b-wg turned healthy and active, logged at info: %q", got)
 	}
 }

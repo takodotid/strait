@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -66,6 +67,8 @@ type GatewayReconciler struct {
 	// ConfigRejections returns one line for each gateway pod and resource type whose last configuration the pod's
 	// Envoy rejected. Nil reports none.
 	ConfigRejections func() []string
+	// Recorder records an event on the Site at each change of the pod that holds the gateway Lease. Nil records none.
+	Recorder events.EventRecorder
 
 	// written keeps what the last status write of the Site returned, until the cache shows it.
 	written written[straitv1.Site, *straitv1.Site]
@@ -143,6 +146,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		if _, err := r.written.updateStatus(ctx, r.Client, site); err != nil {
 			return ctrl.Result{}, err
 		}
+		r.handover(ctx, site, old.Gateway.ActivePod, pod)
 	}
 	// A failure here does not end the reconcile: the requeue below must stay, since no event marks the Lease's expiry.
 	if err := r.syncDeletionCost(ctx, pod); err != nil {
@@ -154,6 +158,27 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		next = left + 10*time.Millisecond
 	}
 	return ctrl.Result{RequeueAfter: next}, nil
+}
+
+// ReasonGatewayHandover is the reason of the event at each change of the pod that holds the gateway Lease.
+const ReasonGatewayHandover = "GatewayHandover"
+
+// handover records an event and logs when the pod that holds the gateway Lease changed, as the Site's status shows
+// it. A handover resets every connection across the site's gateway (RFC#0005). A Lease that a pod releases and
+// another takes shows as two events: one with no holder, a Warning, then one with the new holder.
+func (r *GatewayReconciler) handover(ctx context.Context, site *straitv1.Site, before, after string) {
+	if before == after {
+		return
+	}
+	log.FromContext(ctx).Info("gateway handover", "before", before, "after", after)
+	if r.Recorder == nil {
+		return
+	}
+	if after == "" {
+		r.Recorder.Eventf(site, nil, corev1.EventTypeWarning, ReasonGatewayHandover, "Handover", "no gateway pod holds the gateway Lease; before, %s did", before)
+		return
+	}
+	r.Recorder.Eventf(site, nil, corev1.EventTypeNormal, ReasonGatewayHandover, "Handover", "gateway pod %s holds the gateway Lease; before, %s", after, cmp.Or(before, "none"))
 }
 
 // ConditionGatewayConfig is the Site condition that says whether every gateway Envoy accepted its configuration.

@@ -1,0 +1,78 @@
+# Alert rules for one site's Prometheus (docs/metrics.md). Each "for" outlasts the transients that Strait rides out
+# on its own: a failover of a link, a handover of the gateway, a hold of an Unknown member.
+- alert: StraitNoController
+  expr: max(leader_election_master_status{name="strait-controller"}) < 1 or absent(leader_election_master_status{name="strait-controller"})
+  for: 2m
+  labels:
+    severity: critical
+  annotations:
+    summary: No Strait controller leads. Routes are frozen, and the peers count this site's members Unknown.
+- alert: StraitPeerUnreachable
+  expr: strait_peer_reachable == 0
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "The document of peer {{ $labels.peer }} is stale: its members count as Unknown."
+- alert: StraitNoActiveLink
+  expr: max by (peer) (strait_link_active) == 0
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "No healthy link to peer {{ $labels.peer }}."
+- alert: StraitRouteNowhere
+  expr: strait_siteservice_endpoints == 0
+  for: 2m
+  labels:
+    severity: critical
+  annotations:
+    summary: "{{ $labels.namespace }}/{{ $labels.siteservice }} routes nowhere. strait explain names the reason."
+- alert: StraitNotApplied
+  expr: strait_siteservice_condition{condition="Applied"} == 0
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "The controller cannot apply the route of {{ $labels.namespace }}/{{ $labels.siteservice }}."
+- alert: StraitNoActiveGateway
+  expr: strait_site_condition{condition="GatewayActive"} == 0
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: No ready gateway pod holds the gateway Lease. Remote routes and imports carry no traffic.
+- alert: StraitGatewayConfigRejected
+  expr: strait_site_condition{condition="GatewayConfig"} == 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: A gateway Envoy rejected its configuration. The Site's GatewayConfig condition names it.
+- alert: StraitDecisionsStalled
+  expr: time() - strait_siteservice_last_decision_timestamp_seconds > 60
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "The controller has not decided the route of {{ $labels.namespace }}/{{ $labels.siteservice }} for over a minute. It decides every 2s: the API server may be slow."
+- alert: StraitStatusUnreadable
+  expr: strait_status_read_failed == 1
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "The controller's metrics cannot read the {{ $labels.kind }}: their metrics are missing, and alerts on them stay silent."
+- alert: StraitGatewayHandovers
+  expr: increase(strait_gateway_lease_transitions_total[1h]) > 3
+  labels:
+    severity: warning
+  annotations:
+    summary: The gateway Lease moved more than 3 times in an hour. Each move resets every connection across the site's gateway.
+- alert: StraitGatewayNotConfigured
+  expr: envoy_control_plane_connected_state == 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Gateway pod {{ $labels.pod }} has no xDS connection to the controller. Its Envoy keeps its last configuration."

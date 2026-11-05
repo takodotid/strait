@@ -969,3 +969,24 @@ func TestMemberReasonOfAStalePeer(t *testing.T) {
 		})
 	}
 }
+
+// Each decision records its time for the metric strait_siteservice_last_decision_timestamp_seconds, and a deleted
+// SiteService's time goes with it.
+func TestDecisionsRecordTheirTime(t *testing.T) {
+	r, c := reconciler(t, peers{}, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))...)
+	key := types.NamespacedName{Namespace: "app", Name: "web"}
+	if got := r.Decisions(); len(got) != 0 {
+		t.Fatalf("before a decision: %v", got)
+	}
+	run(t, r)
+	if got := r.Decisions(); !got[key].Equal(r.Now()) || len(got) != 1 {
+		t.Fatalf("after a decision: %v, want %s at %v", got, key, r.Now())
+	}
+	if err := c.Delete(context.Background(), &straitv1.SiteService{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web"}}); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	if got := r.Decisions(); len(got) != 0 {
+		t.Fatalf("after the delete: %v", got)
+	}
+}

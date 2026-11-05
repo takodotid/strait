@@ -27,6 +27,8 @@ type Host struct {
 	Priority                int
 	FailedActiveHealthCheck bool
 	EDSHealth               string
+	// Connections is the number of open connections to the host, Envoy's cx_active.
+	Connections int64
 }
 
 // Healthy reports whether the host passes its active health check and EDS does not mark it unhealthy.
@@ -41,8 +43,13 @@ type clusterStatuses struct {
 					Address string `json:"address"`
 				} `json:"socket_address"`
 			} `json:"address"`
-			Hostname     string `json:"hostname"`
-			Priority     int    `json:"priority"`
+			Hostname string `json:"hostname"`
+			Priority int    `json:"priority"`
+			Stats    []struct {
+				Name string `json:"name"`
+				// Value is a uint64, which the JSON of protobuf writes as a string. Envoy leaves out a 0.
+				Value json.Number `json:"value"`
+			} `json:"stats"`
 			HealthStatus struct {
 				FailedActiveHealthCheck bool   `json:"failed_active_health_check"`
 				EDSHealthStatus         string `json:"eds_health_status"`
@@ -61,13 +68,19 @@ func ParseClusters(b []byte) (map[string][]Host, error) {
 	for _, c := range cs.ClusterStatuses {
 		hosts := []Host{}
 		for _, h := range c.HostStatuses {
-			hosts = append(hosts, Host{
+			host := Host{
 				Address:                 h.Address.SocketAddress.Address,
 				Hostname:                h.Hostname,
 				Priority:                h.Priority,
 				FailedActiveHealthCheck: h.HealthStatus.FailedActiveHealthCheck,
 				EDSHealth:               h.HealthStatus.EDSHealthStatus,
-			})
+			}
+			for _, st := range h.Stats {
+				if st.Name == "cx_active" {
+					host.Connections, _ = st.Value.Int64()
+				}
+			}
+			hosts = append(hosts, host)
 		}
 		out[c.Name] = hosts
 	}

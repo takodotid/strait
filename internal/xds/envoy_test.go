@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +35,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/gateway"
 )
 
 // probeImage runs the probes next to Envoy, pinned by the digest of its multi-platform index.
@@ -473,4 +476,101 @@ func TestEnvoyRejection(t *testing.T) {
 		}
 		return ""
 	})
+}
+
+// The Envoy stats that the gateway agent serves have no address or port as a label value, and no object's name in a
+// metric's name, also for objects whose names hold a dot. Envoy's /clusters counts the open connections of an import
+// at its link's address, which the agent sums per link.
+func TestEnvoyStatsLabels(t *testing.T) {
+	m := loopback()
+	m.Exports = append(m.Exports, Export{Namespace: "app", Name: "a.b", Port: 30903, Addresses: []string{"127.0.0.1"}, TargetPort: AdminPort})
+	m.Imports = append(m.Imports, Import{Namespace: "app", Name: "x.y-b", Port: 15002, Peer: "b", Export: "a.b", RemotePort: 30903})
+	snap, err := Build(m, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := staticConfig(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, p := runEnvoy(t, configDir(t, map[string][]byte{"envoy.yaml": cfg}), "none")
+	p.ready()
+	waitHealthy(p, "import/app/x.y-b", map[string]string{"127.0.0.1:30903": "healthy"})
+	expect(t, p, "GET", "http://127.0.0.1:15002/ready", 200, "LIVE")
+	expect(t, p, "GET", "http://127.0.0.1:14999/peers/b/healthz", 200, "ok")
+	// One connection through the import stays open while the stats are read.
+	if out, err := docker("exec", "-d", p.name, "sh", "-c", "sleep 60 | nc 127.0.0.1 15002"); err != nil {
+		t.Fatalf("open a connection: %v\n%s", err, out)
+	}
+
+	_, body := p.get("http://127.0.0.1:9901/stats/prometheus?filter=" + url.QueryEscape(gateway.EnvoyStats))
+	names := map[string]bool{}
+	values := map[string]map[string]bool{}
+	sample := regexp.MustCompile(`^([a-z_]+)(\{(.*)\})? `)
+	label := regexp.MustCompile(`([a-z_]+)="([^"]*)"`)
+	for _, line := range strings.Split(body, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := sample.FindStringSubmatch(line)
+		if m == nil {
+			t.Errorf("not a sample: %q", line)
+			continue
+		}
+		names[m[1]] = true
+		for _, l := range label.FindAllStringSubmatch(m[3], -1) {
+			if values[l[1]] == nil {
+				values[l[1]] = map[string]bool{}
+			}
+			values[l[1]][l[2]] = true
+			v := strings.ReplaceAll(l[2], "_", ":")
+			if _, err := netip.ParseAddrPort(v); err == nil || isIP(l[2]) {
+				t.Errorf("label %s=%q is an address", l[1], l[2])
+			}
+			if host, _, ok := strings.Cut(l[2], "_"); ok && isIP(host) {
+				t.Errorf("label %s=%q holds an address", l[1], l[2])
+			}
+		}
+	}
+	family := regexp.MustCompile(`^envoy_(cluster|tcp|http|server|control_plane|cluster_manager|listener_manager)_[a-z_]+$`)
+	for n := range names {
+		if !family.MatchString(n) {
+			t.Errorf("metric %s is not one of EnvoyStats' families", n)
+		}
+		for _, part := range []string{"admin", "empty", "app", "a_b", "x_y", "peer"} {
+			if strings.Contains(n, part) {
+				t.Errorf("metric %s holds the name of an object", n)
+			}
+		}
+	}
+	for _, want := range []string{"export/app/a_b", "import/app/x_y-b", "import/app/admin-b", "peer/b", "controller"} {
+		if !values["envoy_cluster_name"][want] {
+			t.Errorf("no stats of cluster %s; cluster names: %v", want, values["envoy_cluster_name"])
+		}
+	}
+	if !values["envoy_tcp_prefix"]["import/app/x_y-b"] {
+		t.Errorf("no stats of the TCP proxy import/app/x_y-b; prefixes: %v", values["envoy_tcp_prefix"])
+	}
+	for _, want := range []string{"envoy_cluster_upstream_cx_active", "envoy_cluster_upstream_cx_rx_bytes_total", "envoy_cluster_membership_healthy",
+		"envoy_tcp_downstream_cx_total", "envoy_server_live"} {
+		if !names[want] {
+			t.Errorf("no metric %s", want)
+		}
+	}
+	t.Logf("%d metrics, %d samples", len(names), strings.Count(body, "\n")-2*len(names))
+
+	_, js := p.get("http://127.0.0.1:9901/clusters?format=json")
+	clusters, err := gateway.ParseClusters([]byte(js))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var open int64
+	for _, h := range clusters["import/app/x.y-b"] {
+		if h.Address == "127.0.0.1" {
+			open = h.Connections
+		}
+	}
+	if open != 1 {
+		t.Errorf("import/app/x.y-b has %d open connections at 127.0.0.1, want 1: %v", open, clusters["import/app/x.y-b"])
+	}
 }

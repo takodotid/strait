@@ -54,6 +54,13 @@ spec:
     # Probes, from the kubelet.
     - ports:
         - {port: 8090}
+    # Metrics.
+    - ports:
+        - {port: 8091}
+      {{- with .Values.networkPolicy.metricsFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     - from:
         - namespaceSelector: {}
     {{- with .Values.networkPolicy.gateway.peerCIDRs }}

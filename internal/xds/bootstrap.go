@@ -1,6 +1,9 @@
 package xds
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Fixed values of the gateway's Envoy.
 const (
@@ -10,6 +13,8 @@ const (
 	NodeCluster = "strait-gateway"
 	// AdminPort is Envoy's admin port, on 127.0.0.1 only.
 	AdminPort = 9901
+	// WatchdogKill is how long a thread of Envoy may not answer its watchdog before Envoy kills itself.
+	WatchdogKill = 60 * time.Second
 )
 
 // Bootstrap returns the Envoy bootstrap of the gateway. Everything else comes from the controller over ADS.
@@ -61,5 +66,12 @@ layered_runtime:
   layers:
   - name: static
     static_layer: {}
-`, NodeCluster, AdminPort, xdsAddress, xdsPort)
+# Envoy kills itself when a thread has not answered its watchdog for 60s, and the kubelet restarts it. Its admin
+# interface is on 127.0.0.1 only, so no liveness probe can reach it.
+watchdogs:
+  main_thread_watchdog:
+    kill_timeout: %ds
+  worker_watchdog:
+    kill_timeout: %ds
+`, NodeCluster, AdminPort, xdsAddress, xdsPort, int(WatchdogKill.Seconds()), int(WatchdogKill.Seconds()))
 }

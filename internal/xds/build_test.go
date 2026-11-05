@@ -449,3 +449,27 @@ func TestBuildErrors(t *testing.T) {
 		t.Error("a peer port equal to the control port was accepted")
 	}
 }
+
+// A cluster or a TCP proxy whose name holds a dot has a stat name with "_" in its place: Envoy's tags end a name at
+// its first dot. Other names are left as they were, so an upgrade changes no other cluster or listener.
+func TestBuildStatNames(t *testing.T) {
+	m := collect(t)
+	m.Exports = append(m.Exports, Export{Namespace: "app", Name: "a.b", Port: 30903, Addresses: []string{"10.0.0.1"}, TargetPort: 80})
+	snap := build(t, m)
+	cs := names[*cluster.Cluster](t, snap, resource.ClusterType)
+	ls := names[*listener.Listener](t, snap, resource.ListenerType)
+	for name, want := range map[string]string{"export/app/a.b": "export/app/a_b", "export/app/pg": ""} {
+		if got := cs[name].GetAltStatName(); got != want {
+			t.Errorf("cluster %s alt_stat_name = %q, want %q", name, got, want)
+		}
+	}
+	for name, want := range map[string]string{"export/app/a.b": "export/app/a_b", "export/app/pg": "export/app/pg"} {
+		var proxy tcpproxy.TcpProxy
+		if err := ls[name].GetFilterChains()[0].GetFilters()[0].GetTypedConfig().UnmarshalTo(&proxy); err != nil {
+			t.Fatal(err)
+		}
+		if proxy.GetStatPrefix() != want {
+			t.Errorf("listener %s stat_prefix = %q, want %q", name, proxy.GetStatPrefix(), want)
+		}
+	}
+}

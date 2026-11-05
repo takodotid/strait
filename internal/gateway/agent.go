@@ -73,8 +73,33 @@ type Agent struct {
 	problems map[string]string
 	logged   map[string]string
 	want     []Interface
+	// sessionTurn is when the leader's session loop last finished a turn. Zero while not leading.
+	sessionTurn time.Time
 	// kernel serializes the changes to the interfaces, so that no change acts on a read taken before another.
 	kernel sync.Mutex
+}
+
+// SessionGrace is how long the leader's session loop may go without a turn before the agent counts as stuck. The loop
+// turns every SessionInterval, and only waits for the kernel. Tests shorten it.
+var SessionGrace = 30 * time.Second
+
+// Alive returns an error while this replica leads and its session loop has not finished a turn for SessionGrace. The
+// loop reads the WireGuard interfaces through netlink, under the lock that every change of an interface holds, and
+// makes no request to the API server or Envoy. So it fails when a change of the interfaces hangs, and never for a
+// slow API server or a link that is down. A standby replica always passes. now must come from time.Now.
+func (a *Agent) Alive(now time.Time) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.cancel == nil || a.sessionTurn.IsZero() || now.Sub(a.sessionTurn) <= SessionGrace {
+		return nil
+	}
+	return fmt.Errorf("the leader's WireGuard session loop has not turned for %s", now.Sub(a.sessionTurn).Round(time.Millisecond))
+}
+
+func (a *Agent) turned(t time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.sessionTurn = t
 }
 
 // Run takes part in the gateway Lease until ctx ends, and re-joins the election each time the Lease is lost.
@@ -312,8 +337,13 @@ func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
 	wg.Go(func() { a.loop(ctx, WireGuardInterval, a.Changed, a.syncWireGuard) })
 	wg.Go(func() { a.loop(ctx, HealthInterval, nil, a.reportHealth) })
 	wg.Go(func() {
+		// The first sync, above, may wait for the API server. The loop's turns count from here.
+		a.turned(time.Now())
 		s := sessions{}
-		a.loop(ctx, SessionInterval, nil, func(ctx context.Context) { a.renewStale(ctx, s, time.Now) })
+		a.loop(ctx, SessionInterval, nil, func(ctx context.Context) {
+			a.renewStale(ctx, s, time.Now)
+			a.turned(time.Now())
+		})
 	})
 	wg.Go(func() {
 		a.loop(ctx, RetryPeriod/4, nil, func(context.Context) {
@@ -350,6 +380,7 @@ func (a *Agent) stopLeading() {
 	a.mu.Lock()
 	cancel, done := a.cancel, a.done
 	a.cancel, a.done = nil, nil
+	a.sessionTurn = time.Time{}
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -592,7 +623,13 @@ func (a *Agent) reportHealth(ctx context.Context) {
 			}
 			continue
 		}
-		a.Log.V(1).Info("SiteLink status", "link", l.Name, "healthy", st.Healthy, "active", st.Active)
+		log := a.Log.V(1)
+		if old.Status.Healthy != st.Healthy || old.Status.Active != st.Active {
+			// A link that fails, comes back, or starts or stops carrying the pair's traffic.
+			log = a.Log
+		}
+		log.Info("SiteLink status", "link", l.Name, "peer", l.Spec.Peer, "healthy", st.Healthy, "active", st.Active,
+			"reason", obs[l.Name].Reason, "message", obs[l.Name].Message)
 	}
 }
 

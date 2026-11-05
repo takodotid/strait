@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -508,5 +509,63 @@ func TestGatewayConfigCondition(t *testing.T) {
 	rejected = nil
 	if got := condition(); got.Status != metav1.ConditionTrue || got.Reason != "Accepted" || got.Message != "" {
 		t.Errorf("once accepted again: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+}
+
+// Each change of the pod that holds the gateway Lease records an event on the Site: Normal with a holder, Warning
+// with none. A controller that starts, and finds the holder that status names, records none.
+func TestGatewayHandoverEvents(t *testing.T) {
+	objs := activeGatewayPod()
+	gw1 := objs[1].DeepCopyObject().(*corev1.Pod)
+	gw1.Name, gw1.ResourceVersion = "gateway-1", ""
+	c := fakeClient(t, append(objs, gw1, gatewaySite(straitv1.ServiceExposure{}))...)
+	rec := events.NewFakeRecorder(10)
+	r := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, Recorder: rec}
+	next := func() string {
+		t.Helper()
+		select {
+		case e := <-rec.Events:
+			return e
+		default:
+			return ""
+		}
+	}
+	setHolder := func(holder string) {
+		t.Helper()
+		var l coordinationv1.Lease
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: GatewayLease}, &l); err != nil {
+			t.Fatal(err)
+		}
+		l.Spec.HolderIdentity = ptr.To(holder)
+		if err := c.Update(context.Background(), &l); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reconcileGateway(t, r)
+	if e := next(); e != "Normal GatewayHandover gateway pod gateway-0 holds the gateway Lease; before, none" {
+		t.Errorf("first holder: event %q", e)
+	}
+	reconcileGateway(t, r)
+	if e := next(); e != "" {
+		t.Errorf("no change: event %q", e)
+	}
+	setHolder("")
+	reconcileGateway(t, r)
+	if e := next(); e != "Warning GatewayHandover no gateway pod holds the gateway Lease; before, gateway-0 did" {
+		t.Errorf("released: event %q", e)
+	}
+	setHolder("gateway-1")
+	reconcileGateway(t, r)
+	if e := next(); e != "Normal GatewayHandover gateway pod gateway-1 holds the gateway Lease; before, none" {
+		t.Errorf("taken: event %q", e)
+	}
+	restarted := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, Recorder: rec}
+	reconcileGateway(t, restarted)
+	if e := next(); e != "" {
+		t.Errorf("after a restart: event %q", e)
+	}
+	if got := siteStatus(t, c).Gateway.ActivePod; got != "gateway-1" {
+		t.Errorf("activePod = %q", got)
 	}
 }

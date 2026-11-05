@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -31,11 +32,13 @@ import (
 )
 
 type options struct {
-	envoyAdmin string
-	probeAddr  string
-	probeIP    string
-	kubeconfig string
-	context    string
+	envoyAdmin  string
+	probeAddr   string
+	probeIP     string
+	metricsAddr string
+	logLevel    string
+	kubeconfig  string
+	context     string
 }
 
 func main() {
@@ -43,12 +46,19 @@ func main() {
 	fs := flag.NewFlagSet("strait-gateway", flag.ExitOnError)
 	fs.StringVar(&o.envoyAdmin, "envoy-admin", "http://127.0.0.1:9901", "base URL of Envoy's admin interface")
 	fs.StringVar(&o.probeAddr, "probe-addr", ":8090", "address that serves /healthz and /readyz")
-	fs.StringVar(&o.probeIP, "probe-ip", "", "IP address that the probe server binds to, in place of the host of --probe-addr; the chart sets the pod's own")
+	fs.StringVar(&o.probeIP, "probe-ip", "", "IP address that the probe server binds to, in place of the host of --probe-addr; the chart sets the pod's own. The metrics server binds to it too")
+	fs.StringVar(&o.metricsAddr, "metrics-addr", "", "address that serves the agent's metrics at /metrics and Envoy's at /stats/prometheus; empty serves none")
+	fs.StringVar(&o.logLevel, "log-level", "info", "error, info, or debug, which adds each write of a link's status and the details of each WireGuard session")
 	fs.StringVar(&o.kubeconfig, "kubeconfig", "", "path to a kubeconfig, to run outside a cluster")
 	fs.StringVar(&o.context, "context", "", "kubeconfig context, to run outside a cluster")
 	_ = fs.Parse(os.Args[1:])
 
-	log := logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, nil))
+	level, err := logLevel(o.logLevel)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	log := logr.FromSlogHandler(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	ctrllog.SetLogger(log)
 	klog.SetLogger(log)
 
@@ -70,9 +80,17 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 	httpc := &http.Client{Timeout: 2 * time.Second}
 	probeAddr, err := probeListenAddr(o.probeAddr, o.probeIP)
 	if err != nil {
-		return err
+		return fmt.Errorf("--probe-addr: %w", err)
 	}
-	probes := &http.Server{Addr: probeAddr, Handler: gateway.Probes(o.envoyAdmin, httpc), ReadHeaderTimeout: 5 * time.Second}
+	// The agent exists once the cache has synced. Until then, the liveness check passes.
+	var agent atomic.Pointer[gateway.Agent]
+	alive := func(now time.Time) error {
+		if a := agent.Load(); a != nil {
+			return a.Alive(now)
+		}
+		return nil
+	}
+	probes := &http.Server{Addr: probeAddr, Handler: gateway.Probes(o.envoyAdmin, httpc, alive), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := probes.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			log.Error(err, "probes")
@@ -140,11 +158,39 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 		Poke:       gateway.Poke,
 		Log:        log,
 	}
+	agent.Store(a)
+	if o.metricsAddr != "" {
+		addr, err := probeListenAddr(o.metricsAddr, o.probeIP)
+		if err != nil {
+			return fmt.Errorf("--metrics-addr: %w", err)
+		}
+		metrics := &http.Server{Addr: addr, Handler: gateway.Metrics(a), ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := metrics.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				log.Error(err, "metrics")
+			}
+		}()
+		defer func() { _ = metrics.Close() }()
+	}
 	return a.Run(ctx)
 }
 
-// probeListenAddr is the address of the probe server: addr, with ip as its host when ip is set. The chart gives the
-// pod's own address, so that a peer cannot reach the probe server through a WireGuard interface (RFC0007).
+// logLevel is the slog level of a --log-level value. logr's V(n) logs at slog level -n, so debug shows V(1) to V(4).
+func logLevel(s string) (slog.Level, error) {
+	switch s {
+	case "error":
+		return slog.LevelError, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	}
+	return 0, fmt.Errorf("--log-level %q: want error, info or debug", s)
+}
+
+// probeListenAddr is the address of the probe or the metrics server: addr, with ip as its host when ip is set. The
+// chart gives the pod's own address, so that a peer cannot reach either server through a WireGuard interface
+// (RFC0007).
 func probeListenAddr(addr, ip string) (string, error) {
 	if ip == "" {
 		return addr, nil
@@ -154,7 +200,7 @@ func probeListenAddr(addr, ip string) (string, error) {
 	}
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", fmt.Errorf("--probe-addr: %w", err)
+		return "", fmt.Errorf("%q: %w", addr, err)
 	}
 	return net.JoinHostPort(ip, port), nil
 }

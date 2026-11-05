@@ -109,8 +109,9 @@ The conditions of the `Site`:
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
 | Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
 | CloudNativePG watch | The controller logs `cloudnative-pg` at start. `enabled` follows `cnpg.enabled`. `watched` false with `enabled` true means CloudNativePG's CRDs were missing then: restart the controller. [Getting started, Prerequisites](getting-started.md#prerequisites). |
-| Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. |
-| Metrics | Port `metrics`, 8080, of the controller pod. The route, the conditions, peer reachability and link health: [RFC0002, Metrics](../rfcs/RFC0002.md#metrics). A route to nowhere shows as `strait_siteservice_endpoints` 0. |
+| Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. Each link that fails, comes back, or starts or stops carrying traffic logs `SiteLink status`. `gateway.logLevel: debug` logs every write of a link's status. |
+| Gateway handovers | `kubectl --context site-a get events -A --field-selector reason=GatewayHandover`. Each one resets every connection across the site's gateway. |
+| Metrics | Port `metrics`, 8080, of the controller pod, and 8091 of each gateway pod. Every metric, the scrape configuration and the alert rules: [Metrics and alerts](metrics.md). A route to nowhere shows as `strait_siteservice_endpoints` 0. |
 
 ## Runbooks
 

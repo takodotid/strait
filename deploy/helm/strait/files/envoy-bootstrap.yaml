@@ -45,3 +45,10 @@ layered_runtime:
   layers:
   - name: static
     static_layer: {}
+# Envoy kills itself when a thread has not answered its watchdog for 60s, and the kubelet restarts it. Its admin
+# interface is on 127.0.0.1 only, so no liveness probe can reach it.
+watchdogs:
+  main_thread_watchdog:
+    kill_timeout: 60s
+  worker_watchdog:
+    kill_timeout: 60s

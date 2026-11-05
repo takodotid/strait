@@ -65,7 +65,13 @@ type Poller struct {
 	started time.Time
 	// polled is true once the first round since Start has ended.
 	polled bool
+	// due is when the next round must have begun. Zero before Start.
+	due time.Time
 }
+
+// LoopGrace is how much longer than its own timing a round may take before the poller counts as stuck. Tests shorten
+// it.
+var LoopGrace = 30 * time.Second
 
 // Start polls every peer until ctx is cancelled.
 func (p *Poller) Start(ctx context.Context) error {
@@ -78,11 +84,21 @@ func (p *Poller) Start(ctx context.Context) error {
 	p.mu.Lock()
 	p.started = time.Now()
 	p.polled = false
+	p.due = p.started.Add(2*idle + LoopGrace)
 	p.mu.Unlock()
 	for {
 		start := time.Now()
 		ex := p.Exchange()
 		wait := ex.PollInterval.Duration
+		// A round ends within one interval, and the next begins one interval after this one began. While polling is
+		// off, the next turn begins idle after this one.
+		pace := wait
+		if pace <= 0 {
+			pace = idle
+		}
+		p.mu.Lock()
+		p.due = start.Add(2*pace + LoopGrace)
+		p.mu.Unlock()
 		if wait > 0 {
 			p.round(ctx, wait, ex.PeerTimeout.Duration)
 		} else {
@@ -264,6 +280,18 @@ func (p *Poller) fetch(ctx context.Context, peer string, interval time.Duration)
 		return Document{}, nil, err
 	}
 	return doc, content, nil
+}
+
+// Alive returns an error once a round is overdue: more than twice the poll interval, plus LoopGrace, after the last
+// round began. A round reads only the controller's cache, and each poll times out within the interval, so neither a
+// slow API server nor a link that is down delays it. Before Start, it returns nil. now must come from time.Now.
+func (p *Poller) Alive(now time.Time) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.due.IsZero() || !now.After(p.due) {
+		return nil
+	}
+	return fmt.Errorf("the poller's round is %s overdue", now.Sub(p.due).Round(time.Millisecond))
 }
 
 // Fresh reports whether a peer's last good document is at most timeout old at now. now must come from time.Now.

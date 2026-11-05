@@ -34,8 +34,8 @@ func ruleFor(t *testing.T, p networkingv1.NetworkPolicy, port int32) networkingv
 
 // The controller's policy admits the gateway pods to the observation and xDS ports, and every source to the probes.
 // The metrics port admits every source by default, and the sources of networkPolicy.metricsFrom when set. A policy on
-// the gateway pods is off by default; when on, it admits every source to the probes, every pod of the cluster, and
-// networkPolicy.gateway.peerCIDRs (RFC0007; issue #30, row 39).
+// the gateway pods is off by default; when on, it admits every source to the probes, the metrics as the controller's,
+// every pod of the cluster, and networkPolicy.gateway.peerCIDRs (RFC0007; issue #30, rows 39 and 27).
 func TestNetworkPolicies(t *testing.T) {
 	r := render(t)
 	if _, ok := r.networkPolicies["strait-gateway"]; ok {
@@ -75,9 +75,10 @@ func TestNetworkPolicies(t *testing.T) {
 	if !reflect.DeepEqual(g.Spec.PodSelector.MatchLabels, gatewayLabels) || !slices.Equal(g.Spec.PolicyTypes, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}) {
 		t.Errorf("gateway policy selects %v, types %v", g.Spec.PodSelector.MatchLabels, g.Spec.PolicyTypes)
 	}
-	probes := intstr.FromInt32(8090)
+	probes, metrics := intstr.FromInt32(8090), intstr.FromInt32(8091)
 	wantRules := []networkingv1.NetworkPolicyIngressRule{
 		{Ports: []networkingv1.NetworkPolicyPort{{Port: &probes}}},
+		{Ports: []networkingv1.NetworkPolicyPort{{Port: &metrics}}},
 		{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{}}}},
 		{From: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.21/32"}}, {IPBlock: &networkingv1.IPBlock{CIDR: "2001:db8::/64"}}}},
 	}
@@ -85,13 +86,20 @@ func TestNetworkPolicies(t *testing.T) {
 		t.Errorf("gateway policy rules:\n%+v\nwant\n%+v", g.Spec.Ingress, wantRules)
 	}
 
+	// The gateway's metrics follow networkPolicy.metricsFrom, as the controller's do.
+	r = render(t, "networkPolicy.gateway.enabled=true",
+		"networkPolicy.metricsFrom[0].namespaceSelector.matchLabels.kubernetes\\.io/metadata\\.name=monitoring")
+	if from := ruleFor(t, r.networkPolicies["strait-gateway"], 8091).From; !reflect.DeepEqual(from, want) {
+		t.Errorf("gateway metrics with metricsFrom: %+v, want %+v", from, want)
+	}
+
 	if r := render(t, "networkPolicy.enabled=false"); len(r.networkPolicies) != 0 {
 		t.Errorf("networkPolicy.enabled false: policies %v, want none", r.networkPolicies)
 	}
 }
 
-// The gateway agent's probe server binds to the pod's own address, so a peer cannot reach it through a WireGuard
-// interface (RFC0007, requirement 12).
+// The gateway agent's probe and metrics servers bind to the pod's own address, so a peer cannot reach them through a
+// WireGuard interface (RFC0007, requirement 12).
 func TestAgentProbeBindsThePodAddress(t *testing.T) {
 	pod := render(t).pods["strait-gateway"]
 	i := slices.IndexFunc(pod.Spec.Containers, func(c corev1.Container) bool { return c.Name == "agent" })
@@ -99,8 +107,8 @@ func TestAgentProbeBindsThePodAddress(t *testing.T) {
 		t.Fatal("no agent container")
 	}
 	agent := pod.Spec.Containers[i]
-	if !slices.Contains(agent.Args, "--probe-ip=$(POD_IP)") {
-		t.Errorf("agent args %v, want --probe-ip=$(POD_IP)", agent.Args)
+	if !slices.Contains(agent.Args, "--probe-ip=$(POD_IP)") || !slices.Contains(agent.Args, "--metrics-addr=:8091") {
+		t.Errorf("agent args %v, want --probe-ip=$(POD_IP) and --metrics-addr=:8091", agent.Args)
 	}
 	j := slices.IndexFunc(agent.Env, func(e corev1.EnvVar) bool { return e.Name == "POD_IP" })
 	if j < 0 || agent.Env[j].ValueFrom == nil || agent.Env[j].ValueFrom.FieldRef == nil || agent.Env[j].ValueFrom.FieldRef.FieldPath != "status.podIP" {
