@@ -3,6 +3,7 @@ package controller
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -156,6 +157,11 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 	inPlace, err := r.slicesInPlace(ctx, &svc)
+	if errors.Is(err, ErrNotRead) {
+		// The controller writes no EndpointSlice in a namespace where it reads none. The apply stops at its first read
+		// there, and status says why (RFC#0007, requirement 26).
+		inPlace, err = map[string]discoveryv1.EndpointSlice{}, nil
+	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}

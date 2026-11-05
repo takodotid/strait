@@ -289,6 +289,24 @@ while [ ! -e "$stop" ] && [ "$SECONDS" -lt "$end" ]; do
 done
 `
 
+// dialerScript opens a new connection through pg.db.svc every 250ms until the stop file exists or the time runs out,
+// each in the background and timing out after 4s, so that one that hangs does not delay the next. Each asks who
+// answered. Each line is: start ms, end ms, exit status, answer.
+const dialerScript = `site=$1; secs=$2; stop=$3
+end=$((SECONDS+secs))
+while [ ! -e "$stop" ] && [ "$SECONDS" -lt "$end" ]; do
+  (
+    s=$(date +%s%3N)
+    out=$(timeout 4 psql -h pg.db.svc -XtAq -c "` + whoAnswered + `" 2>&1)
+    rc=$?
+    e=$(date +%s%3N)
+    echo "$s $e $rc ${out//$'\n'/ }"
+  ) &
+  sleep 0.25
+done
+wait
+`
+
 // writer is a write loop running in a site's client pod.
 type writer struct {
 	s    *site
@@ -301,9 +319,19 @@ type writer struct {
 
 // startWriter starts a write loop that runs at most maxRun.
 func startWriter(ctx context.Context, s *site, maxRun time.Duration) (*writer, error) {
+	return startLoop(ctx, s, writerScript, maxRun)
+}
+
+// startDialer starts a loop of new connections that runs at most maxRun.
+func startDialer(ctx context.Context, s *site, maxRun time.Duration) (*writer, error) {
+	return startLoop(ctx, s, dialerScript, maxRun)
+}
+
+// startLoop runs script in the site's client pod for at most maxRun, and collects the attempts it prints.
+func startLoop(ctx context.Context, s *site, script string, maxRun time.Duration) (*writer, error) {
 	w := &writer{s: s, stop: fmt.Sprintf("/tmp/stop-%d", time.Now().UnixNano()), done: make(chan struct{})}
 	w.cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", s.kubeconfig, "--context", s.context,
-		"-n", dbNamespace, "exec", clientPod, "--", "bash", "-c", writerScript, "writer", s.name,
+		"-n", dbNamespace, "exec", clientPod, "--", "bash", "-c", script, "loop", s.name,
 		strconv.Itoa(int(maxRun.Seconds())), w.stop)
 	w.cmd.Env = append(w.cmd.Environ(), "KUBECONFIG="+s.kubeconfig)
 	w.cmd.WaitDelay = 5 * time.Second

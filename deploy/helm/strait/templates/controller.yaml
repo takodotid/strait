@@ -56,10 +56,21 @@ spec:
             # Follows the Roles of controller-rbac.yaml.
             - --namespaces={{ join "," . }}
             {{- end }}
+            {{- if .Values.controller.namespacedReads }}
+            {{- if not .Values.controller.namespaces }}
+            {{- fail "controller.namespacedReads needs controller.namespaces" }}
+            {{- end }}
+            # Follows the read Roles of controller-rbac.yaml.
+            - --namespaced-reads
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef: {fieldPath: metadata.namespace}
+            # The controller sets the Go runtime's soft memory limit to 90% of it.
+            - name: MEMORY_LIMIT
+              valueFrom:
+                resourceFieldRef: {containerName: controller, resource: limits.memory}
           ports:
             - {name: metrics, containerPort: 8080}
             - {name: probes, containerPort: 8081}

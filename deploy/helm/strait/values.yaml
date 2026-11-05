@@ -20,8 +20,15 @@ controller:
   logLevel: info
   # The namespaces where the controller may write Services and EndpointSlices: those of the SiteServices and the
   # Imports of this site. The release namespace, for the gateway Services, is added. Empty: every namespace. Each
-  # namespace must exist before helm install or helm upgrade. Reads stay cluster-wide (RFC0007).
+  # namespace must exist before helm install or helm upgrade. Reads stay cluster-wide unless namespacedReads is true
+  # (RFC0007).
   namespaces: []
+  # true: the controller also reads Services, EndpointSlices and CloudNativePG's objects in those namespaces only, so
+  # that its cache holds only theirs (docs/sizing.md). An Export in another namespace then has no ready endpoint.
+  # Needs namespaces.
+  namespacedReads: false
+  # The controller sets the Go runtime's soft memory limit to 90% of limits.memory. Size it to the cluster
+  # (docs/sizing.md).
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}

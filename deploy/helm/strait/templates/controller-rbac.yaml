@@ -1,4 +1,5 @@
 {{- $namespaces := .Values.controller.namespaces | default list }}
+{{- $namespacedReads := and $namespaces .Values.controller.namespacedReads }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,12 +25,15 @@ rules:
   - apiGroups: ["strait.tako.id"]
     resources: ["siteservices/status", "sites/status", "sitepeers/status", "exports/status", "imports/status"]
     verbs: ["get", "update", "patch"]
+  {{- if not $namespacedReads }}
+  # Reads in every namespace. With controller.namespacedReads, the Roles below grant them in those namespaces only.
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
     verbs: ["get", "list", "watch"]
+  {{- end }}
   {{- if not $namespaces }}
   # Writes in every namespace. With controller.namespaces, the Roles below grant them in those namespaces only.
   - apiGroups: [""]
@@ -42,7 +46,7 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["create", "patch"]
-  {{- if .Values.cnpg.enabled }}
+  {{- if and .Values.cnpg.enabled (not $namespacedReads) }}
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters", "poolers"]
     verbs: ["get", "list", "watch"]
@@ -135,5 +139,45 @@ subjects:
   - kind: ServiceAccount
     name: strait-controller
     namespace: {{ $.Release.Namespace }}
+{{- if $namespacedReads }}
+---
+# The reads of Services, EndpointSlices and CloudNativePG's objects in one namespace of controller.namespaces, or in
+# the release namespace, with controller.namespacedReads.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $.Release.Name }}-controller-reads
+  namespace: {{ . }}
+  labels:
+    {{- include "strait.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+  {{- if $.Values.cnpg.enabled }}
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters", "poolers"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $.Release.Name }}-controller-reads
+  namespace: {{ . }}
+  labels:
+    {{- include "strait.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $.Release.Name }}-controller-reads
+subjects:
+  - kind: ServiceAccount
+    name: strait-controller
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
 {{- end }}
 {{- end }}

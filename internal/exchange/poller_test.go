@@ -324,12 +324,21 @@ func TestChanged(t *testing.T) {
 	if got := rec.take(); len(got) != 0 {
 		t.Errorf("same content: want no call, have %v", got)
 	}
+	// The publisher observes its members again at each of its decisions, so observedAt moves at every poll.
 	o := obs("pg-b", "b")
 	o.ObservedAt = at.Add(time.Second)
 	s.set(siteDocument("b", o), nil)
 	round()
-	if got := rec.take(); !slices.Equal(got, []string{"b"}) {
-		t.Errorf("observedAt changed: want one call, have %v", got)
+	if got := rec.take(); len(got) != 0 {
+		t.Errorf("only observedAt changed: want no call, have %v", got)
+	}
+	// The stored document keeps the new observedAt, which the reader's status shows.
+	if doc, _ := p.Snapshot("b"); !doc.Services[0].Members[0].ObservedAt.Equal(o.ObservedAt) {
+		t.Errorf("stored observedAt %v, want %v", doc.Services[0].Members[0].ObservedAt, o.ObservedAt)
+	}
+	view := p.View("app", "pg", []straitv1.Member{{Name: "pg-b", Site: "b"}}, time.Now(), time.Minute)
+	if got := view["b"].Members["pg-b"].ObservedAt; !got.Equal(o.ObservedAt) {
+		t.Errorf("viewed observedAt %v, want %v", got, o.ObservedAt)
 	}
 	o.State = straitv1.StateTransitioning
 	s.set(siteDocument("b", o), nil)
@@ -341,6 +350,33 @@ func TestChanged(t *testing.T) {
 	round()
 	if got := rec.take(); !slices.Equal(got, []string{"b"}) {
 		t.Errorf("site mismatch: want one call, have %v", got)
+	}
+}
+
+// TestNoChangeFromAPublisherAtRest: a publisher whose members do not change serves, at each poll, a document with a
+// new generatedAt and new observedAt times. The reader calls Changed for the first document only (RFC0004).
+func TestNoChangeFromAPublisherAtRest(t *testing.T) {
+	rec := newRecorder()
+	publisher := &Local{}
+	publish := func(now time.Time) Document {
+		o := obs("pg-b", "b")
+		o.ObservedAt = now
+		publisher.SetService("app", "pg", "pg-b", []observe.Observation{o})
+		publisher.SetExport("app", "pg-pg-b", 30901, true)
+		return publisher.Document("b", now, 6*time.Second)
+	}
+	s, srv := newSite(t, "b", publish(at))
+	p := newPoller(map[string]*httptest.Server{"b": srv}, rec)
+	for i := range 5 {
+		s.set(publish(at.Add(time.Duration(i)*2*time.Second)), nil)
+		p.round(context.Background(), time.Second, time.Minute)
+		want := 0
+		if i == 0 {
+			want = 1
+		}
+		if got := rec.take(); len(got) != want {
+			t.Errorf("poll %d: want %d calls, have %v", i, want, got)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ func (s PeerState) Fresh(now time.Time, timeout time.Duration) bool {
 type peer struct {
 	state    PeerState
 	document Document
-	// content is the document without generatedAt, to detect a change.
+	// content is the document as changeKey gives it, to detect a change.
 	content []byte
 	// fresh is the freshness last reported to Changed.
 	fresh bool
@@ -54,8 +55,9 @@ type Poller struct {
 	URL func(peer string) (string, error)
 	// Exchange returns the poll interval and the peer timeout. Read every round.
 	Exchange func() straitv1.ExchangeSpec
-	// Changed is called when a peer's document changes, apart from generatedAt, or its freshness flips, and for every
-	// peer when the first round since Start ends. It runs on the poller's goroutine and must not block.
+	// Changed is called when a peer's document changes, apart from generatedAt and the members' observedAt, or its
+	// freshness flips, and for every peer when the first round since Start ends. It runs on the poller's goroutine and
+	// must not block.
 	Changed func(peer string)
 	// Client sends the polls. When nil, a client with no proxy, no keep-alive and no redirect is used.
 	Client *http.Client
@@ -273,13 +275,29 @@ func (p *Poller) fetch(ctx context.Context, peer string, interval time.Duration)
 	if err := doc.validate(peer); err != nil {
 		return Document{}, nil, err
 	}
-	stripped := doc
-	stripped.GeneratedAt = time.Time{}
-	content, err := json.Marshal(stripped)
+	content, err := changeKey(doc)
 	if err != nil {
 		return Document{}, nil, err
 	}
 	return doc, content, nil
+}
+
+// changeKey is the document less what changes at every poll of a peer whose state does not: generatedAt, and each
+// member's observedAt, which the publisher sets at each of its decisions. No decision reads either. The reader's
+// decisions come at least every 2s whether Changed is called or not, and read the stored document with both
+// (RFC0004). The document itself is left as it came.
+func changeKey(doc Document) ([]byte, error) {
+	key := doc
+	key.GeneratedAt = time.Time{}
+	key.Services = make([]Service, len(doc.Services))
+	for i, s := range doc.Services {
+		s.Members = slices.Clone(s.Members)
+		for j := range s.Members {
+			s.Members[j].ObservedAt = time.Time{}
+		}
+		key.Services[i] = s
+	}
+	return json.Marshal(key)
 }
 
 // Alive returns an error once a round is overdue: more than twice the poll interval, plus LoopGrace, after the last
