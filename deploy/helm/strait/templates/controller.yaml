@@ -90,3 +90,4 @@ spec:
   ports:
     - {name: observations, port: 8082, targetPort: observations}
     - {name: xds, port: 18000, targetPort: xds}
+    - {name: metrics, port: 8080, targetPort: metrics}

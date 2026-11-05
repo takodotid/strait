@@ -42,6 +42,9 @@ controller:
 gateway:
   # One replica is active; the others are warm standbys (RFC0005).
   replicas: 2
+  # The gateway agent's log level: error, info, or debug. Info logs each link that fails, comes back, or starts or
+  # stops carrying traffic.
+  logLevel: info
   # Scheduling of the gateway pods.
   priorityClassName: ""
   nodeSelector: {}
@@ -82,12 +85,27 @@ site:
 cnpg:
   enabled: true
 
+# Objects of the Prometheus Operator (docs/metrics.md). Off by default: their CRDs must exist.
+metrics:
+  # PodMonitors of the controller, port 8080, and of every gateway pod, port 8091: the agent's /metrics, and Envoy's
+  # stats at /stats/prometheus.
+  podMonitor:
+    enabled: false
+    # Labels that the Prometheus's podMonitorSelector requires.
+    labels: {}
+    interval: 30s
+  # A PrometheusRule with the alert rules of files/alerts.yaml.
+  prometheusRule:
+    enabled: false
+    # Labels that the Prometheus's ruleSelector requires.
+    labels: {}
+
 networkPolicy:
   # A policy on the controller pod: only gateway pods reach its observation and xDS ports.
   enabled: true
-  # The sources that may reach the controller's metrics port, 8080, as NetworkPolicy peers, for example
-  # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]. Empty admits every source.
-  # The metrics are plain HTTP.
+  # The sources that may reach the metrics ports, the controller's 8080 and the gateway's 8091, as NetworkPolicy peers,
+  # for example [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]. Empty admits every
+  # source. The metrics are plain HTTP. The gateway's policy also admits every pod of the cluster to every port.
   metricsFrom: []
   gateway:
     # A policy on the gateway pods that admits every pod of this cluster, peerCIDRs, and the probes only. Off by default: where

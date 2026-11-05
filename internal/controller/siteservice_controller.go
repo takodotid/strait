@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,8 +65,18 @@ type SiteServiceReconciler struct {
 	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
 	// decided keeps, by SiteService, the members of the last decision: the next decision's previous route.
 	decided map[types.NamespacedName][]string
+	// decidedAt keeps, by SiteService, when its last decision was made. mu guards it: the metrics read it.
+	decidedAt map[types.NamespacedName]time.Time
+	mu        sync.Mutex
 	// pluginFor returns the plugin of a SiteService. Nil means plugin.For with Plugins. Tests set it.
 	pluginFor func(*straitv1.SiteService) (plugin.Plugin, error)
+}
+
+// Decisions returns when the last decision of each SiteService was made.
+func (r *SiteServiceReconciler) Decisions() map[types.NamespacedName]time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return maps.Clone(r.decidedAt)
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -78,6 +89,9 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			delete(r.confirmed, req.NamespacedName)
 			delete(r.inPlace, req.NamespacedName)
 			delete(r.decided, req.NamespacedName)
+			r.mu.Lock()
+			delete(r.decidedAt, req.NamespacedName)
+			r.mu.Unlock()
 			r.written.forget(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
@@ -162,6 +176,12 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.decided = map[types.NamespacedName][]string{}
 	}
 	r.decided[req.NamespacedName] = slices.Clone(result.Members)
+	r.mu.Lock()
+	if r.decidedAt == nil {
+		r.decidedAt = map[types.NamespacedName]time.Time{}
+	}
+	r.decidedAt[req.NamespacedName] = now
+	r.mu.Unlock()
 
 	a := r.apply(ctx, &svc, site, result.Members, observations, report, inPlace)
 	if a.err != nil {

@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +19,13 @@ import (
 	"testing"
 	"time"
 
+	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +35,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/gateway"
 )
 
 // probeImage runs the probes next to Envoy, pinned by the digest of its multi-platform index.
@@ -302,22 +312,15 @@ func TestEnvoyRun(t *testing.T) {
 	}
 }
 
-// TestEnvoyADS runs the Server and an Envoy started from Bootstrap, on the default docker network.
-// The model is the loopback one, read from objects.
-func TestEnvoyADS(t *testing.T) {
+// adsEnvoy runs the Server and an Envoy started from Bootstrap, on the default docker network, and waits until Envoy
+// is ready. The model is the loopback one, read from objects. It returns the server, its objects, the probe, Envoy's
+// node ID and the address of the Envoy container.
+func adsEnvoy(t *testing.T) (*Server, client.Client, probe, string, string) {
 	out, err := docker("network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}")
 	if err != nil {
 		t.Fatalf("docker network inspect: %v\n%s", err, out)
 	}
 	ctx := context.Background()
-	slice := func(service string) *discoveryv1.EndpointSlice {
-		return &discoveryv1.EndpointSlice{
-			ObjectMeta:  metav1.ObjectMeta{Namespace: "app", Name: service + "-1", Labels: map[string]string{discoveryv1.LabelServiceName: service}},
-			AddressType: discoveryv1.AddressTypeIPv4,
-			Ports:       []discoveryv1.EndpointPort{{Name: ptr.To("admin"), Port: ptr.To[int32](AdminPort)}},
-			Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"127.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}},
-		}
-	}
 	var objects []client.Object
 	for i, name := range []string{"admin", "empty"} {
 		objects = append(objects,
@@ -366,6 +369,23 @@ func TestEnvoyADS(t *testing.T) {
 	}
 	s.Trigger()
 	p.ready()
+	return s, c, p, node, ip
+}
+
+// slice is an EndpointSlice of a Service of the loopback model, with Envoy's admin as its one endpoint.
+func slice(service string) *discoveryv1.EndpointSlice {
+	return &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Namespace: "app", Name: service + "-1", Labels: map[string]string{discoveryv1.LabelServiceName: service}},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Ports:       []discoveryv1.EndpointPort{{Name: ptr.To("admin"), Port: ptr.To[int32](AdminPort)}},
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"127.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}},
+	}
+}
+
+// TestEnvoyADS runs the Server and an Envoy over ADS.
+func TestEnvoyADS(t *testing.T) {
+	ctx := context.Background()
+	s, c, p, _, ip := adsEnvoy(t)
 
 	expect(t, p, "GET", "http://127.0.0.1:30900/healthz", 200, "ok")
 	expect(t, p, "GET", "http://127.0.0.1:30900/healthz/exports/app/admin", 200, "")
@@ -401,5 +421,156 @@ func TestEnvoyADS(t *testing.T) {
 		if got := p.stat(name); got != want {
 			t.Errorf("%s = %s, want %s", name, got, want)
 		}
+	}
+}
+
+// A configuration that Envoy rejects shows in Rejections and in the counter, with Envoy's error. Envoy keeps serving
+// the configuration it accepted last. The next configuration that it accepts clears the rejection.
+func TestEnvoyRejection(t *testing.T) {
+	s, _, p, node, _ := adsEnvoy(t)
+	before := testutil.ToFloat64(RejectedTotal.WithLabelValues("Cluster"))
+	good, err := s.cache.GetSnapshot(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := map[resource.Type][]types.Resource{}
+	for _, typ := range []resource.Type{resource.ListenerType, resource.ClusterType, resource.EndpointType} {
+		for _, r := range good.GetResources(typ) {
+			r = proto.Clone(r)
+			if c, ok := r.(*cluster.Cluster); ok {
+				// Envoy requires a connect timeout above 0.
+				c.ConnectTimeout = durationpb.New(-time.Second)
+			}
+			resources[typ] = append(resources[typ], r)
+		}
+	}
+	bad, err := cache.NewSnapshot("rejected", resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.cache.SetSnapshot(context.Background(), node, bad); err != nil {
+		t.Fatal(err)
+	}
+	p.eventually("Envoy rejects the clusters", func() string {
+		got := s.Rejections()
+		if len(got) == 1 && strings.HasPrefix(got[0], "pod "+node+" rejected Cluster: ") {
+			return ""
+		}
+		return fmt.Sprintf("Rejections() = %q", got)
+	})
+	t.Logf("rejection: %s", s.Rejections()[0])
+	// Envoy rejects the configuration once: it is not sent again until it changes.
+	time.Sleep(2 * time.Second)
+	if got := testutil.ToFloat64(RejectedTotal.WithLabelValues("Cluster")) - before; got != 1 {
+		t.Errorf("strait_xds_rejected_total{type=Cluster} grew by %v, want 1", got)
+	}
+	if got := p.stat("cluster_manager.cds.update_rejected"); got != "1" {
+		t.Errorf("Envoy's cluster_manager.cds.update_rejected = %s, want 1", got)
+	}
+	expect(t, p, "GET", "http://127.0.0.1:30900/healthz/exports/app/admin", 200, "")
+
+	s.Trigger()
+	p.eventually("Envoy accepts the clusters again", func() string {
+		if got := s.Rejections(); len(got) > 0 {
+			return fmt.Sprintf("Rejections() = %q", got)
+		}
+		return ""
+	})
+}
+
+// The Envoy stats that the gateway agent serves have no address or port as a label value, and no object's name in a
+// metric's name, also for objects whose names hold a dot. Envoy's /clusters counts the open connections of an import
+// at its link's address, which the agent sums per link.
+func TestEnvoyStatsLabels(t *testing.T) {
+	m := loopback()
+	m.Exports = append(m.Exports, Export{Namespace: "app", Name: "a.b", Port: 30903, Addresses: []string{"127.0.0.1"}, TargetPort: AdminPort})
+	m.Imports = append(m.Imports, Import{Namespace: "app", Name: "x.y-b", Port: 15002, Peer: "b", Export: "a.b", RemotePort: 30903})
+	snap, err := Build(m, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := staticConfig(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, p := runEnvoy(t, configDir(t, map[string][]byte{"envoy.yaml": cfg}), "none")
+	p.ready()
+	waitHealthy(p, "import/app/x.y-b", map[string]string{"127.0.0.1:30903": "healthy"})
+	expect(t, p, "GET", "http://127.0.0.1:15002/ready", 200, "LIVE")
+	expect(t, p, "GET", "http://127.0.0.1:14999/peers/b/healthz", 200, "ok")
+	// One connection through the import stays open while the stats are read.
+	if out, err := docker("exec", "-d", p.name, "sh", "-c", "sleep 60 | nc 127.0.0.1 15002"); err != nil {
+		t.Fatalf("open a connection: %v\n%s", err, out)
+	}
+
+	_, body := p.get("http://127.0.0.1:9901/stats/prometheus?filter=" + url.QueryEscape(gateway.EnvoyStats))
+	names := map[string]bool{}
+	values := map[string]map[string]bool{}
+	sample := regexp.MustCompile(`^([a-z_]+)(\{(.*)\})? `)
+	label := regexp.MustCompile(`([a-z_]+)="([^"]*)"`)
+	for _, line := range strings.Split(body, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		m := sample.FindStringSubmatch(line)
+		if m == nil {
+			t.Errorf("not a sample: %q", line)
+			continue
+		}
+		names[m[1]] = true
+		for _, l := range label.FindAllStringSubmatch(m[3], -1) {
+			if values[l[1]] == nil {
+				values[l[1]] = map[string]bool{}
+			}
+			values[l[1]][l[2]] = true
+			v := strings.ReplaceAll(l[2], "_", ":")
+			if _, err := netip.ParseAddrPort(v); err == nil || isIP(l[2]) {
+				t.Errorf("label %s=%q is an address", l[1], l[2])
+			}
+			if host, _, ok := strings.Cut(l[2], "_"); ok && isIP(host) {
+				t.Errorf("label %s=%q holds an address", l[1], l[2])
+			}
+		}
+	}
+	family := regexp.MustCompile(`^envoy_(cluster|tcp|http|server|control_plane|cluster_manager|listener_manager)_[a-z_]+$`)
+	for n := range names {
+		if !family.MatchString(n) {
+			t.Errorf("metric %s is not one of EnvoyStats' families", n)
+		}
+		for _, part := range []string{"admin", "empty", "app", "a_b", "x_y", "peer"} {
+			if strings.Contains(n, part) {
+				t.Errorf("metric %s holds the name of an object", n)
+			}
+		}
+	}
+	for _, want := range []string{"export/app/a_b", "import/app/x_y-b", "import/app/admin-b", "peer/b", "controller"} {
+		if !values["envoy_cluster_name"][want] {
+			t.Errorf("no stats of cluster %s; cluster names: %v", want, values["envoy_cluster_name"])
+		}
+	}
+	if !values["envoy_tcp_prefix"]["import/app/x_y-b"] {
+		t.Errorf("no stats of the TCP proxy import/app/x_y-b; prefixes: %v", values["envoy_tcp_prefix"])
+	}
+	for _, want := range []string{"envoy_cluster_upstream_cx_active", "envoy_cluster_upstream_cx_rx_bytes_total", "envoy_cluster_membership_healthy",
+		"envoy_tcp_downstream_cx_total", "envoy_server_live"} {
+		if !names[want] {
+			t.Errorf("no metric %s", want)
+		}
+	}
+	t.Logf("%d metrics, %d samples", len(names), strings.Count(body, "\n")-2*len(names))
+
+	_, js := p.get("http://127.0.0.1:9901/clusters?format=json")
+	clusters, err := gateway.ParseClusters([]byte(js))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var open int64
+	for _, h := range clusters["import/app/x.y-b"] {
+		if h.Address == "127.0.0.1" {
+			open = h.Connections
+		}
+	}
+	if open != 1 {
+		t.Errorf("import/app/x.y-b has %d open connections at 127.0.0.1, want 1: %v", open, clusters["import/app/x.y-b"])
 	}
 }

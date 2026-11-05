@@ -105,34 +105,15 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 
 	ssChanges := make(chan event.GenericEvent, 1)
 	impChanges := make(chan event.GenericEvent, 1)
-	poller := &exchange.Poller{
-		Peers: func() []string {
-			var peers straitv1.SitePeerList
-			if err := reader.List(context.Background(), &peers); err != nil {
-				return nil
-			}
-			out := make([]string, 0, len(peers.Items))
-			for _, p := range peers.Items {
-				out = append(out, p.Name)
-			}
-			return out
-		},
-		URL: func(peer string) (string, error) { return peerURL(context.Background(), reader, peer) },
-		Exchange: func() straitv1.ExchangeSpec {
-			site, err := controller.LocalSite(context.Background(), reader)
-			if err != nil {
-				return straitv1.ExchangeSpec{}
-			}
-			return site.Spec.Exchange
-		},
-		Changed: func(string) {
-			notify(ssChanges)
-			notify(impChanges)
-			xdsServer.Trigger()
-		},
-	}
+	gwChanges := make(chan event.GenericEvent, 1)
+	xdsServer.Rejected = func() { notify(gwChanges) }
+	poller := newPoller(reader, func(string) {
+		notify(ssChanges)
+		notify(impChanges)
+		xdsServer.Trigger()
+	})
 
-	if err := (&controller.SiteServiceReconciler{
+	siteServices := &controller.SiteServiceReconciler{
 		Client:    writer,
 		Reader:    reader,
 		APIReader: mgr.GetAPIReader(),
@@ -141,7 +122,8 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		Local:     local,
 		Now:       time.Now,
 		Plugins:   plugin.Options{CNPGOff: !cnpg},
-	}).SetupWithManager(mgr, ssChanges, watchCNPG); err != nil {
+	}
+	if err := siteServices.SetupWithManager(mgr, ssChanges, watchCNPG); err != nil {
 		return fmt.Errorf("siteservice controller: %w", err)
 	}
 	if err := (&controller.ExportReconciler{Client: writer, Reader: reader, Local: local}).SetupWithManager(mgr); err != nil {
@@ -150,7 +132,10 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	if err := (&controller.ImportReconciler{Client: writer, Reader: reader, Peers: poller, Now: time.Now}).SetupWithManager(mgr, impChanges); err != nil {
 		return fmt.Errorf("import controller: %w", err)
 	}
-	if err := (&controller.GatewayReconciler{Client: writer, Reader: reader, Namespace: gatewayNamespace, Version: version.Version}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.GatewayReconciler{
+		Client: writer, Reader: reader, Namespace: gatewayNamespace, Version: version.Version,
+		ConfigRejections: xdsServer.Rejections, Recorder: mgr.GetEventRecorder("strait-controller"),
+	}).SetupWithManager(mgr, gwChanges); err != nil {
 		return fmt.Errorf("gateway controller: %w", err)
 	}
 	if err := (&controller.XDSTrigger{Trigger: xdsServer.Trigger, Namespace: gatewayNamespace}).SetupWithManager(mgr); err != nil {
@@ -163,9 +148,10 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		}
 	}
 
-	ctrlmetrics.Registry.MustRegister(&metrics.Collector{Reader: reader})
+	ctrlmetrics.Registry.MustRegister(&metrics.Collector{Reader: reader, GatewayNamespace: gatewayNamespace, Decisions: siteServices.Decisions},
+		xds.RejectedTotal)
 
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+	if err := mgr.AddHealthzCheck("loops", loopsAlive(poller, xdsServer)); err != nil {
 		return err
 	}
 	// Only the leader serves, so only the leader is ready.
@@ -231,6 +217,49 @@ func runnables(observationsAddr string, document func() exchange.Document, polle
 		leaderOnly(poller),
 		leaderOnly(&exchange.StatusWriter{Client: c, Poller: poller}),
 		xdsServer,
+	}
+}
+
+// newPoller returns the poller of the peers' documents. Every read goes to r, the controller's cache, and every poll
+// through the local gateway (RFC0004).
+func newPoller(r client.Reader, changed func(peer string)) *exchange.Poller {
+	return &exchange.Poller{
+		Peers: func() []string {
+			var peers straitv1.SitePeerList
+			if err := r.List(context.Background(), &peers); err != nil {
+				return nil
+			}
+			out := make([]string, 0, len(peers.Items))
+			for _, p := range peers.Items {
+				out = append(out, p.Name)
+			}
+			return out
+		},
+		URL: func(peer string) (string, error) { return peerURL(context.Background(), r, peer) },
+		Exchange: func() straitv1.ExchangeSpec {
+			site, err := controller.LocalSite(context.Background(), r)
+			if err != nil {
+				return straitv1.ExchangeSpec{}
+			}
+			return site.Spec.Exchange
+		},
+		Changed: changed,
+	}
+}
+
+// loopsAlive is the liveness check: it fails while the poller's round or the xDS rebuild loop is overdue. Both run on
+// the elected controller only, and pass before they start. Neither waits for the API server or a link, so a slow API
+// server or a link that is down cannot fail it (RFC0004). Work that does wait for them, such as decisions and status
+// writes, shows in metrics instead (docs/metrics.md).
+func loopsAlive(loops ...interface{ Alive(time.Time) error }) healthz.Checker {
+	return func(*http.Request) error {
+		now := time.Now()
+		for _, l := range loops {
+			if err := l.Alive(now); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 

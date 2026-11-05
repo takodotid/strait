@@ -1,0 +1,64 @@
+{{- if .Values.metrics.podMonitor.enabled }}
+# The Prometheus Operator scrapes the controller and every gateway pod: the standbys too, whose Envoy checks the links.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strait-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: controller
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.podMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    {{- with .Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.podMonitor.interval }}
+    - port: metrics
+      path: /stats/prometheus
+      interval: {{ .Values.metrics.podMonitor.interval }}
+{{- end }}
+{{- if .Values.metrics.prometheusRule.enabled }}
+---
+# The alert rules of docs/metrics.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: strait
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: strait
+      rules:
+        {{- .Files.Get "files/alerts.yaml" | nindent 8 }}
+{{- end }}

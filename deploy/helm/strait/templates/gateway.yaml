@@ -106,7 +106,9 @@ spec:
           args:
             - --envoy-admin=http://127.0.0.1:9901
             - --probe-addr=:8090
-            # The pod's own address, not the WireGuard interfaces' (RFC0007).
+            - --metrics-addr=:8091
+            - --log-level={{ .Values.gateway.logLevel }}
+            # The pod's own address, not the WireGuard interfaces', for the probes and the metrics (RFC0007).
             - --probe-ip=$(POD_IP)
           env:
             - name: POD_NAME
@@ -120,6 +122,7 @@ spec:
                 fieldRef: {fieldPath: status.podIP}
           ports:
             - {name: probes, containerPort: 8090}
+            - {name: metrics, containerPort: 8091}
           livenessProbe:
             httpGet: {path: /healthz, port: probes}
           readinessProbe:

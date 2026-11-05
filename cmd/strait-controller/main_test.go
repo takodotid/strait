@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,13 +18,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
@@ -362,5 +366,125 @@ func TestWriteNamespaces(t *testing.T) {
 		if got := writeNamespaces(tt.list, "strait-system"); !slices.Equal(got, tt.want) {
 			t.Errorf("%q: %v, want %v", tt.list, got, tt.want)
 		}
+	}
+}
+
+// The liveness check passes while every write to the API server hangs, and while the peer accepts connections but
+// never answers, as over a link that is down. Its loops read only the cache and time out each poll, so they keep their
+// pace. The test shortens the grace from 30s to 300ms: with that grace, a loop that missed one turn would fail it.
+func TestLivenessWhileAPIServerAndLinksHang(t *testing.T) {
+	exchange.LoopGrace, xds.LoopGrace = 300*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { exchange.LoopGrace, xds.LoopGrace = 30*time.Second, 30*time.Second })
+
+	hung := make(chan struct{})
+	t.Cleanup(func() { close(hung) })
+	block := func(ctx context.Context) error {
+		select {
+		case <-hung:
+		case <-ctx.Done():
+		}
+		return context.DeadlineExceeded
+	}
+	// A peer that accepts and never answers.
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { lis.Close() })
+	go func() {
+		for {
+			conn, err := lis.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { conn.Close() })
+		}
+	}()
+	_, port, _ := net.SplitHostPort(lis.Addr().String())
+	peerPort, _ := strconv.Atoi(port)
+
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := straitv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	site := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}}
+	site.Spec.Gateway.PeerPort = int32(peerPort)
+	site.Spec.Exchange = straitv1.ExchangeSpec{PollInterval: metav1.Duration{Duration: 100 * time.Millisecond}, PeerTimeout: metav1.Duration{Duration: time.Second}}
+	site.Status.Gateway.Address = "127.0.0.1"
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(site, &straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}}).
+		WithStatusSubresource(&straitv1.Site{}, &straitv1.SitePeer{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, _ client.WithWatch, _ client.Object, _ ...client.CreateOption) error {
+				return block(ctx)
+			},
+			Update: func(ctx context.Context, _ client.WithWatch, _ client.Object, _ ...client.UpdateOption) error {
+				return block(ctx)
+			},
+			Patch: func(ctx context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return block(ctx)
+			},
+			SubResourcePatch: func(ctx context.Context, _ client.Client, _ string, _ client.Object, _ client.Patch, _ ...client.SubResourcePatchOption) error {
+				return block(ctx)
+			},
+			SubResourceUpdate: func(ctx context.Context, _ client.Client, _ string, _ client.Object, _ ...client.SubResourceUpdateOption) error {
+				return block(ctx)
+			},
+		}).Build()
+
+	xdsServer := xds.NewServer(c, "strait-system", "127.0.0.1:0", "controller.example:8082")
+	poller := newPoller(c, func(string) { xdsServer.Trigger() })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for _, r := range runnables("127.0.0.1:0", func() exchange.Document { return exchange.Document{} }, poller, c, xdsServer) {
+		go func() { _ = r.Start(ctx) }()
+	}
+	check := loopsAlive(poller, xdsServer)
+	for end := time.Now().Add(6 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		if err := check(nil); err != nil {
+			t.Fatalf("liveness failed: %v", err)
+		}
+	}
+	if _, st := poller.Snapshot("b"); st.LastError == "" || !st.LastSuccess.IsZero() {
+		t.Fatalf("the peer was read, or no poll failed: %+v", st)
+	}
+}
+
+// The liveness check fails once a loop stops: here the poller, stuck in a read.
+func TestLivenessFailsWhenALoopStops(t *testing.T) {
+	exchange.LoopGrace = 100 * time.Millisecond
+	t.Cleanup(func() { exchange.LoopGrace = 30 * time.Second })
+	stuck := make(chan struct{})
+	t.Cleanup(func() { close(stuck) })
+	calls := atomic.Int32{}
+	p := &exchange.Poller{
+		Peers: func() []string { return nil },
+		URL:   func(string) (string, error) { return "", errors.New("none") },
+		Exchange: func() straitv1.ExchangeSpec {
+			if calls.Add(1) > 1 {
+				<-stuck
+			}
+			return straitv1.ExchangeSpec{PollInterval: metav1.Duration{Duration: 50 * time.Millisecond}}
+		},
+	}
+	check := loopsAlive(p)
+	if err := check(nil); err != nil {
+		t.Fatalf("before Start: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = p.Start(ctx) }()
+	time.Sleep(100 * time.Millisecond)
+	if err := check(nil); err != nil {
+		t.Fatalf("while on time: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if err := check(nil); err == nil {
+		t.Fatal("liveness passed while the poller was stuck")
+	} else {
+		t.Logf("liveness: %v", err)
 	}
 }

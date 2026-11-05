@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,15 +21,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 )
@@ -59,6 +64,11 @@ type GatewayReconciler struct {
 	Version string
 	// Now is the controller's clock. Nil means time.Now.
 	Now func() time.Time
+	// ConfigRejections returns one line for each gateway pod and resource type whose last configuration the pod's
+	// Envoy rejected. Nil reports none.
+	ConfigRejections func() []string
+	// Recorder records an event on the Site at each change of the pod that holds the gateway Lease. Nil records none.
+	Recorder events.EventRecorder
 
 	// written keeps what the last status write of the Site returned, until the cache shows it.
 	written written[straitv1.Site, *straitv1.Site]
@@ -131,10 +141,12 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		active.Status, active.Reason, active.Message = metav1.ConditionFalse, "NoActiveGateway", "no ready gateway pod holds the gateway lease"
 	}
 	meta.SetStatusCondition(&site.Status.Conditions, active)
+	meta.SetStatusCondition(&site.Status.Conditions, r.configCondition(site.Generation))
 	if !equalStatus(old, &site.Status) {
 		if _, err := r.written.updateStatus(ctx, r.Client, site); err != nil {
 			return ctrl.Result{}, err
 		}
+		r.handover(ctx, site, old.Gateway.ActivePod, pod)
 	}
 	// A failure here does not end the reconcile: the requeue below must stay, since no event marks the Lease's expiry.
 	if err := r.syncDeletionCost(ctx, pod); err != nil {
@@ -146,6 +158,60 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		next = left + 10*time.Millisecond
 	}
 	return ctrl.Result{RequeueAfter: next}, nil
+}
+
+// ReasonGatewayHandover is the reason of the event at each change of the pod that holds the gateway Lease.
+const ReasonGatewayHandover = "GatewayHandover"
+
+// handover records an event and logs when the pod that holds the gateway Lease changed, as the Site's status shows
+// it. A handover resets every connection across the site's gateway (RFC#0005). A Lease that a pod releases and
+// another takes shows as two events: one with no holder, a Warning, then one with the new holder.
+func (r *GatewayReconciler) handover(ctx context.Context, site *straitv1.Site, before, after string) {
+	if before == after {
+		return
+	}
+	log.FromContext(ctx).Info("gateway handover", "before", before, "after", after)
+	if r.Recorder == nil {
+		return
+	}
+	if after == "" {
+		r.Recorder.Eventf(site, nil, corev1.EventTypeWarning, ReasonGatewayHandover, "Handover", "no gateway pod holds the gateway Lease; before, %s did", before)
+		return
+	}
+	r.Recorder.Eventf(site, nil, corev1.EventTypeNormal, ReasonGatewayHandover, "Handover", "gateway pod %s holds the gateway Lease; before, %s", after, cmp.Or(before, "none"))
+}
+
+// ConditionGatewayConfig is the Site condition that says whether every gateway Envoy accepted its configuration.
+const ConditionGatewayConfig = "GatewayConfig"
+
+// maxRejections is how many rejections the GatewayConfig condition names, each cut to maxRejection bytes.
+const (
+	maxRejections = 5
+	maxRejection  = 256
+)
+
+// configCondition is False while a gateway pod's Envoy rejected its last configuration of a type, and True otherwise.
+// Envoy keeps the last configuration that it accepted, so the gateway may not follow the latest routes (RFC#0005).
+func (r *GatewayReconciler) configCondition(generation int64) metav1.Condition {
+	c := metav1.Condition{Type: ConditionGatewayConfig, Status: metav1.ConditionTrue, Reason: "Accepted", ObservedGeneration: generation}
+	var rejected []string
+	if r.ConfigRejections != nil {
+		rejected = r.ConfigRejections()
+	}
+	if len(rejected) == 0 {
+		return c
+	}
+	shown := rejected[:min(len(rejected), maxRejections)]
+	lines := make([]string, len(shown))
+	for i, l := range shown {
+		lines[i] = cut(l, maxRejection)
+	}
+	msg := strings.Join(lines, "; ")
+	if more := len(rejected) - len(shown); more > 0 {
+		msg += fmt.Sprintf("; and %d more", more)
+	}
+	c.Status, c.Reason, c.Message = metav1.ConditionFalse, "Rejected", msg
+	return c
 }
 
 // activeGateway returns the pod that holds the gateway lease, and its address and node when it is running and ready.
@@ -365,14 +431,15 @@ func setExposure(spec *corev1.ServiceSpec, exp straitv1.ServiceExposure) {
 }
 
 // SetupWithManager registers the reconciler. Every event maps to one request, since the reconciler handles the one Site.
-func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
+// Any value on changes, such as a change of ConfigRejections, also requeues it. Changes may be nil.
+func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan event.GenericEvent) error {
 	one := handler.EnqueueRequestsFromMapFunc(func(context.Context, client.Object) []reconcile.Request {
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "gateway"}}}
 	})
 	inNamespace := builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
 		return o.GetNamespace() == r.Namespace
 	}))
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		Named("gateway").
 		Watches(&straitv1.Site{}, one).
 		Watches(&straitv1.Export{}, one).
@@ -380,6 +447,20 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&coordinationv1.Lease{}, one, inNamespace).
 		Watches(&corev1.Pod{}, one, inNamespace).
 		Watches(&corev1.Service{}, one, inNamespace).
-		Watches(&discoveryv1.EndpointSlice{}, one, inNamespace).
-		Complete(r)
+		Watches(&discoveryv1.EndpointSlice{}, one, inNamespace)
+	if changes != nil {
+		b = b.WatchesRawSource(source.Channel(changes, one))
+	}
+	return b.Complete(r)
+}
+
+// cut returns s cut to at most n bytes on a rune boundary, with "..." after a cut.
+func cut(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
 }

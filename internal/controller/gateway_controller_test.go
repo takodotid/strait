@@ -2,7 +2,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -469,4 +472,100 @@ func TestGatewaySliceFollowsTheAddressFamily(t *testing.T) {
 	}
 	reconcileGateway(t, r)
 	check(discoveryv1.AddressTypeIPv4, "10.0.9.9")
+}
+
+// While a gateway Envoy rejects its configuration, the Site's GatewayConfig condition is False and names the pod, the
+// type and Envoy's error, for at most 5 rejections. Once none is left, it is True again.
+func TestGatewayConfigCondition(t *testing.T) {
+	c := fakeClient(t, append(activeGatewayPod(), gatewaySite(straitv1.ServiceExposure{}))...)
+	var rejected []string
+	r := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, ConfigRejections: func() []string { return rejected }}
+	condition := func() metav1.Condition {
+		t.Helper()
+		reconcileGateway(t, r)
+		cond := meta.FindStatusCondition(siteStatus(t, c).Conditions, ConditionGatewayConfig)
+		if cond == nil {
+			t.Fatal("no GatewayConfig condition")
+		}
+		return *cond
+	}
+
+	if got := condition(); got.Status != metav1.ConditionTrue || got.Reason != "Accepted" {
+		t.Errorf("with no rejection: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+	rejected = []string{"pod gateway-0 rejected Listener: " + strings.Repeat("x", 300)}
+	got := condition()
+	if got.Status != metav1.ConditionFalse || got.Reason != "Rejected" || !strings.HasPrefix(got.Message, "pod gateway-0 rejected Listener: xxx") ||
+		len(got.Message) != maxRejection+len("...") {
+		t.Errorf("with one rejection: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+	rejected = nil
+	for i := range 7 {
+		rejected = append(rejected, fmt.Sprintf("pod gateway-%d rejected Cluster: bad", i))
+	}
+	if got := condition(); got.Status != metav1.ConditionFalse || strings.Count(got.Message, "rejected Cluster") != 5 || !strings.HasSuffix(got.Message, "; and 2 more") {
+		t.Errorf("with 7 rejections: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+	rejected = nil
+	if got := condition(); got.Status != metav1.ConditionTrue || got.Reason != "Accepted" || got.Message != "" {
+		t.Errorf("once accepted again: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+}
+
+// Each change of the pod that holds the gateway Lease records an event on the Site: Normal with a holder, Warning
+// with none. A controller that starts, and finds the holder that status names, records none.
+func TestGatewayHandoverEvents(t *testing.T) {
+	objs := activeGatewayPod()
+	gw1 := objs[1].DeepCopyObject().(*corev1.Pod)
+	gw1.Name, gw1.ResourceVersion = "gateway-1", ""
+	c := fakeClient(t, append(objs, gw1, gatewaySite(straitv1.ServiceExposure{}))...)
+	rec := events.NewFakeRecorder(10)
+	r := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, Recorder: rec}
+	next := func() string {
+		t.Helper()
+		select {
+		case e := <-rec.Events:
+			return e
+		default:
+			return ""
+		}
+	}
+	setHolder := func(holder string) {
+		t.Helper()
+		var l coordinationv1.Lease
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: GatewayLease}, &l); err != nil {
+			t.Fatal(err)
+		}
+		l.Spec.HolderIdentity = ptr.To(holder)
+		if err := c.Update(context.Background(), &l); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reconcileGateway(t, r)
+	if e := next(); e != "Normal GatewayHandover gateway pod gateway-0 holds the gateway Lease; before, none" {
+		t.Errorf("first holder: event %q", e)
+	}
+	reconcileGateway(t, r)
+	if e := next(); e != "" {
+		t.Errorf("no change: event %q", e)
+	}
+	setHolder("")
+	reconcileGateway(t, r)
+	if e := next(); e != "Warning GatewayHandover no gateway pod holds the gateway Lease; before, gateway-0 did" {
+		t.Errorf("released: event %q", e)
+	}
+	setHolder("gateway-1")
+	reconcileGateway(t, r)
+	if e := next(); e != "Normal GatewayHandover gateway pod gateway-1 holds the gateway Lease; before, none" {
+		t.Errorf("taken: event %q", e)
+	}
+	restarted := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, Recorder: rec}
+	reconcileGateway(t, restarted)
+	if e := next(); e != "" {
+		t.Errorf("after a restart: event %q", e)
+	}
+	if got := siteStatus(t, c).Gateway.ActivePod; got != "gateway-1" {
+		t.Errorf("activePod = %q", got)
+	}
 }

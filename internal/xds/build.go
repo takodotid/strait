@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
@@ -265,7 +266,7 @@ func (b *builder) httpListener(name, addr string, port int32, routes []*route.Ro
 
 func (b *builder) tcpListener(name, addr string, port int32) *listener.Listener {
 	return b.networkListener(name, addr, port, wellknown.TCPProxy, &tcpproxy.TcpProxy{
-		StatPrefix:       name,
+		StatPrefix:       StatName(name),
 		ClusterSpecifier: &tcpproxy.TcpProxy_Cluster{Cluster: name},
 		// Pooled database connections stay idle for long; TCP keepalive finds dead ones instead.
 		IdleTimeout: durationpb.New(0),
@@ -305,9 +306,24 @@ func controllerCluster(host string, port uint32) *cluster.Cluster {
 	return c
 }
 
+// StatName is the name of a cluster or a TCP proxy in Envoy's stats: its name, with each dot as "_". Envoy's tags take
+// the name up to its first dot, and put the rest into the stat's name. A Kubernetes name has no "_", so the stat name
+// still tells the object.
+func StatName(name string) string { return strings.ReplaceAll(name, ".", "_") }
+
+// altStatName is a cluster's alt_stat_name: its StatName, or none when that is its name, so that a cluster whose name
+// has no dot stays as earlier releases set it.
+func altStatName(name string) string {
+	if n := StatName(name); n != name {
+		return n
+	}
+	return ""
+}
+
 func baseCluster(name string) *cluster.Cluster {
 	return &cluster.Cluster{
 		Name:           name,
+		AltStatName:    altStatName(name),
 		ConnectTimeout: durationpb.New(connectTimeout),
 		CommonLbConfig: &cluster.Cluster_CommonLbConfig{HealthyPanicThreshold: &typev3.Percent{Value: 0}},
 		UpstreamConnectionOptions: &cluster.UpstreamConnectionOptions{TcpKeepalive: &core.TcpKeepalive{
