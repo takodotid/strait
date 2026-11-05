@@ -584,7 +584,7 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 			delete(a.slices, name)
 			deleted = true
 		}
-		es, err := r.writeSlice(ctx, svc, member, t, deleted)
+		es, err := r.writeSlice(ctx, svc, member, t, deleted, a.slices[memberObjectName(svc, member)])
 		if err != nil {
 			a.err = err
 			return a
@@ -598,8 +598,15 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 // writeSlice writes the EndpointSlice of one routed member. Right after the controller's own last write of the slice,
 // the cache may not show that write yet: a create then finds that the slice exists, and an update finds a newer
 // version, or none after a delete. The slice is then read from the API server, and written once more (issue #38).
-// Live reads it from the API server at once, as after the controller deleted it.
-func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool) (*discoveryv1.EndpointSlice, error) {
+// Live reads it from the API server at once, as after the controller deleted it. So does a cache whose copy is not
+// inPlace, the slice as the controller last wrote or read it: a write that only compared the wanted slice with an
+// older copy in the cache could find them equal, and send nothing over a newer version (issue #45).
+func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool, inPlace discoveryv1.EndpointSlice) (*discoveryv1.EndpointSlice, error) {
+	if !live && r.APIReader != nil && inPlace.ResourceVersion != "" {
+		var cached discoveryv1.EndpointSlice
+		err := r.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: memberObjectName(svc, member)}, &cached)
+		live = apierrors.IsNotFound(err) || (err == nil && cached.ResourceVersion != inPlace.ResourceVersion)
+	}
 	c := r.Client
 	if live && r.APIReader != nil {
 		c = liveReads{Client: r.Client, live: r.APIReader}

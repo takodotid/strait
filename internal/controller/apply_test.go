@@ -633,3 +633,46 @@ func TestSliceAddressFamilyChangeWhileCacheLags(t *testing.T) {
 		})
 	}
 }
+
+// A slice write over a cache that does not show the controller's own last write of that slice yet reads the slice from
+// the API server, so a wanted slice that equals the cache's older copy is still written (issue #45).
+func TestSliceWriteEqualToTheCachesOlderCopy(t *testing.T) {
+	f := &faults{}
+	r, c := routedToA(t, f)
+	var old discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &old); err != nil {
+		t.Fatal(err)
+	}
+	// web-a gets a second ready address, and the controller writes it into the slice.
+	var eps discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
+		t.Fatal(err)
+	}
+	first := slices.Clone(eps.Endpoints)
+	eps.Endpoints = append(eps.Endpoints, discoveryv1.Endpoint{Addresses: []string{"10.0.0.2"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}})
+	if err := c.Update(context.Background(), &eps); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	// The cache still shows the slice before that write. Then the second address goes: the wanted slice is the
+	// cache's copy.
+	cache := &lagging{Client: c, old: map[string]*discoveryv1.EndpointSlice{"web-web-a": &old}}
+	r.Client, r.Reader, r.APIReader = cache, cache, c
+	eps.Endpoints = first
+	if err := c.Update(context.Background(), &eps); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcileWeb(r); err != nil {
+		t.Fatal(err)
+	}
+	var es discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &es); err != nil {
+		t.Fatal(err)
+	}
+	if got := sliceAddresses(es); !slices.Equal(got, []string{"10.0.0.1"}) {
+		t.Fatalf("the API server's slice holds %v, want [10.0.0.1]", got)
+	}
+	if st := status(t, c); st.Route.Endpoints != 1 {
+		t.Fatalf("route = %+v, want 1 endpoint", st.Route)
+	}
+}
