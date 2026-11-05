@@ -177,9 +177,8 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           hack/release/absent.sh oci "ghcr.io/takodotid/charts/strait:$v"
           printf '%s' "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
-          helm push "dist/strait-$v.tgz" oci://ghcr.io/takodotid/charts | tee "$RUNNER_TEMP/push.txt"
-          chart=$(sed -n 's/^Digest: //p' "$RUNNER_TEMP/push.txt")
-          [[ $chart =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "helm push printed no digest" >&2; exit 1; }
+          helm push "dist/strait-$v.tgz" oci://ghcr.io/takodotid/charts
+          chart=$(hack/release/digest.sh "ghcr.io/takodotid/charts/strait:$v")
           cosign sign --yes "ghcr.io/takodotid/charts/strait@$chart"
       - name: GitHub release
         env:
