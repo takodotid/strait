@@ -105,6 +105,8 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 
 	ssChanges := make(chan event.GenericEvent, 1)
 	impChanges := make(chan event.GenericEvent, 1)
+	gwChanges := make(chan event.GenericEvent, 1)
+	xdsServer.Rejected = func() { notify(gwChanges) }
 	poller := &exchange.Poller{
 		Peers: func() []string {
 			var peers straitv1.SitePeerList
@@ -150,7 +152,10 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	if err := (&controller.ImportReconciler{Client: writer, Reader: reader, Peers: poller, Now: time.Now}).SetupWithManager(mgr, impChanges); err != nil {
 		return fmt.Errorf("import controller: %w", err)
 	}
-	if err := (&controller.GatewayReconciler{Client: writer, Reader: reader, Namespace: gatewayNamespace, Version: version.Version}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.GatewayReconciler{
+		Client: writer, Reader: reader, Namespace: gatewayNamespace, Version: version.Version,
+		ConfigRejections: xdsServer.Rejections,
+	}).SetupWithManager(mgr, gwChanges); err != nil {
 		return fmt.Errorf("gateway controller: %w", err)
 	}
 	if err := (&controller.XDSTrigger{Trigger: xdsServer.Trigger, Namespace: gatewayNamespace}).SetupWithManager(mgr); err != nil {
@@ -163,7 +168,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		}
 	}
 
-	ctrlmetrics.Registry.MustRegister(&metrics.Collector{Reader: reader})
+	ctrlmetrics.Registry.MustRegister(&metrics.Collector{Reader: reader}, xds.RejectedTotal)
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err

@@ -2,7 +2,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -469,4 +471,42 @@ func TestGatewaySliceFollowsTheAddressFamily(t *testing.T) {
 	}
 	reconcileGateway(t, r)
 	check(discoveryv1.AddressTypeIPv4, "10.0.9.9")
+}
+
+// While a gateway Envoy rejects its configuration, the Site's GatewayConfig condition is False and names the pod, the
+// type and Envoy's error, for at most 5 rejections. Once none is left, it is True again.
+func TestGatewayConfigCondition(t *testing.T) {
+	c := fakeClient(t, append(activeGatewayPod(), gatewaySite(straitv1.ServiceExposure{}))...)
+	var rejected []string
+	r := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace, ConfigRejections: func() []string { return rejected }}
+	condition := func() metav1.Condition {
+		t.Helper()
+		reconcileGateway(t, r)
+		cond := meta.FindStatusCondition(siteStatus(t, c).Conditions, ConditionGatewayConfig)
+		if cond == nil {
+			t.Fatal("no GatewayConfig condition")
+		}
+		return *cond
+	}
+
+	if got := condition(); got.Status != metav1.ConditionTrue || got.Reason != "Accepted" {
+		t.Errorf("with no rejection: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+	rejected = []string{"pod gateway-0 rejected Listener: " + strings.Repeat("x", 300)}
+	got := condition()
+	if got.Status != metav1.ConditionFalse || got.Reason != "Rejected" || !strings.HasPrefix(got.Message, "pod gateway-0 rejected Listener: xxx") ||
+		len(got.Message) != maxRejection+len("...") {
+		t.Errorf("with one rejection: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+	rejected = nil
+	for i := range 7 {
+		rejected = append(rejected, fmt.Sprintf("pod gateway-%d rejected Cluster: bad", i))
+	}
+	if got := condition(); got.Status != metav1.ConditionFalse || strings.Count(got.Message, "rejected Cluster") != 5 || !strings.HasSuffix(got.Message, "; and 2 more") {
+		t.Errorf("with 7 rejections: %s %s %q", got.Status, got.Reason, got.Message)
+	}
+	rejected = nil
+	if got := condition(); got.Status != metav1.ConditionTrue || got.Reason != "Accepted" || got.Message != "" {
+		t.Errorf("once accepted again: %s %s %q", got.Status, got.Reason, got.Message)
+	}
 }

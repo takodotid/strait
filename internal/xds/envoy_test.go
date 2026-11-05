@@ -17,6 +17,13 @@ import (
 	"testing"
 	"time"
 
+	cluster "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
+	"github.com/envoyproxy/go-control-plane/pkg/cache/v3"
+	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -302,22 +309,15 @@ func TestEnvoyRun(t *testing.T) {
 	}
 }
 
-// TestEnvoyADS runs the Server and an Envoy started from Bootstrap, on the default docker network.
-// The model is the loopback one, read from objects.
-func TestEnvoyADS(t *testing.T) {
+// adsEnvoy runs the Server and an Envoy started from Bootstrap, on the default docker network, and waits until Envoy
+// is ready. The model is the loopback one, read from objects. It returns the server, its objects, the probe, Envoy's
+// node ID and the address of the Envoy container.
+func adsEnvoy(t *testing.T) (*Server, client.Client, probe, string, string) {
 	out, err := docker("network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}")
 	if err != nil {
 		t.Fatalf("docker network inspect: %v\n%s", err, out)
 	}
 	ctx := context.Background()
-	slice := func(service string) *discoveryv1.EndpointSlice {
-		return &discoveryv1.EndpointSlice{
-			ObjectMeta:  metav1.ObjectMeta{Namespace: "app", Name: service + "-1", Labels: map[string]string{discoveryv1.LabelServiceName: service}},
-			AddressType: discoveryv1.AddressTypeIPv4,
-			Ports:       []discoveryv1.EndpointPort{{Name: ptr.To("admin"), Port: ptr.To[int32](AdminPort)}},
-			Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"127.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}},
-		}
-	}
 	var objects []client.Object
 	for i, name := range []string{"admin", "empty"} {
 		objects = append(objects,
@@ -366,6 +366,23 @@ func TestEnvoyADS(t *testing.T) {
 	}
 	s.Trigger()
 	p.ready()
+	return s, c, p, node, ip
+}
+
+// slice is an EndpointSlice of a Service of the loopback model, with Envoy's admin as its one endpoint.
+func slice(service string) *discoveryv1.EndpointSlice {
+	return &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Namespace: "app", Name: service + "-1", Labels: map[string]string{discoveryv1.LabelServiceName: service}},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Ports:       []discoveryv1.EndpointPort{{Name: ptr.To("admin"), Port: ptr.To[int32](AdminPort)}},
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"127.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}},
+	}
+}
+
+// TestEnvoyADS runs the Server and an Envoy over ADS.
+func TestEnvoyADS(t *testing.T) {
+	ctx := context.Background()
+	s, c, p, _, ip := adsEnvoy(t)
 
 	expect(t, p, "GET", "http://127.0.0.1:30900/healthz", 200, "ok")
 	expect(t, p, "GET", "http://127.0.0.1:30900/healthz/exports/app/admin", 200, "")
@@ -402,4 +419,58 @@ func TestEnvoyADS(t *testing.T) {
 			t.Errorf("%s = %s, want %s", name, got, want)
 		}
 	}
+}
+
+// A configuration that Envoy rejects shows in Rejections and in the counter, with Envoy's error. Envoy keeps serving
+// the configuration it accepted last. The next configuration that it accepts clears the rejection.
+func TestEnvoyRejection(t *testing.T) {
+	s, _, p, node, _ := adsEnvoy(t)
+	before := testutil.ToFloat64(RejectedTotal.WithLabelValues("Cluster"))
+	good, err := s.cache.GetSnapshot(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources := map[resource.Type][]types.Resource{}
+	for _, typ := range []resource.Type{resource.ListenerType, resource.ClusterType, resource.EndpointType} {
+		for _, r := range good.GetResources(typ) {
+			r = proto.Clone(r)
+			if c, ok := r.(*cluster.Cluster); ok {
+				// Envoy requires a connect timeout above 0.
+				c.ConnectTimeout = durationpb.New(-time.Second)
+			}
+			resources[typ] = append(resources[typ], r)
+		}
+	}
+	bad, err := cache.NewSnapshot("rejected", resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.cache.SetSnapshot(context.Background(), node, bad); err != nil {
+		t.Fatal(err)
+	}
+	p.eventually("Envoy rejects the clusters", func() string {
+		got := s.Rejections()
+		if len(got) == 1 && strings.HasPrefix(got[0], "pod "+node+" rejected Cluster: ") {
+			return ""
+		}
+		return fmt.Sprintf("Rejections() = %q", got)
+	})
+	t.Logf("rejection: %s", s.Rejections()[0])
+	// Envoy rejects the configuration once: it is not sent again until it changes.
+	time.Sleep(2 * time.Second)
+	if got := testutil.ToFloat64(RejectedTotal.WithLabelValues("Cluster")) - before; got != 1 {
+		t.Errorf("strait_xds_rejected_total{type=Cluster} grew by %v, want 1", got)
+	}
+	if got := p.stat("cluster_manager.cds.update_rejected"); got != "1" {
+		t.Errorf("Envoy's cluster_manager.cds.update_rejected = %s, want 1", got)
+	}
+	expect(t, p, "GET", "http://127.0.0.1:30900/healthz/exports/app/admin", 200, "")
+
+	s.Trigger()
+	p.eventually("Envoy accepts the clusters again", func() string {
+		if got := s.Rejections(); len(got) > 0 {
+			return fmt.Sprintf("Rejections() = %q", got)
+		}
+		return ""
+	})
 }

@@ -74,7 +74,7 @@ Read both ends: a link needs the gateway at each site.
 | 1 | `strait --context site-a peers` | `REACHABLE` false, and `LAST ERROR`. |
 | 2 | `strait --context site-a links` | Whether any link to that peer is `HEALTHY`. |
 | 3 | `kubectl --context site-a get sitelink b-wan -o yaml` | The reason and message of the `Healthy` condition. |
-| 4 | `kubectl --context site-a get site a -o yaml` | The `GatewayActive` and `GatewayServices` conditions. |
+| 4 | `kubectl --context site-a get site a -o yaml` | The `GatewayActive`, `GatewayServices` and `GatewayConfig` conditions. |
 
 | Symptom | Cause and next step |
 |---|---|
@@ -98,6 +98,7 @@ The conditions of the `Site`:
 |---|---|---|
 | `GatewayActive` False, `NoActiveGateway` | No ready gateway pod holds the gateway lease. | `kubectl --context site-a -n strait-system get pods,events`. The API server rejects the gateway pods unless the namespace's Pod Security level is `privileged`. |
 | `GatewayServices` False, `DirectServiceFailed` or `WireGuardServiceFailed` | The controller could not write a gateway Service. The message holds the API server's error. | For example, a WireGuard listen port outside the cluster's node port range, with a `NodePort` or `LoadBalancer` Service. Or a node port that another Service already holds: find it with `kubectl --context site-a get services -A`, and move that Service to another port ([RFC0005, Limitations](../rfcs/RFC0005.md#limitations)). |
+| `GatewayConfig` False, `Rejected` | A gateway pod's Envoy rejected its configuration, and keeps the one it accepted last. New exports, imports and links may be missing from it. The message names the pod, the type and Envoy's error. | The controller's log, `a gateway Envoy rejected its configuration`. The condition clears once the pod accepts a later configuration. A rejection is a defect in Strait: report it with the error. |
 | `GatewayActive` moves to another pod while nothing failed | The active gateway replica could not renew the gateway Lease within `spec.gateway.lease.renewDeadline`, 4s by default, for example while the API server stalled. Every connection across the gateway resets. | The API server's availability. A longer `renewDeadline` and `duration` ride out longer stalls, and keep a failed replica active for longer ([RFC0005, Timing of the gateway Lease](../rfcs/RFC0005.md#timing-of-the-gateway-lease)). |
 
 ## Logs, events and metrics
