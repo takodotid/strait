@@ -12,14 +12,17 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/xds"
 )
@@ -185,6 +188,36 @@ func TestRunnablesNeedLeaderElection(t *testing.T) {
 		l, ok := r.(manager.LeaderElectionRunnable)
 		if !ok || !l.NeedLeaderElection() {
 			t.Errorf("runnable %d (%T) runs without the Lease", i, r)
+		}
+	}
+}
+
+// The controller polls a peer through the active gateway's peer listener, so the poll takes the link that the gateway
+// picks for traffic. It has no URL while no gateway is active (RFC0004, requirement 10). That the peer listener and
+// each peer's cluster follow the link order of traffic is TestBuildPeers and TestBuildClusters in internal/xds.
+func TestPeerURL(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := straitv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		gateway string
+		want    string
+	}{
+		{"10.0.9.9", "http://10.0.9.9:14999/peers/b"},
+		{"fd00::9", "http://[fd00::9]:14999/peers/b"},
+		{"", ""},
+	} {
+		site := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: "a"}}
+		site.Spec.Gateway.PeerPort = 14999
+		site.Status.Gateway.Address = tc.gateway
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(site).Build()
+		got, err := peerURL(context.Background(), c, "b")
+		switch {
+		case tc.want == "" && err == nil:
+			t.Errorf("gateway %q: URL %q, want an error", tc.gateway, got)
+		case tc.want != "" && (err != nil || got != tc.want):
+			t.Errorf("gateway %q: URL %q, error %v; want %q", tc.gateway, got, err, tc.want)
 		}
 	}
 }
