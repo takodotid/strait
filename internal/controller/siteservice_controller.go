@@ -37,6 +37,9 @@ const resync = 2 * time.Second
 // statusRefresh bounds the age of the timestamps in a SiteService's status.
 const statusRefresh = 10 * time.Second
 
+// statusTimeout bounds the status write that follows a decision. It has its own time, apart from the reconcile's.
+const statusTimeout = 5 * time.Second
+
 // SiteServiceReconciler decides each SiteService's route and writes its Service and EndpointSlices.
 type SiteServiceReconciler struct {
 	client.Client
@@ -162,7 +165,11 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if a.err != nil {
 		logger.Error(a.err, "route not applied", "route", result.Members)
 	}
-	if err := r.writeStatus(ctx, &svc, sites, observations, confirmed, shown, a, now); err != nil {
+	// Status follows every decision (RFC#0002, requirement 39), also when the reconcile's time ran out during the apply.
+	statusCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), statusTimeout)
+	err = r.writeStatus(statusCtx, &svc, sites, observations, confirmed, shown, a, now)
+	cancel()
+	if err != nil {
 		logger.Error(err, "status not written")
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", a.endpoints())

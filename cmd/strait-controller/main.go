@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -148,14 +149,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		return fmt.Errorf("xds trigger: %w", err)
 	}
 
-	document := func() exchange.Document {
-		name := ""
-		if site, err := controller.LocalSite(context.Background(), reader); err == nil {
-			name = site.Name
-		}
-		return local.Document(name, time.Now())
-	}
-	for _, r := range runnables(observationsAddr, document, poller, mgr.GetClient(), xdsServer) {
+	for _, r := range runnables(observationsAddr, localDocument(reader, local, time.Now), poller, mgr.GetClient(), xdsServer) {
 		if err := mgr.Add(r); err != nil {
 			return err
 		}
@@ -192,6 +186,18 @@ func runnables(observationsAddr string, document func() exchange.Document, polle
 	}
 }
 
+// localDocument returns the site's document as now gives it. A member observed longer ago than the site's peerTimeout
+// is published as Unknown (RFC0004, requirement 15). now must be time.Now outside tests.
+func localDocument(r client.Reader, local *exchange.Local, now func() time.Time) func() exchange.Document {
+	return func() exchange.Document {
+		name, maxAge := "", time.Duration(0)
+		if site, err := controller.LocalSite(context.Background(), r); err == nil {
+			name, maxAge = site.Name, site.Spec.Exchange.PeerTimeout.Duration
+		}
+		return local.Document(name, now(), maxAge)
+	}
+}
+
 // peerURL is the base URL of a peer's observation document: the active gateway's peer listener, which routes
 // /peers/<peer>/ over the link that the gateway picks for that peer's traffic. The controller never dials a peer
 // itself (RFC0004, requirement 10).
@@ -208,6 +214,10 @@ func peerURL(ctx context.Context, r client.Reader, peer string) (string, error) 
 
 // leaderElectionID names the controller's leader election Lease.
 const leaderElectionID = "strait-controller"
+
+// reconcileTimeout bounds each reconcile, so that a request that hangs does not hold the one worker of its kind. It
+// equals the leader election's renew deadline: an API server that takes longer to answer costs the Lease anyway.
+const reconcileTimeout = 10 * time.Second
 
 // managerOptions are the manager's options. A manager that stops releases the Lease once its leader-only runnables
 // have stopped, so the next controller takes it at once instead of after the lease duration (RFC0004). That is safe
@@ -227,6 +237,7 @@ func managerOptions(scheme *runtime.Scheme, lock resourcelock.Interface, namespa
 		LeaderElectionResourceLockInterface: lock,
 		LeaderElectionReleaseOnCancel:       true,
 		GracefulShutdownTimeout:             ptr.To(time.Duration(-1)),
+		Controller:                          config.Controller{ReconciliationTimeout: reconcileTimeout},
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
 			&corev1.Pod{}:           inGateway,
 			&coordinationv1.Lease{}: inGateway,

@@ -63,7 +63,7 @@ func siteDocument(name string, members ...observe.Observation) Document {
 	l := &Local{}
 	l.SetService("app", "pg", "pg-a", members)
 	l.SetExport("app", "pg-"+name, 30901, true)
-	return l.Document(name, at)
+	return l.Document(name, at, 0)
 }
 
 // recorder records Changed calls.
@@ -410,7 +410,7 @@ func TestView(t *testing.T) {
 	_, c := newSite(t, "c", siteDocument("c", obs("pg-c", "c")))
 	l := &Local{}
 	l.SetService("app", "other", "", []observe.Observation{obs("other-d", "d")})
-	_, d := newSite(t, "d", l.Document("d", at))
+	_, d := newSite(t, "d", l.Document("d", at, 0))
 	p := newPoller(map[string]*httptest.Server{"b": b, "c": c, "d": d}, nil)
 	p.round(context.Background(), time.Second, time.Minute)
 

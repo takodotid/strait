@@ -10,7 +10,7 @@ import (
 )
 
 func TestHandler(t *testing.T) {
-	h := NewHandler(func() Document { return exampleLocal().Document("a", at) })
+	h := NewHandler(func() Document { return exampleLocal().Document("a", at, 0) })
 	tests := []struct {
 		method, target string
 		code           int
@@ -49,7 +49,7 @@ func TestHandler(t *testing.T) {
 }
 
 func TestHandlerBodies(t *testing.T) {
-	srv := httptest.NewServer(NewHandler(func() Document { return exampleLocal().Document("a", at) }))
+	srv := httptest.NewServer(NewHandler(func() Document { return exampleLocal().Document("a", at, 0) }))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + HealthPath)

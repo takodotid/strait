@@ -680,7 +680,7 @@ func TestLocalClustersDisagree(t *testing.T) {
 	if len(endpointSlices(t, c)) != 0 {
 		t.Errorf("slices = %v", endpointSlices(t, c))
 	}
-	doc := local.Document("a", now)
+	doc := local.Document("a", now, 0)
 	if len(doc.Services) != 1 || doc.Services[0].DeclaredPrimary != "" {
 		t.Errorf("document = %+v", doc.Services)
 	}

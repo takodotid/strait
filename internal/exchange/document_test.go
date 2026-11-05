@@ -60,7 +60,7 @@ func exampleLocal() *Local {
 }
 
 func TestDocumentShape(t *testing.T) {
-	got, err := json.Marshal(exampleLocal().Document("a", at))
+	got, err := json.Marshal(exampleLocal().Document("a", at, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestDocumentEmptyFields(t *testing.T) {
 	l := &Local{}
 	l.SetService("app", "pg", "", []observe.Observation{observe.Unknown("pg-a", "a", "NotObserved", at)})
 	l.SetExport("app", "pg-pg-a", 30901, false)
-	got, err := json.Marshal(l.Document("a", at))
+	got, err := json.Marshal(l.Document("a", at, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestDocumentEmptyFields(t *testing.T) {
 			t.Errorf("document lacks %s: %s", field, got)
 		}
 	}
-	empty, err := json.Marshal((&Local{}).Document("a", at))
+	empty, err := json.Marshal((&Local{}).Document("a", at, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestMemberObservation(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	good := exampleLocal().Document("a", at)
+	good := exampleLocal().Document("a", at, 0)
 	if err := good.validate("a"); err != nil {
 		t.Fatalf("good document: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestValidate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := exampleLocal().Document("a", at)
+			d := exampleLocal().Document("a", at, 0)
 			tt.change(&d)
 			err := d.validate("a")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
