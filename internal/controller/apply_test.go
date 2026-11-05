@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -411,5 +412,224 @@ func TestFailedWriteKeepsTheHoldTimer(t *testing.T) {
 	f.disarm()
 	if err != nil || res.RequeueAfter <= 0 || res.RequeueAfter > time.Second+50*time.Millisecond {
 		t.Fatalf("result %+v, error %v; want a requeue when the hold ends, in 1s, and no error", res, err)
+	}
+}
+
+// A route change writes the application name's EndpointSlices and the SiteService's status, and nothing else: the
+// Service, the Exports and the Imports stay as they are, so the gateway's configuration does not change either
+// (RFC#0002, requirement 14).
+func TestRouteChangeWritesOnlySlices(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*testing.T, *faults) (*SiteServiceReconciler, client.Client)
+		to    string
+	}{
+		{"local to gateway", routedToA, "web-b"},
+		{"gateway to local", routedToB, "web-a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &faults{}
+			r, c := tc.setup(t, f)
+			declare(t, r, c, tc.to)
+			f.arm(0)
+			if err := reconcileWeb(r); err != nil {
+				t.Fatal(err)
+			}
+			f.disarm()
+			if m := sliceMembers(context.Background(), t, c); !slices.Equal(m, []string{tc.to}) {
+				t.Fatalf("slices of %v, want [%s]", m, tc.to)
+			}
+			slicesWritten := 0
+			for _, w := range f.writes {
+				switch {
+				case strings.Contains(w, " *v1.EndpointSlice web-web-"):
+					slicesWritten++
+				case w == "update status of *v1.SiteService web":
+				default:
+					t.Errorf("the route change wrote %q; all writes: %v", w, f.writes)
+				}
+			}
+			if slicesWritten == 0 {
+				t.Fatalf("the route change wrote no EndpointSlice: %v", f.writes)
+			}
+		})
+	}
+}
+
+// lagging is a cache that shows an older version of some EndpointSlices.
+type lagging struct {
+	client.Client
+	old map[string]*discoveryv1.EndpointSlice
+}
+
+func (s *lagging) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if es, ok := obj.(*discoveryv1.EndpointSlice); ok && s.old[key.Name] != nil {
+		s.old[key.Name].DeepCopyInto(es)
+		return nil
+	}
+	return s.Client.Get(ctx, key, obj, opts...)
+}
+
+// A slice write right after the controller's own last write of that slice reads it from the API server when the cache
+// does not show that write yet, and writes again: the decision is applied in that reconcile (issue #38, item 1).
+func TestSliceWriteWhileCacheLags(t *testing.T) {
+	t.Run("cache shows no slice", func(t *testing.T) {
+		f := &faults{}
+		r, c := routedToA(t, f)
+		cache := &hiding{Client: c, hidden: map[string]bool{"web-web-a": true}}
+		r.Client, r.Reader, r.APIReader = cache, cache, c
+		if err := reconcileWeb(r); err != nil {
+			t.Fatal(err)
+		}
+		st := status(t, c)
+		if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue {
+			t.Fatalf("Applied = %+v, want True", applied)
+		}
+		if !slices.Equal(st.Route.Members, []string{"web-a"}) || st.Route.Endpoints != 1 {
+			t.Fatalf("route = %+v", st.Route)
+		}
+	})
+	t.Run("cache shows an older slice", func(t *testing.T) {
+		f := &faults{}
+		r, c := routedToA(t, f)
+		var old discoveryv1.EndpointSlice
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &old); err != nil {
+			t.Fatal(err)
+		}
+		// web-a gets a second ready address, and the controller writes it into the slice.
+		var eps discoveryv1.EndpointSlice
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
+			t.Fatal(err)
+		}
+		eps.Endpoints = append(eps.Endpoints, discoveryv1.Endpoint{Addresses: []string{"10.0.0.2"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}})
+		if err := c.Update(context.Background(), &eps); err != nil {
+			t.Fatal(err)
+		}
+		run(t, r)
+		// The cache still shows the slice before that write. Then a third address comes.
+		cache := &lagging{Client: c, old: map[string]*discoveryv1.EndpointSlice{"web-web-a": &old}}
+		r.Client, r.Reader, r.APIReader = cache, cache, c
+		eps.Endpoints = append(eps.Endpoints, discoveryv1.Endpoint{Addresses: []string{"10.0.0.3"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}})
+		if err := c.Update(context.Background(), &eps); err != nil {
+			t.Fatal(err)
+		}
+		if err := reconcileWeb(r); err != nil {
+			t.Fatal(err)
+		}
+		st := status(t, c)
+		if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue {
+			t.Fatalf("Applied = %+v, want True", applied)
+		}
+		if st.Route.Endpoints != 3 {
+			t.Fatalf("route = %+v, want 3 endpoints", st.Route)
+		}
+	})
+}
+
+// An EndpointSlice's address type cannot change. When a member's addresses change family, its slice is deleted and
+// written again with the new family, so the member keeps its endpoints (issue #38, item 2).
+func TestSliceAddressFamilyChange(t *testing.T) {
+	f := &faults{}
+	r, c := routedToA(t, f)
+	var before discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &before); err != nil {
+		t.Fatal(err)
+	}
+	if before.AddressType != discoveryv1.AddressTypeIPv4 {
+		t.Fatalf("before: address type %s", before.AddressType)
+	}
+	// web-a's pods move to IPv6.
+	var eps discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
+		t.Fatal(err)
+	}
+	eps.AddressType = discoveryv1.AddressTypeIPv6
+	eps.Endpoints = []discoveryv1.Endpoint{{Addresses: []string{"fd00::1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}}
+	if err := c.Update(context.Background(), &eps); err != nil {
+		t.Fatal(err)
+	}
+	f.arm(0)
+	if err := reconcileWeb(r); err != nil {
+		t.Fatal(err)
+	}
+	f.disarm()
+
+	var after discoveryv1.EndpointSlice
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.AddressType != discoveryv1.AddressTypeIPv6 || !slices.Equal(sliceAddresses(after), []string{"fd00::1"}) {
+		t.Fatalf("after: address type %s, addresses %v; want IPv6, [fd00::1]", after.AddressType, sliceAddresses(after))
+	}
+	// A real API server refuses to change the address type, so the slice must be a new object.
+	del := slices.Index(f.writes, "delete *v1.EndpointSlice web-web-a")
+	create := slices.Index(f.writes, "create *v1.EndpointSlice web-web-a")
+	if del < 0 || create < del || slices.Contains(f.writes, "update *v1.EndpointSlice web-web-a") {
+		t.Fatalf("writes %v, want a delete of web-web-a, then a create", f.writes)
+	}
+	st := status(t, c)
+	if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue {
+		t.Fatalf("Applied = %+v, want True", applied)
+	}
+	if !slices.Equal(st.Route.Members, []string{"web-a"}) || st.Route.Endpoints != 1 {
+		t.Fatalf("route = %+v", st.Route)
+	}
+}
+
+// The slice of a new address type is written also while the cache still shows the deleted one: one that still has
+// an endpoint, or one with none, as a release without this fix leaves it (issue #38, items 1 and 2).
+func TestSliceAddressFamilyChangeWhileCacheLags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// empty empties the slice in place before the change, as a release without the fix leaves it.
+		empty bool
+	}{
+		{"old slice with an endpoint", false},
+		{"old slice with no endpoint", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &faults{}
+			r, c := routedToA(t, f)
+			var before discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &before); err != nil {
+				t.Fatal(err)
+			}
+			if tc.empty {
+				before.Endpoints = nil
+				if err := c.Update(context.Background(), &before); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var eps discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
+				t.Fatal(err)
+			}
+			eps.AddressType = discoveryv1.AddressTypeIPv6
+			eps.Endpoints = []discoveryv1.Endpoint{{Addresses: []string{"fd00::1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}}
+			if err := c.Update(context.Background(), &eps); err != nil {
+				t.Fatal(err)
+			}
+			cache := &lagging{Client: c, old: map[string]*discoveryv1.EndpointSlice{"web-web-a": &before}}
+			r.Client, r.Reader, r.APIReader = cache, cache, c
+			f.arm(0)
+			if err := reconcileWeb(r); err != nil {
+				t.Fatal(err)
+			}
+			f.disarm()
+			var after discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &after); err != nil {
+				t.Fatalf("no slice of web-a after the decision: %v; writes %v", err, f.writes)
+			}
+			if after.AddressType != discoveryv1.AddressTypeIPv6 || !slices.Equal(sliceAddresses(after), []string{"fd00::1"}) {
+				t.Fatalf("after: address type %s, addresses %v; want IPv6, [fd00::1]", after.AddressType, sliceAddresses(after))
+			}
+			if del, create := slices.Index(f.writes, "delete *v1.EndpointSlice web-web-a"), slices.Index(f.writes, "create *v1.EndpointSlice web-web-a"); del < 0 || create < del {
+				t.Fatalf("writes %v, want a delete of web-web-a, then a create", f.writes)
+			}
+			st := status(t, c)
+			if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue || st.Route.Endpoints != 1 {
+				t.Fatalf("Applied = %+v, route %+v; want True with 1 endpoint", applied, st.Route)
+			}
+		})
 	}
 }

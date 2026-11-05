@@ -176,6 +176,10 @@ func observeCluster(ctx context.Context, r client.Reader, namespace string, m st
 	case errors.Is(err, ErrNoService):
 		setReason(&o, "ServiceNotFound")
 		return o, c.declared
+	case errors.Is(err, ErrNoPort):
+		// The Service was read: the member is not eligible, and its state is the Cluster's (RFC#0003, requirement 3).
+		setReason(&o, "PortNotFound")
+		return o, c.declared
 	case err != nil:
 		return observe.Unknown(m.Name, "", "ReadFailed: "+err.Error(), now), c.declared
 	case len(ep.Addresses) == 0:

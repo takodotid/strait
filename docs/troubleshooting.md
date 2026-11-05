@@ -56,7 +56,7 @@ A peer is unreachable while its controller restarts, as in an upgrade. Upgrade o
 | `ClusterNotFound` | No CloudNativePG `Cluster` named `members[].cnpg.cluster` in the `SiteService`'s namespace. | The name, and the namespace: a member's `Cluster` and its `SiteService` share one. |
 | `ServiceNotFound` | The member's endpoint Service does not exist. For `cnpg`, the `Cluster`'s Service for the role ([RFC0003](../rfcs/RFC0003.md#cnpg-endpoint-by-role)). For `declared`, `members[].service.name`. | The workload's Services. |
 | `NoReadyEndpoint` | The endpoint Service has no ready address. | The workload's pods. |
-| `PortNotFound` | `declared` only. The member's Service has no port numbered `members[].service.port`. | The Service's ports, and `members[].service.port`. |
+| `PortNotFound` | The member's endpoint Service has no port of the number it needs. For `cnpg`, port 5432 on the `Cluster`'s Service or the `Pooler`'s. For `declared`, `members[].service.port`. | The Service's ports. |
 | `PoolerNotFound`, `PoolerOfAnotherCluster`, `PoolerTypeMismatch`, `PoolerPaused` | The `Pooler` named in `members[].cnpg.pooler` cannot be used. | The `Pooler` must exist, belong to the member's `Cluster`, match the role, and not be paused. |
 | `ReplicaCluster` | The `Cluster` is a replica cluster, so it is not writable. | None. Expected for every member but the primary. |
 | `PrimaryChanging`, `Demoting`, `Promoting`, `NotYetWritable`, `NotYetReadOnly`, `Phase: ...` | CloudNativePG is moving the primary. The `STATE` is `Transitioning`. | Wait for the move to end. [RFC0003, role and state](../rfcs/RFC0003.md#cnpg-role-and-state). |
@@ -104,6 +104,17 @@ The conditions of the `Site`:
 | Versions | `strait version` for the CLI. `VERSION` in `strait status` for the site's controller. |
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
 | Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
-| CloudNativePG watch | The controller logs `cloudnative-pg` at start. `watched` false means CloudNativePG's CRDs were missing then: restart the controller. |
+| CloudNativePG watch | The controller logs `cloudnative-pg` at start. `watched` false means CloudNativePG's CRDs were missing then: restart the controller. `watched` true needs `cnpg.enabled: true` in the chart's values: [Getting started, Prerequisites](getting-started.md#prerequisites). |
 | Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. |
 | Metrics | Port `metrics`, 8080, of the controller pod. The route, the conditions, peer reachability and link health: [RFC0002, Metrics](../rfcs/RFC0002.md#metrics). A route to nowhere shows as `strait_siteservice_endpoints` 0. |
+
+## Runbooks
+
+| Case | Runbook |
+|---|---|
+| A site is lost, and a member at another site must become primary. | [Site loss](runbooks/site-loss.md) |
+| A lost site comes back, maybe with its old primary. `startupHold` for production. | [Site return](runbooks/site-return.md) |
+| A site's WireGuard private key must change. | [WireGuard key rotation](runbooks/wireguard-key-rotation.md) |
+| The controller or a gateway pod does not become ready. | [Not ready](runbooks/not-ready.md) |
+| An upgrade, or a node drain. | [Upgrade](../README.md#upgrade) |
+| A site must go back to an earlier 1.x release. | [Roll back within 1.x](runbooks/rollback.md) |

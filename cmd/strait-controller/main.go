@@ -109,16 +109,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 			}
 			return out
 		},
-		URL: func(peer string) (string, error) {
-			site, err := controller.LocalSite(context.Background(), reader)
-			if err != nil {
-				return "", err
-			}
-			if site.Status.Gateway.Address == "" {
-				return "", errors.New("no active gateway")
-			}
-			return fmt.Sprintf("http://%s/peers/%s", net.JoinHostPort(site.Status.Gateway.Address, strconv.Itoa(int(site.Spec.Gateway.PeerPort))), peer), nil
-		},
+		URL: func(peer string) (string, error) { return peerURL(context.Background(), reader, peer) },
 		Exchange: func() straitv1.ExchangeSpec {
 			site, err := controller.LocalSite(context.Background(), reader)
 			if err != nil {
@@ -134,12 +125,13 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	}
 
 	if err := (&controller.SiteServiceReconciler{
-		Client:   mgr.GetClient(),
-		Reader:   reader,
-		Recorder: mgr.GetEventRecorder("strait-controller"),
-		Peers:    poller,
-		Local:    local,
-		Now:      time.Now,
+		Client:    mgr.GetClient(),
+		Reader:    reader,
+		APIReader: mgr.GetAPIReader(),
+		Recorder:  mgr.GetEventRecorder("strait-controller"),
+		Peers:     poller,
+		Local:     local,
+		Now:       time.Now,
 	}).SetupWithManager(mgr, ssChanges, watchCNPG); err != nil {
 		return fmt.Errorf("siteservice controller: %w", err)
 	}
@@ -198,6 +190,20 @@ func runnables(observationsAddr string, document func() exchange.Document, polle
 		leaderOnly(&exchange.StatusWriter{Client: c, Poller: poller}),
 		xdsServer,
 	}
+}
+
+// peerURL is the base URL of a peer's observation document: the active gateway's peer listener, which routes
+// /peers/<peer>/ over the link that the gateway picks for that peer's traffic. The controller never dials a peer
+// itself (RFC0004, requirement 10).
+func peerURL(ctx context.Context, r client.Reader, peer string) (string, error) {
+	site, err := controller.LocalSite(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	if site.Status.Gateway.Address == "" {
+		return "", errors.New("no active gateway")
+	}
+	return fmt.Sprintf("http://%s/peers/%s", net.JoinHostPort(site.Status.Gateway.Address, strconv.Itoa(int(site.Spec.Gateway.PeerPort))), peer), nil
 }
 
 // leaderElectionID names the controller's leader election Lease.

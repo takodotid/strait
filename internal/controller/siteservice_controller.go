@@ -41,11 +41,14 @@ const statusRefresh = 10 * time.Second
 type SiteServiceReconciler struct {
 	client.Client
 	// Reader is what the controller reads its inputs through. Plugins get it wrapped by plugin.ReadOnly.
-	Reader   client.Reader
-	Recorder events.EventRecorder
-	Peers    Peers
-	Local    Local
-	Now      func() time.Time
+	Reader client.Reader
+	// APIReader reads from the API server, with no cache. A write of an EndpointSlice that finds the cache behind the
+	// controller's own last write of it reads the slice through APIReader, and writes again. Nil writes once.
+	APIReader client.Reader
+	Recorder  events.EventRecorder
+	Peers     Peers
+	Local     Local
+	Now       func() time.Time
 
 	// confirmed keeps each member's last confirmed time at full precision, by SiteService and member.
 	confirmed map[types.NamespacedName]map[string]time.Time
@@ -554,7 +557,20 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	}
 	for _, member := range slices.Sorted(maps.Keys(targets)) {
 		t := targets[member]
-		es, err := r.writeSlice(ctx, svc, member, t)
+		// A slice's address type cannot change. A slice that would hold none of the member's addresses is deleted,
+		// and written again with their address type (issue #38). The cache can still show the deleted slice, so the
+		// new one is written over what the API server holds.
+		deleted := false
+		if name := memberObjectName(svc, member); !hasFamily(t.addresses, a.slices[name].AddressType) {
+			es := a.slices[name]
+			if err := r.Delete(ctx, &es); client.IgnoreNotFound(err) != nil {
+				a.err = fmt.Errorf("delete endpointslice %s: %w", name, err)
+				return a
+			}
+			delete(a.slices, name)
+			deleted = true
+		}
+		es, err := r.writeSlice(ctx, svc, member, t, deleted)
 		if err != nil {
 			a.err = err
 			return a
@@ -565,11 +581,39 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	return a
 }
 
-// writeSlice writes the EndpointSlice of one routed member.
-func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target) (*discoveryv1.EndpointSlice, error) {
-	name := memberObjectName(svc, member)
-	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
+// writeSlice writes the EndpointSlice of one routed member. Right after the controller's own last write of the slice,
+// the cache may not show that write yet: a create then finds that the slice exists, and an update finds a newer
+// version, or none after a delete. The slice is then read from the API server, and written once more (issue #38).
+// Live reads it from the API server at once, as after the controller deleted it.
+func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool) (*discoveryv1.EndpointSlice, error) {
+	c := r.Client
+	if live && r.APIReader != nil {
+		c = liveReads{Client: r.Client, live: r.APIReader}
+	}
+	es, err := r.upsertSlice(ctx, c, svc, member, t)
+	if !live && r.APIReader != nil && (apierrors.IsAlreadyExists(err) || apierrors.IsConflict(err) || apierrors.IsNotFound(err)) {
+		es, err = r.upsertSlice(ctx, liveReads{Client: r.Client, live: r.APIReader}, svc, member, t)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("endpointslice %s: %w", memberObjectName(svc, member), err)
+	}
+	return es, nil
+}
+
+// liveReads is a client whose Get reads from the API server.
+type liveReads struct {
+	client.Client
+	live client.Reader
+}
+
+func (l liveReads) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	return l.live.Get(ctx, key, obj, opts...)
+}
+
+// upsertSlice creates or updates the EndpointSlice of one routed member, with the slice that c reads as its base.
+func (r *SiteServiceReconciler) upsertSlice(ctx context.Context, c client.Client, svc *straitv1.SiteService, member string, t target) (*discoveryv1.EndpointSlice, error) {
+	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: memberObjectName(svc, member), Namespace: svc.Namespace}}
+	if _, err := controllerutil.CreateOrUpdate(ctx, c, es, func() error {
 		es.Labels = map[string]string{
 			discoveryv1.LabelServiceName: svc.Name,
 			LabelManagedBy:               ManagedBy,
@@ -596,9 +640,15 @@ func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.Si
 		}
 		return controllerutil.SetControllerReference(svc, es, r.Scheme())
 	}); err != nil {
-		return nil, fmt.Errorf("endpointslice %s: %w", name, err)
+		return nil, err
 	}
 	return es, nil
+}
+
+// hasFamily reports whether a slice of address type at holds one of the addresses. A slice that is not in place,
+// with no address type, holds any.
+func hasFamily(addresses []string, at discoveryv1.AddressType) bool {
+	return at == "" || slices.ContainsFunc(addresses, func(a string) bool { return addressType([]string{a}) == at })
 }
 
 func addressType(addresses []string) discoveryv1.AddressType {

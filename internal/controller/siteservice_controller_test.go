@@ -722,3 +722,150 @@ func TestRoutedCondition(t *testing.T) {
 		})
 	}
 }
+
+// writableB is a fresh peer b that declares web-a, and whose member web-b is writable too.
+var writableB = peers{
+	fresh: map[string]bool{"b": true},
+	view: map[string]observe.Report{"b": {Declared: "web-a", Members: map[string]observe.Observation{
+		"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, ObservedAt: now},
+	}}},
+}
+
+// warnings returns the Warning events recorded so far, with their reasons.
+func warnings(r *SiteServiceReconciler) []string {
+	var out []string
+	for {
+		select {
+		case e := <-r.Recorder.(*events.FakeRecorder).Events:
+			if strings.HasPrefix(e, corev1.EventTypeWarning+" ") {
+				out = append(out, e)
+			}
+		default:
+			return out
+		}
+	}
+}
+
+// Two writable members raise a Warning event and set the Multiple condition, whatever the policy: also when
+// PreferDeclaredIfConsistent routes to the declared one (RFC#0002, requirement 22).
+func TestMultipleWritableWarns(t *testing.T) {
+	for _, tc := range []struct {
+		policy straitv1.MultiplePolicy
+		route  []string
+		reason string
+	}{
+		{straitv1.RouteNowhere, nil, straitv1.ReasonMultipleWritable},
+		{straitv1.PreferDeclaredIfConsistent, []string{"web-a"}, straitv1.ReasonPreferDeclared},
+	} {
+		t.Run(string(tc.policy), func(t *testing.T) {
+			imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+			imp.Status.GatewayPort = 15001
+			ss := webService("web-a")
+			ss.Spec.Policy.Multiple = tc.policy
+			r, c := reconciler(t, writableB, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss, imp)...)
+			run(t, r)
+			st := status(t, c)
+			if !slices.Equal(st.Route.Members, tc.route) || st.Route.Reason != tc.reason {
+				t.Fatalf("route = %+v, want %v with %s", st.Route, tc.route, tc.reason)
+			}
+			multiple := meta.FindStatusCondition(st.Conditions, straitv1.ConditionMultiple)
+			if multiple == nil || multiple.Status != metav1.ConditionTrue || multiple.Reason != straitv1.ReasonMultipleWritable {
+				t.Fatalf("Multiple condition = %+v, want True with %s", multiple, straitv1.ReasonMultipleWritable)
+			}
+			w := warnings(r)
+			if !slices.ContainsFunc(w, func(e string) bool { return strings.HasPrefix(e, "Warning "+straitv1.ReasonMultipleWritable+" ") }) {
+				t.Fatalf("Warning events %v, want one with reason %s", w, straitv1.ReasonMultipleWritable)
+			}
+		})
+	}
+}
+
+// status.declarations shows the declaration of each known site: the local site and every peer in the exchange's view,
+// also one that declares none. The view holds the fresh peers only (TestView), so peer c, read once and stale now, is
+// not shown (RFC#0002, requirement 26).
+func TestDeclarations(t *testing.T) {
+	ss := webService("web-a")
+	ss.Spec.Members = append(ss.Spec.Members,
+		straitv1.Member{Name: "web-c", Site: "c", Service: &straitv1.ServicePortRef{Name: "web-c", Port: 8080}},
+		straitv1.Member{Name: "web-d", Site: "d", Service: &straitv1.ServicePortRef{Name: "web-d", Port: 8080}},
+	)
+	p := peers{
+		fresh: map[string]bool{"b": true, "d": true},
+		read:  map[string]bool{"c": true},
+		view: map[string]observe.Report{
+			"b": {Declared: "web-a", Members: map[string]observe.Observation{
+				"web-b": {Member: "web-b", Site: "b", Role: straitv1.RoleReplica, Eligible: true, State: straitv1.StateStable, ObservedAt: now},
+			}},
+			"d": {Members: map[string]observe.Observation{}},
+		},
+	}
+	r, c := reconciler(t, p, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss)...)
+	run(t, r)
+	want := []straitv1.Declaration{{Site: "a", Primary: "web-a"}, {Site: "b", Primary: "web-a"}, {Site: "d"}}
+	if got := status(t, c).Declarations; !slices.Equal(got, want) {
+		t.Fatalf("declarations = %+v, want %+v", got, want)
+	}
+}
+
+// status.observedGeneration is the metadata.generation that the status was computed from (RFC#0002,
+// requirement 28).
+func TestObservedGeneration(t *testing.T) {
+	ss := webService("web-a")
+	ss.Generation = 3
+	r, c := reconciler(t, peers{}, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), ss)...)
+	run(t, r)
+	if st := status(t, c); st.ObservedGeneration != 3 {
+		t.Fatalf("observedGeneration = %d, want 3", st.ObservedGeneration)
+	}
+
+	var cur straitv1.SiteService
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web"}, &cur); err != nil {
+		t.Fatal(err)
+	}
+	// The fake API server does not count generations, so the test sets the one that a spec change gives.
+	cur.Spec.Policy.UnknownHold = metav1.Duration{Duration: 20 * time.Second}
+	cur.Generation = 4
+	if err := c.Update(context.Background(), &cur); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	st := status(t, c)
+	if st.ObservedGeneration != 4 {
+		t.Fatalf("after a spec change: observedGeneration = %d, want 4", st.ObservedGeneration)
+	}
+}
+
+// Endpoint-direct applies only to a direct link with endpointDirect, only while it is the active, healthy link to the
+// member's peer. Otherwise the member takes the gateway (RFC#0005, requirement 19).
+func TestEndpointDirectOnlyOnTheActiveHealthyLink(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		link func(*straitv1.SiteLink)
+	}{
+		{"endpointDirect false", func(l *straitv1.SiteLink) { l.Spec.Direct.EndpointDirect = false }},
+		{"not active", func(l *straitv1.SiteLink) { l.Status.Active = false }},
+		{"not healthy", func(l *straitv1.SiteLink) { l.Status.Healthy = false }},
+		{"a wireguard link", func(l *straitv1.SiteLink) {
+			l.Spec.Transport = straitv1.TransportWireGuard
+			l.Spec.WireGuard = &straitv1.WireGuardLink{Address: "100.64.0.1/30", PeerAddress: "100.64.0.2"}
+		}},
+		{"a direct link with no direct block", func(l *straitv1.SiteLink) { l.Spec.Direct = nil }},
+		{"a link to another peer", func(l *straitv1.SiteLink) { l.Spec.Peer = "c" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := directPeer(t, tc.link, "10.1.0.7")
+			es := endpointSlices(t, c)["web-b"]
+			if got := sliceAddresses(es); !slices.Equal(got, []string{"10.0.9.9"}) || *es.Ports[0].Port != 15001 {
+				t.Fatalf("addresses = %v, port %d; want the gateway, 10.0.9.9:15001", got, *es.Ports[0].Port)
+			}
+			if st := status(t, c); st.Members[1].Path != straitv1.PathGateway {
+				t.Fatalf("members = %+v", st.Members)
+			}
+		})
+	}
+	// The same link, active and healthy, takes endpoint-direct.
+	c := directPeer(t, nil, "10.1.0.7")
+	if got := sliceAddresses(endpointSlices(t, c)["web-b"]); !slices.Equal(got, []string{"10.1.0.7"}) {
+		t.Fatalf("control: addresses = %v, want [10.1.0.7]", got)
+	}
+}

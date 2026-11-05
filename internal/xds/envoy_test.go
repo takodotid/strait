@@ -28,7 +28,8 @@ import (
 	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
-const probeImage = "busybox:1.37"
+// probeImage runs the probes next to Envoy, pinned by the digest of its multi-platform index.
+const probeImage = "busybox:1.37@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
 
 // envoyImage is the Envoy image that the chart runs, by digest.
 var envoyImage = func() string {
