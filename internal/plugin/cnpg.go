@@ -36,13 +36,26 @@ var transitioningPhases = []string{
 // postgresPort is the port of every CloudNativePG Service and Pooler Service.
 const postgresPort = 5432
 
+// ReasonPluginDisabled is the reason of a member whose plugin the controller runs with off.
+const ReasonPluginDisabled = "PluginDisabled"
+
 // CNPG observes CloudNativePG clusters. It reads only the fields that RFC#0003 names.
-type CNPG struct{}
+type CNPG struct {
+	// Off reports every member Unknown and reads nothing: the controller may not read CloudNativePG's kinds, and a
+	// cached read of a kind it may not list waits for the reconcile's whole time limit (RFC#0003, requirement 13).
+	Off bool
+}
 
 // Observe implements Plugin.
-func (CNPG) Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteService, site string, now time.Time) observe.Report {
+func (p CNPG) Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteService, site string, now time.Time) observe.Report {
 	role := svc.Spec.Plugin.CNPG.Role
 	rep := observe.Report{Members: map[string]observe.Observation{}}
+	if p.Off {
+		for _, m := range LocalMembers(svc, site) {
+			rep.Members[m.Name] = observe.Unknown(m.Name, site, ReasonPluginDisabled, now)
+		}
+		return rep
+	}
 	declared := map[string]bool{}
 	for _, m := range LocalMembers(svc, site) {
 		o, decl := observeCluster(ctx, r, svc.Namespace, m, role, now)

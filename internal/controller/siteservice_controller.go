@@ -52,6 +52,8 @@ type SiteServiceReconciler struct {
 	Peers     Peers
 	Local     Local
 	Now       func() time.Time
+	// Plugins are the plugins' settings from the controller's flags.
+	Plugins plugin.Options
 
 	// confirmed keeps each member's last confirmed time at full precision, by SiteService and member.
 	confirmed map[types.NamespacedName]map[string]time.Time
@@ -62,7 +64,7 @@ type SiteServiceReconciler struct {
 	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
 	// decided keeps, by SiteService, the members of the last decision: the next decision's previous route.
 	decided map[types.NamespacedName][]string
-	// pluginFor returns the plugin of a SiteService. Nil means plugin.For. Tests set it.
+	// pluginFor returns the plugin of a SiteService. Nil means plugin.For with Plugins. Tests set it.
 	pluginFor func(*straitv1.SiteService) (plugin.Plugin, error)
 }
 
@@ -93,7 +95,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	now := r.Now()
 
-	pluginFor := plugin.For
+	pluginFor := func(svc *straitv1.SiteService) (plugin.Plugin, error) { return plugin.For(svc, r.Plugins) }
 	if r.pluginFor != nil {
 		pluginFor = r.pluginFor
 	}
@@ -582,7 +584,7 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 			delete(a.slices, name)
 			deleted = true
 		}
-		es, err := r.writeSlice(ctx, svc, member, t, deleted)
+		es, err := r.writeSlice(ctx, svc, member, t, deleted, a.slices[memberObjectName(svc, member)])
 		if err != nil {
 			a.err = err
 			return a
@@ -596,8 +598,15 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 // writeSlice writes the EndpointSlice of one routed member. Right after the controller's own last write of the slice,
 // the cache may not show that write yet: a create then finds that the slice exists, and an update finds a newer
 // version, or none after a delete. The slice is then read from the API server, and written once more (issue #38).
-// Live reads it from the API server at once, as after the controller deleted it.
-func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool) (*discoveryv1.EndpointSlice, error) {
+// Live reads it from the API server at once, as after the controller deleted it. So does a cache whose copy is not
+// inPlace, the slice as the controller last wrote or read it: a write that only compared the wanted slice with an
+// older copy in the cache could find them equal, and send nothing over a newer version (issue #45).
+func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool, inPlace discoveryv1.EndpointSlice) (*discoveryv1.EndpointSlice, error) {
+	if !live && r.APIReader != nil && inPlace.ResourceVersion != "" {
+		var cached discoveryv1.EndpointSlice
+		err := r.Get(ctx, client.ObjectKey{Namespace: svc.Namespace, Name: memberObjectName(svc, member)}, &cached)
+		live = apierrors.IsNotFound(err) || (err == nil && cached.ResourceVersion != inPlace.ResourceVersion)
+	}
 	c := r.Client
 	if live && r.APIReader != nil {
 		c = liveReads{Client: r.Client, live: r.APIReader}
@@ -707,10 +716,8 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	endpoints := a.endpoints()
 	st.Members = nil
 	for _, m := range svc.Spec.Members {
-		o, ok := observations[m.Name]
-		if !ok {
-			o = observe.Unknown(m.Name, m.Site, "NotObserved", now)
-		}
+		// As the decision counts it, so that a member of a stale peer shows SiteUnknown.
+		o := decide.Input{Sites: sites, Observations: observations, Now: now}.Observation(m)
 		ms := straitv1.MemberStatus{
 			Name: m.Name, Site: m.Site, Role: o.Role, Eligible: o.Eligible, State: o.State, Reason: o.Reason,
 			ObservedTime: previous[m.Name].ObservedTime, Path: paths[m.Name],

@@ -15,9 +15,20 @@ envoy:
 
 controller:
   logLevel: info
+  # The namespaces where the controller may write Services and EndpointSlices: those of the SiteServices and the
+  # Imports of this site. The release namespace, for the gateway Services, is added. Empty: every namespace. Each
+  # namespace must exist before helm install or helm upgrade. Reads stay cluster-wide (RFC0007).
+  namespaces: []
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}
+  # Before helm upgrade or helm rollback changes anything, a Job runs the release's image once, on the controller's
+  # node when a controller pod runs, with the scheduling values below. When the image cannot be pulled within
+  # deadlineSeconds, the Job fails, and so does the upgrade, while the old controller still runs. Helm gives up first
+  # after its --timeout, 5m by default.
+  prePull:
+    enabled: true
+    deadlineSeconds: 600
   # Scheduling of the controller pod. A PriorityClass keeps it from being preempted: while the controller is down,
   # the other sites count this site's members Unknown.
   priorityClassName: ""
@@ -50,7 +61,8 @@ gateway:
       limits: {memory: 128Mi}
 
 # The local Site. The chart renders it so the WireGuard Secret's name is stated once,
-# for both the Site and the gateway's RBAC.
+# for both the Site and the gateway's RBAC. It carries helm.sh/resource-policy: keep, so helm uninstall and an upgrade
+# with create false leave it in place (docs/runbooks/rollback.md).
 site:
   create: true
   # The site's name. Required when create is true.
@@ -61,8 +73,9 @@ site:
   #     privateKeySecretRef: {name: strait-wireguard}
   spec: {}
 
-# Read access for the cnpg plugin. Keep true on every cluster that has CloudNativePG's CRDs, even with no SiteService
-# that uses the plugin: the controller watches CloudNativePG's kinds whenever their CRDs exist (docs/getting-started.md).
+# The cnpg plugin: the controller's read access to CloudNativePG's kinds, and its watch of them. With false, the
+# controller neither reads nor watches them, and reports every member of a SiteService with the cnpg plugin Unknown,
+# reason PluginDisabled (docs/getting-started.md).
 cnpg:
   enabled: true
 

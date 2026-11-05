@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/controller"
 	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/observe"
 	"github.com/takodotid/strait/internal/xds"
@@ -319,6 +321,46 @@ func TestLocalDocumentAgesByPeerTimeout(t *testing.T) {
 		d := localDocument(c, local, func() time.Time { return at.Add(tc.after) })()
 		if d.Site != "a" || len(d.Services) != 1 || d.Services[0].Members[0].State != tc.want {
 			t.Errorf("%v after the observation: %+v, want the member %s", tc.after, d, tc.want)
+		}
+	}
+}
+
+// The controller watches CloudNativePG's kinds only while the cnpg plugin is on and their CRDs exist (RFC0003,
+// requirement 13).
+func TestCNPGWatched(t *testing.T) {
+	withCRDs := meta.NewDefaultRESTMapper(nil)
+	withCRDs.Add(controller.CNPGCluster, meta.RESTScopeNamespace)
+	for _, tt := range []struct {
+		name   string
+		on     bool
+		mapper meta.RESTMapper
+		want   bool
+	}{
+		{"on, CRDs", true, withCRDs, true},
+		{"on, no CRDs", true, meta.NewDefaultRESTMapper(nil), false},
+		{"off, CRDs", false, withCRDs, false},
+		{"off, no CRDs", false, meta.NewDefaultRESTMapper(nil), false},
+	} {
+		if got := cnpgWatched(tt.on, tt.mapper); got != tt.want {
+			t.Errorf("%s: watched %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// --namespaces lists the namespaces of the writes, and the gateway's is added. Empty writes in every namespace (RFC0007,
+// requirement 16).
+func TestWriteNamespaces(t *testing.T) {
+	for _, tt := range []struct {
+		list string
+		want []string
+	}{
+		{"", nil},
+		{" , ", nil},
+		{"db,web", []string{"db", "web", "strait-system"}},
+		{" db , ", []string{"db", "strait-system"}},
+	} {
+		if got := writeNamespaces(tt.list, "strait-system"); !slices.Equal(got, tt.want) {
+			t.Errorf("%q: %v, want %v", tt.list, got, tt.want)
 		}
 	}
 }

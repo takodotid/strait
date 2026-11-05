@@ -519,3 +519,31 @@ func TestReadDocumentOfOtherReleases(t *testing.T) {
 		}
 	}
 }
+
+// A reader ignores a field that it does not know, at every level of the document, so a later release can add one
+// (RFC0004, requirement 17).
+func TestReadDocumentWithUnknownFields(t *testing.T) {
+	doc := strings.NewReplacer(
+		`"site": "a"`, `"site": "b"`,
+		`"kind": "Observations",`, `"kind": "Observations", "added": {"x": 1},`,
+		`"declaredPrimary": "pg-a",`, `"declaredPrimary": "pg-a", "added": [1, 2],`,
+		`"port": 5432`, `"port": 5432, "added": "x"`,
+		`"ready": true }`, `"ready": true, "added": null }`,
+	).Replace(rfcExample)
+	if n := strings.Count(doc, `"added"`); n != 4 {
+		t.Fatalf("the document has %d added fields, want 4: %s", n, doc)
+	}
+	s, srv := newSite(t, "b", Document{})
+	s.set(Document{}, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(doc)) })
+	p := newPoller(map[string]*httptest.Server{"b": srv}, nil)
+	p.round(context.Background(), time.Second, 3*time.Second)
+	got, state := p.Snapshot("b")
+	if state.LastError != "" {
+		t.Fatal(state.LastError)
+	}
+	view := p.View("app", "pg", []straitv1.Member{{Name: "pg-a", Site: "b"}}, time.Now(), 3*time.Second)
+	m := view["b"].Members["pg-a"]
+	if m.State != straitv1.StateStable || !m.Eligible || view["b"].Declared != "pg-a" || len(got.Exports) != 1 || got.Exports[0].Port != 30901 {
+		t.Errorf("member %+v, declared %q, exports %+v", m, view["b"].Declared, got.Exports)
+	}
+}

@@ -111,7 +111,7 @@ Applied               True    Synced                  12m    -
 
 | Item | Value |
 |---|---|
-| Release | v1.2.1 |
+| Release | v1.3.0 |
 | API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
@@ -146,7 +146,7 @@ Each release publishes:
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.2.1 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.3.0 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -155,7 +155,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v1.2.1
+v=v1.3.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -170,7 +170,7 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
 
 ```powershell
-$v = "v1.2.1"
+$v = "v1.3.0"
 $a = "strait_${v}_windows_amd64"
 $url = "https://github.com/takodotid/strait/releases/download/$v"
 Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
@@ -203,13 +203,13 @@ Upgrade one site at a time. Sites on different 1.x releases still read each othe
 
 | Step | What to do |
 |---|---|
-| 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. |
-| 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until then. |
+| 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. From 1.3.0, the chart's pre-pull Job also runs the release's image on the controller's node before the upgrade changes anything (`controller.prePull`), but the new controller pod can start on another node. |
+| 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until then. From a release before 1.3.0, they add `Site.spec.gateway.lease`. |
 | 3. Wait | Run `strait --context SITE status -A` at every site. Go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. |
 | 4. Next site | Back to step 1. |
 
 ```sh
-v=v1.2.1
+v=v1.3.0
 helm template strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" --values values-a.yaml | grep 'image:' | sort -u
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
@@ -217,12 +217,14 @@ helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait 
   --namespace strait-system --values values-a.yaml --wait
 ```
 
+When the release's image cannot be pulled or run, the pre-pull Job fails, and `helm upgrade` fails with `pre-upgrade hooks failed` on `Job/strait-system/strait-pre-pull`. Nothing else has changed, and the old controller still runs. Read why with `kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=pre-pull`. The failed Job stays until the next upgrade replaces it.
+
 What the site shows during an upgrade:
 
 | Part | What happens | What the operator sees |
 |---|---|---|
 | Controller | One replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). The site has no controller from the moment its old pod stops until its new pod serves. That gap holds the image pull, the start, and the wait for the leader election Lease: none when the old controller released the Lease as it stopped, 15s when it did not ([RFC0004](rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. | At the other sites, once the gap passes `peerTimeout`, 6s by default: the site's peer is not `REACHABLE`, and its members are `Unknown`. A routed `Unknown` member stays in the route for `policy.unknownHold` after it was last confirmed, 30s by default, with reason `HeldUnknown`. Then the name routes nowhere with `UnknownTimeout` until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17). At the site: its names keep the endpoints written last, and their status does not change. Then `AwaitingPeers` until the new controller's first poll of every peer has ended. |
-| Gateway | Every release rolls the gateway: its agent runs the release's image. With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left. When the active pod stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a ready replica takes it ([RFC0005, Failover sequence](rfcs/RFC0005.md#failover-sequence)). The Lease moves once or twice: twice when the active pod stops first and the other old pod takes the Lease. | Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members. Connections to a local member, and endpoint-direct connections, do not cross the gateway. New connections through the gateway fail until the new active pod's links pass their health checks. The polls between the site and its peers cross the gateway too: through a move that lasts past `peerTimeout`, each end counts the other's members `Unknown`, as in the controller row. `strait status` shows the new active gateway pod. |
+| Gateway | Every release rolls the gateway: its agent runs the release's image. With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left. The active pod has a deletion cost, so it stops last ([RFC0005, Gateway rollout](rfcs/RFC0005.md#gateway-rollout)). When it stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a new replica takes it ([RFC0005, Failover sequence](rfcs/RFC0005.md#failover-sequence)). The Lease moves once. From a release before 1.3.0, it can move twice: the active pod has no deletion cost until the new controller sets it. | Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members. Connections to a local member, and endpoint-direct connections, do not cross the gateway. New connections through the gateway fail until the new active pod's links pass their health checks. The polls between the site and its peers cross the gateway too: through a move that lasts past `peerTimeout`, each end counts the other's members `Unknown`, as in the controller row. `strait status` shows the new active gateway pod. |
 
 How to plan:
 

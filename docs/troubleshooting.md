@@ -19,7 +19,7 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 
 | Reason | Look at | Cause and next step |
 |---|---|---|
-| `Active`, `PreferDeclared` or `Eligible`, but connections fail | `Endpoints:`, and the `Routed` and `Applied` conditions | `Applied` is False with `SyncFailed`: a write of the route failed, and its message gives the error. Members that the route dropped are gone, and the next try comes within 2s. `Routed` is False with `NoEndpoints`: the routed member has no ready endpoint. With `ServiceConflict`: a Service with the `SiteService`'s name exists, and Strait does not own it. Strait deletes its EndpointSlices for that name and writes none until that Service is gone. For a routed member whose `PATH` is `Gateway`, check `strait links`. |
+| `Active`, `PreferDeclared` or `Eligible`, but connections fail | `Endpoints:`, and the `Routed` and `Applied` conditions | `Applied` is False with `SyncFailed`: a write of the route failed, and its message gives the error. A message that says the namespace `is not one where the controller writes`: add the namespace to the chart value `controller.namespaces`, then `helm upgrade` ([RFC0007](../rfcs/RFC0007.md#writes-by-namespace)). Members that the route dropped are gone, and the next try comes within 2s. `Routed` is False with `NoEndpoints`: the routed member has no ready endpoint. With `ServiceConflict`: a Service with the `SiteService`'s name exists, and Strait does not own it. Strait deletes its EndpointSlices for that name and writes none until that Service is gone. For a routed member whose `PATH` is `Gateway`, check `strait links`. |
 | `HeldUnknown` | The `REASON` of the `Unknown` member | The route is kept, since the member was confirmed less than `policy.unknownHold` ago. See [Unknown members](#unknown-members). |
 | `UnknownTimeout`, `MemberUnknown` | The `REASON` of the `Unknown` member | See [Unknown members](#unknown-members). |
 | `Transitioning` | The `REASON` of the member whose `STATE` is `Transitioning` | The workload is moving. The route comes back once the move ends. The `cnpg` reasons: [RFC0003, role and state](../rfcs/RFC0003.md#cnpg-role-and-state). A routine configuration change and the restart after a promotion also count: [RFC0003, Limitations](../rfcs/RFC0003.md#limitations). |
@@ -45,6 +45,7 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 | `NotObserved` | The member's site is reachable, but its document holds no observation of this member. | Apply the same `SiteService`, with the same namespace, name and member names, at the member's site. |
 | `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago, and at least 6s ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
 | `ReadFailed: ...` | The plugin could not read the workload at this site. The rest of the reason is the error. | Follow the error. For `cnpg`, check that CloudNativePG is installed at this site. |
+| `PluginDisabled` | The member's plugin is off at this site: the chart value `cnpg.enabled` is `false`. | Set `cnpg.enabled: true` with `helm upgrade` at the member's site. |
 
 While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
 
@@ -106,7 +107,7 @@ The conditions of the `Site`:
 | Versions | `strait version` for the CLI. `VERSION` in `strait status` for the site's controller. |
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
 | Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
-| CloudNativePG watch | The controller logs `cloudnative-pg` at start. `watched` false means CloudNativePG's CRDs were missing then: restart the controller. `watched` true needs `cnpg.enabled: true` in the chart's values: [Getting started, Prerequisites](getting-started.md#prerequisites). |
+| CloudNativePG watch | The controller logs `cloudnative-pg` at start. `enabled` follows `cnpg.enabled`. `watched` false with `enabled` true means CloudNativePG's CRDs were missing then: restart the controller. [Getting started, Prerequisites](getting-started.md#prerequisites). |
 | Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. |
 | Metrics | Port `metrics`, 8080, of the controller pod. The route, the conditions, peer reachability and link health: [RFC0002, Metrics](../rfcs/RFC0002.md#metrics). A route to nowhere shows as `strait_siteservice_endpoints` 0. |
 

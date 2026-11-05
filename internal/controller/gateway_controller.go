@@ -3,6 +3,8 @@ package controller
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
@@ -23,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -36,6 +39,14 @@ const (
 	GatewayWireGuardService = "strait-gateway-wireguard"
 	LabelComponent          = "app.kubernetes.io/component"
 	ComponentGateway        = "gateway"
+	// LabelName names the application of the chart's pods.
+	LabelName = "app.kubernetes.io/name"
+	// AnnotationDeletionCost ranks the pods of a ReplicaSet for deletion: a ReplicaSet deletes a pod of lower cost
+	// first, among pods that are equally ready. The controller sets it on the active gateway pod only.
+	AnnotationDeletionCost = "controller.kubernetes.io/pod-deletion-cost"
+	// activeDeletionCost is the deletion cost of the active gateway pod. Every other gateway pod has none, which
+	// counts as 0.
+	activeDeletionCost = "1"
 )
 
 // GatewayReconciler finds the active gateway pod and keeps the Services that peers reach the gateway on.
@@ -125,6 +136,10 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
+	// A failure here does not end the reconcile: the requeue below must stay, since no event marks the Lease's expiry.
+	if err := r.syncDeletionCost(ctx, pod); err != nil {
+		log.FromContext(ctx).Error(err, "set the deletion cost of the gateway pods")
+	}
 	// The Lease expires on the controller's clock, and no event marks it, so look again when it would.
 	next := 10 * time.Second
 	if left > 0 && left < next {
@@ -159,6 +174,40 @@ func (r *GatewayReconciler) activeGateway(ctx context.Context) (name, addr, node
 		return name, "", "", left, nil
 	}
 	return name, pod.Status.PodIP, pod.Spec.NodeName, left, nil
+}
+
+// syncDeletionCost sets the deletion cost of the gateway pod that holds the gateway Lease, and removes it from every
+// other gateway pod, so that a rollout or a scale-down of the gateway deletes the standbys first, and moves the Lease
+// once (RFC#0005, requirement 39). It changes nothing else on a pod. A pod being deleted is left alone.
+func (r *GatewayReconciler) syncDeletionCost(ctx context.Context, holder string) error {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(r.Namespace), client.MatchingLabels{LabelName: "strait", LabelComponent: ComponentGateway}); err != nil {
+		return err
+	}
+	var errs []error
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		cost, has := p.Annotations[AnnotationDeletionCost]
+		var value any
+		switch {
+		case !p.DeletionTimestamp.IsZero():
+			continue
+		case p.Name == holder && cost != activeDeletionCost:
+			value = activeDeletionCost
+		case p.Name != holder && has:
+			value = nil
+		default:
+			continue
+		}
+		patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": map[string]any{AnnotationDeletionCost: value}}})
+		if err != nil {
+			return err
+		}
+		if err := r.Patch(ctx, p, client.RawPatch(types.MergePatchType, patch)); client.IgnoreNotFound(err) != nil {
+			errs = append(errs, fmt.Errorf("pod %s: %w", p.Name, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // leaseLeft returns how long the gateway lease stays valid unless its spec changes: its duration, counted on the
@@ -238,24 +287,51 @@ func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp st
 	}); err != nil {
 		return err
 	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
-		es.Labels = map[string]string{discoveryv1.LabelServiceName: name, LabelManagedBy: ManagedBy, LabelComponent: ComponentGateway}
-		es.AddressType = discoveryv1.AddressTypeIPv4
-		es.Ports = nil
-		for _, p := range ports {
-			es.Ports = append(es.Ports, discoveryv1.EndpointPort{Name: ptr.To(p.Name), Port: ptr.To(p.Port), Protocol: ptr.To(p.Protocol)})
-		}
-		es.Endpoints = nil
-		if addr != "" {
-			ep := discoveryv1.Endpoint{Addresses: []string{addr}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}
-			if node != "" {
-				ep.NodeName = ptr.To(node)
+	// An EndpointSlice's address type cannot change. A slice of the other family than the active pod's address is
+	// deleted, and written again (RFC#0005, requirement 24). The precondition keeps a delete from reaching a slice
+	// already written again, while the cache still shows the one before.
+	at := addressType([]string{addr})
+	if addr != "" {
+		var cur discoveryv1.EndpointSlice
+		err := r.Get(ctx, client.ObjectKeyFromObject(es), &cur)
+		switch {
+		case err == nil && cur.AddressType != at:
+			if err := r.Delete(ctx, &cur, client.Preconditions{UID: &cur.UID}); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("replace the %s EndpointSlice of %s: %w", cur.AddressType, name, err)
 			}
-			es.Endpoints = []discoveryv1.Endpoint{ep}
+			replaced := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}, AddressType: at}
+			setGatewaySlice(replaced, name, ports, addr, node)
+			return r.Create(ctx, replaced)
+		case err != nil && !apierrors.IsNotFound(err):
+			return err
 		}
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
+		if es.AddressType == "" {
+			es.AddressType = at
+		}
+		setGatewaySlice(es, name, ports, addr, node)
 		return nil
 	})
 	return err
+}
+
+// setGatewaySlice sets a gateway Service's EndpointSlice: its ports, and the active pod's address on its node, when
+// the address has the slice's address type.
+func setGatewaySlice(es *discoveryv1.EndpointSlice, name string, ports []corev1.ServicePort, addr, node string) {
+	es.Labels = map[string]string{discoveryv1.LabelServiceName: name, LabelManagedBy: ManagedBy, LabelComponent: ComponentGateway}
+	es.Ports = nil
+	for _, p := range ports {
+		es.Ports = append(es.Ports, discoveryv1.EndpointPort{Name: ptr.To(p.Name), Port: ptr.To(p.Port), Protocol: ptr.To(p.Protocol)})
+	}
+	es.Endpoints = nil
+	if addr != "" && addressType([]string{addr}) == es.AddressType {
+		ep := discoveryv1.Endpoint{Addresses: []string{addr}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}
+		if node != "" {
+			ep.NodeName = ptr.To(node)
+		}
+		es.Endpoints = []discoveryv1.Endpoint{ep}
+	}
 }
 
 // setExposure sets the fields of a Service's spec that depend on its type, from exp.

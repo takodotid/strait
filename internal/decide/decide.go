@@ -65,8 +65,10 @@ func Decide(in Input) Result {
 	return decideSingle(in)
 }
 
-// observation returns the member's observation. A member whose site is not known is Unknown, whatever was last observed.
-func (in Input) observation(m straitv1.Member) observe.Observation {
+// Observation returns the member's observation as the decision counts it. A member whose site is not known is
+// Unknown with reason SiteUnknown, whatever was last observed (RFC#0002, requirement 16). A member of a known site
+// with no observation is Unknown with reason NotObserved.
+func (in Input) Observation(m straitv1.Member) observe.Observation {
 	if s, ok := in.Sites[m.Site]; !ok || !s.Known {
 		return observe.Unknown(m.Name, m.Site, "SiteUnknown", in.Now)
 	}
@@ -183,7 +185,7 @@ func singleTable(in Input) Result {
 	var writable []string
 	transitioning := false
 	for _, m := range in.Spec.Members {
-		o := in.observation(m)
+		o := in.Observation(m)
 		if o.Writable() {
 			writable = append(writable, m.Name)
 		}
@@ -240,7 +242,7 @@ func singleTable(in Input) Result {
 	}
 	// Rows 7 and 8.
 	for _, m := range in.Spec.Members {
-		if !contains(in.Previous, m.Name) || in.observation(m).State != straitv1.StateUnknown {
+		if !contains(in.Previous, m.Name) || in.Observation(m).State != straitv1.StateUnknown {
 			continue
 		}
 		if in.withinHold(m.Name) {
@@ -256,7 +258,7 @@ func singleTable(in Input) Result {
 	}
 	// Row 9.
 	for _, m := range in.Spec.Members {
-		if in.observation(m).State == straitv1.StateUnknown {
+		if in.Observation(m).State == straitv1.StateUnknown {
 			r.Reason = straitv1.ReasonMemberUnknown
 			r.Message = fmt.Sprintf("no member is writable and %s is Unknown", m.Name)
 			return r
@@ -278,7 +280,7 @@ func decideSet(in Input) Result {
 	var candidates []candidate
 	expired := false
 	for _, m := range in.Spec.Members {
-		o := in.observation(m)
+		o := in.Observation(m)
 		c := candidate{name: m.Name, local: m.Site == in.LocalSite}
 		switch {
 		case o.Confirmed():

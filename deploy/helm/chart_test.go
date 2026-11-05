@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -112,7 +113,7 @@ func render(t *testing.T, set ...string) rendered {
 		case "Role":
 			var o rbacv1.Role
 			decode(&o)
-			r.roles[o.Name] = o
+			r.roles[o.Namespace+"/"+o.Name] = o
 		case "ClusterRoleBinding":
 			var o rbacv1.ClusterRoleBinding
 			decode(&o)
@@ -129,6 +130,10 @@ func render(t *testing.T, set ...string) rendered {
 			var o appsv1.Deployment
 			decode(&o)
 			r.pods[o.Name] = o.Spec.Template
+		case "Job":
+			var o batchv1.Job
+			decode(&o)
+			r.pods[o.Name] = o.Spec.Template
 		case "PodDisruptionBudget":
 			var o policyv1.PodDisruptionBudget
 			decode(&o)
@@ -142,13 +147,14 @@ func render(t *testing.T, set ...string) rendered {
 	return r
 }
 
-// grant is one verb on one resource, by scope. Names is the rule's resourceNames, joined.
+// grant is one verb on one resource, by scope: the cluster, or a namespace. Names is the rule's resourceNames, joined.
 type grant struct {
-	cluster  bool
-	group    string
-	resource string
-	verb     string
-	names    string
+	cluster   bool
+	namespace string
+	group     string
+	resource  string
+	verb      string
+	names     string
 }
 
 // grants returns what the roles bound to the service account allow. It fails on a binding to a role the chart does
@@ -161,12 +167,12 @@ func (r rendered) grants(t *testing.T, serviceAccount string) []grant {
 		})
 	}
 	var out []grant
-	add := func(cluster bool, rules []rbacv1.PolicyRule) {
+	add := func(cluster bool, ns string, rules []rbacv1.PolicyRule) {
 		for _, rule := range rules {
 			for _, g := range rule.APIGroups {
 				for _, res := range rule.Resources {
 					for _, v := range rule.Verbs {
-						out = append(out, grant{cluster, g, res, v, strings.Join(rule.ResourceNames, ",")})
+						out = append(out, grant{cluster, ns, g, res, v, strings.Join(rule.ResourceNames, ",")})
 					}
 				}
 			}
@@ -180,17 +186,17 @@ func (r rendered) grants(t *testing.T, serviceAccount string) []grant {
 		if b.RoleRef.Kind != "ClusterRole" || !ok {
 			t.Fatalf("ClusterRoleBinding %s binds %s %s, which the chart does not render", b.Name, b.RoleRef.Kind, b.RoleRef.Name)
 		}
-		add(true, role.Rules)
+		add(true, "", role.Rules)
 	}
 	for _, b := range r.roleBindings {
 		if !bound(b.Subjects) {
 			continue
 		}
-		role, ok := r.roles[b.RoleRef.Name]
-		if b.RoleRef.Kind != "Role" || !ok || b.Namespace != namespace || role.Namespace != namespace {
-			t.Fatalf("RoleBinding %s binds %s %s, which the chart does not render in %s", b.Name, b.RoleRef.Kind, b.RoleRef.Name, namespace)
+		role, ok := r.roles[b.Namespace+"/"+b.RoleRef.Name]
+		if b.RoleRef.Kind != "Role" || !ok {
+			t.Fatalf("RoleBinding %s/%s binds %s %s, which the chart does not render in %s", b.Namespace, b.Name, b.RoleRef.Kind, b.RoleRef.Name, b.Namespace)
 		}
-		add(false, role.Rules)
+		add(false, b.Namespace, role.Rules)
 	}
 	return sortGrants(out)
 }
@@ -203,7 +209,7 @@ func sortGrants(g []grant) []grant {
 }
 
 func (g grant) String() string {
-	scope := "namespace"
+	scope := "namespace " + g.namespace
 	if g.cluster {
 		scope = "cluster"
 	}
@@ -254,6 +260,8 @@ func rfcTable(t *testing.T, heading string) [][]string {
 type values struct {
 	cnpg   bool
 	secret string
+	// namespaces is controller.namespaces.
+	namespaces []string
 }
 
 // wanted returns the grants that an RBAC table of RFC0007 gives for the values.
@@ -270,6 +278,7 @@ func wanted(t *testing.T, heading string, v values) []grant {
 		}
 		var cluster bool
 		var names string
+		scopes := []string{namespace}
 		switch row[3] {
 		case "Cluster":
 			cluster = true
@@ -278,6 +287,12 @@ func wanted(t *testing.T, heading string, v values) []grant {
 				continue
 			}
 			cluster = true
+		case "Cluster, or each namespace of controller.namespaces and its namespace":
+			if len(v.namespaces) == 0 {
+				cluster = true
+			} else {
+				scopes = append(slices.Clone(v.namespaces), namespace)
+			}
 		case "Its namespace":
 		case "Its namespace, strait-gateway only":
 			names = "strait-gateway"
@@ -291,9 +306,14 @@ func wanted(t *testing.T, heading string, v values) []grant {
 		default:
 			t.Fatalf("%s: scope %q is not one this test knows", heading, row[3])
 		}
-		for _, res := range strings.Split(row[1], ",") {
-			for _, verb := range strings.Split(row[2], ",") {
-				out = append(out, grant{cluster, group, strings.TrimSpace(res), strings.TrimSpace(verb), names})
+		if cluster {
+			scopes = []string{""}
+		}
+		for _, ns := range scopes {
+			for _, res := range strings.Split(row[1], ",") {
+				for _, verb := range strings.Split(row[2], ",") {
+					out = append(out, grant{cluster, ns, group, strings.TrimSpace(res), strings.TrimSpace(verb), names})
+				}
 			}
 		}
 	}
@@ -325,6 +345,8 @@ func TestRBAC(t *testing.T) {
 		{"defaults", nil, values{cnpg: true}},
 		{"cnpg disabled", []string{"cnpg.enabled=false"}, values{}},
 		{"wireguard secret", []string{"site.spec.wireguard.privateKeySecretRef.name=strait-wg"}, values{cnpg: true, secret: "strait-wg"}},
+		{"namespaces", []string{"controller.namespaces={db,web}"}, values{cnpg: true, namespaces: []string{"db", "web"}}},
+		{"namespaces with its own", []string{"controller.namespaces={db," + namespace + "}"}, values{cnpg: true, namespaces: []string{"db"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := render(t, tt.set...)
@@ -345,6 +367,7 @@ var containers = map[string]struct{ pod, container string }{
 	"controller":    {"strait-controller", "controller"},
 	"gateway agent": {"strait-gateway", "agent"},
 	"Envoy":         {"strait-gateway", "envoy"},
+	"pre-pull":      {"strait-pre-pull", "pre-pull"},
 }
 
 // tokenPath is where a container finds a Kubernetes service account token.
@@ -464,6 +487,88 @@ func TestContainers(t *testing.T) {
 		}
 		if len(pod.Spec.InitContainers) > 0 {
 			t.Errorf("pod %s has init containers, which RFC0007's Containers table does not list", name)
+		}
+	}
+}
+
+// The controller watches and reads CloudNativePG's kinds only while the chart grants the read (RFC0003, requirement
+// 13).
+func TestCNPGFlagFollowsValue(t *testing.T) {
+	for _, tt := range []struct {
+		set  []string
+		want string
+	}{
+		{nil, "--cnpg=true"},
+		{[]string{"cnpg.enabled=false"}, "--cnpg=false"},
+	} {
+		pod := render(t, tt.set...).pods["strait-controller"]
+		var got []string
+		for _, a := range pod.Spec.Containers[0].Args {
+			if strings.HasPrefix(a, "--cnpg") {
+				got = append(got, a)
+			}
+		}
+		if !slices.Equal(got, []string{tt.want}) {
+			t.Errorf("%v: controller args %v, want %s", tt.set, got, tt.want)
+		}
+	}
+}
+
+// The Site carries helm.sh/resource-policy: keep, so helm uninstall, and an upgrade with site.create false, leave it in
+// place. Helm reads the annotation from the live object.
+func TestSiteKept(t *testing.T) {
+	out, err := helmTemplate(t)
+	if err != nil {
+		t.Fatalf("helm template: %v: %s", err, out)
+	}
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(strings.NewReader(out)))
+	sites := 0
+	for {
+		doc, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var o struct {
+			Kind     string
+			Metadata struct{ Annotations map[string]string }
+		}
+		if err := yaml.Unmarshal(doc, &o); err != nil {
+			t.Fatal(err)
+		}
+		if o.Kind != "Site" {
+			continue
+		}
+		sites++
+		if got := o.Metadata.Annotations["helm.sh/resource-policy"]; got != "keep" {
+			t.Errorf("Site: helm.sh/resource-policy %q, want keep", got)
+		}
+	}
+	if sites != 1 {
+		t.Fatalf("%d Sites rendered, want 1", sites)
+	}
+}
+
+// The controller refuses the writes that its Roles do not grant, so that status says why (RFC0007, requirement 16).
+func TestNamespacesFlagFollowsValue(t *testing.T) {
+	for _, tt := range []struct {
+		set  []string
+		want []string
+	}{
+		{nil, nil},
+		{[]string{"controller.namespaces={db,web}"}, []string{"--namespaces=db,web"}},
+	} {
+		pod := render(t, tt.set...).pods["strait-controller"]
+		var got []string
+		for _, a := range pod.Spec.Containers[0].Args {
+			if strings.HasPrefix(a, "--namespaces") {
+				got = append(got, a)
+			}
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("%v: controller args %v, want %v", tt.set, got, tt.want)
 		}
 	}
 }
