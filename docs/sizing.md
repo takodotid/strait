@@ -22,7 +22,7 @@ STRAIT_CACHE_MEMORY=10000 make test
 
 | Value | Effect |
 |---|---|
-| `controller.resources.limits.memory` | The container's limit, 256Mi by default. The chart passes it to the controller, which keeps its Go heap under 90% of it. The garbage collector then runs more often near the limit, instead of letting the heap grow to twice what it holds. |
+| `controller.resources.limits.memory` | The container's limit, 256Mi by default. The chart passes it to the controller, which sets the Go runtime's soft memory limit to 90% of it. Near that limit, the garbage collector runs more often, instead of letting the heap grow to twice what it holds. |
 | `controller.resources.requests.memory` | 64Mi by default. Raise it with the limit, so that the scheduler finds the room. |
 
 Leave twice the measured heap, and a margin of 128Mi for the binary, the Go runtime and the controller's other objects:

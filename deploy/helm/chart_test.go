@@ -622,7 +622,8 @@ func TestNamespacedReadsFlagFollowsValue(t *testing.T) {
 	}
 }
 
-// The controller learns its container's memory limit, and keeps its Go heap under it (docs/sizing.md).
+// The controller learns its container's memory limit, and sets the Go runtime's soft memory limit from it
+// (docs/sizing.md).
 func TestControllerMemoryLimit(t *testing.T) {
 	pod := render(t).pods["strait-controller"]
 	for _, e := range pod.Spec.Containers[0].Env {

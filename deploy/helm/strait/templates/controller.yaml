@@ -67,7 +67,7 @@ spec:
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef: {fieldPath: metadata.namespace}
-            # The controller keeps its Go heap under 90% of it.
+            # The controller sets the Go runtime's soft memory limit to 90% of it.
             - name: MEMORY_LIMIT
               valueFrom:
                 resourceFieldRef: {containerName: controller, resource: limits.memory}

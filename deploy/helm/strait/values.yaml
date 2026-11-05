@@ -27,7 +27,8 @@ controller:
   # that its cache holds only theirs (docs/sizing.md). An Export in another namespace then has no ready endpoint.
   # Needs namespaces.
   namespacedReads: false
-  # The controller keeps its Go heap under 90% of limits.memory. Size it to the cluster (docs/sizing.md).
+  # The controller sets the Go runtime's soft memory limit to 90% of limits.memory. Size it to the cluster
+  # (docs/sizing.md).
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}
