@@ -3,10 +3,12 @@
 package release
 
 import (
+	"encoding/json"
 	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -347,3 +349,107 @@ func TestTags(t *testing.T) {
 	}
 }
 
+// needs is a job's needs, one job or a list.
+type needs []string
+
+func (n *needs) UnmarshalJSON(b []byte) error {
+	var one string
+	if json.Unmarshal(b, &one) == nil {
+		*n = needs{one}
+		return nil
+	}
+	return json.Unmarshal(b, (*[]string)(n))
+}
+
+// releaseJob is what TestReleaseWorkflow reads of a job of release.yaml.
+type releaseJob struct {
+	Needs       needs
+	Permissions map[string]string
+	Steps       []struct{ Uses, Run string }
+}
+
+// runsGo matches a step that runs Go on the runner. make counts, since the Makefile runs go env as it loads.
+var runsGo = regexp.MustCompile(`(^|[^a-z_./-])(make|go)( |$)`)
+
+// The release runs every test before any push, and runs Go only in jobs that can write nothing (RFC0007, requirements
+// 17, 18 and 19).
+func TestReleaseWorkflow(t *testing.T) {
+	b, err := os.ReadFile("../../.github/workflows/release.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w struct {
+		Permissions map[string]string
+		Concurrency struct {
+			CancelInProgress bool `json:"cancel-in-progress"`
+		}
+		Jobs map[string]releaseJob
+	}
+	if err := yaml.Unmarshal(b, &w); err != nil {
+		t.Fatal(err)
+	}
+	writes := func(p map[string]string) []string {
+		var got []string
+		for k, v := range p {
+			if v != "read" && v != "none" {
+				got = append(got, k+": "+v)
+			}
+		}
+		slices.Sort(got)
+		return got
+	}
+	if got := writes(w.Permissions); len(got) > 0 {
+		t.Errorf("the workflow's permissions grant %v to every job", got)
+	}
+	if w.Concurrency.CancelInProgress {
+		t.Error("a new run cancels a release in progress")
+	}
+	// before reports whether job a needs job b, directly or not.
+	var before func(a, b string, seen map[string]bool) bool
+	before = func(a, b string, seen map[string]bool) bool {
+		if seen[a] {
+			return false
+		}
+		seen[a] = true
+		for _, n := range w.Jobs[a].Needs {
+			if n == b || before(n, b, seen) {
+				return true
+			}
+		}
+		return false
+	}
+	gate, ok := w.Jobs["gate"]
+	if !ok || len(gate.Needs) > 0 {
+		t.Fatal("no first job gate")
+	}
+	test, ok := w.Jobs["test"]
+	if !ok {
+		t.Fatal("no job test")
+	}
+	var script strings.Builder
+	for _, s := range test.Steps {
+		script.WriteString(s.Run + "\n")
+	}
+	for _, want := range []string{"make verify test", "make dist"} {
+		if !strings.Contains(script.String(), want) {
+			t.Errorf("job test does not run %s", want)
+		}
+	}
+	for name, job := range w.Jobs {
+		if name != "gate" && !before(name, "gate", map[string]bool{}) {
+			t.Errorf("job %s does not need gate", name)
+		}
+		w := writes(job.Permissions)
+		if len(w) == 0 {
+			continue
+		}
+		if !before(name, "test", map[string]bool{}) {
+			t.Errorf("job %s holds %v and does not need test", name, w)
+		}
+		for _, s := range job.Steps {
+			if strings.HasPrefix(s.Uses, "actions/setup-go@") || runsGo.MatchString(s.Run) {
+				t.Errorf("job %s holds %v and runs Go: %s%s", name, w, s.Uses, s.Run)
+			}
+		}
+	}
+}
