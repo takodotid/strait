@@ -27,14 +27,18 @@ Rolling back across these releases changes what the site does:
 
 ## The `Site`
 
-The chart renders the cluster-scoped `Site` when `site.create` is true, the default.
+The chart renders the cluster-scoped `Site` when `site.create` is true, the default. From 1.3.0, the `Site` carries `helm.sh/resource-policy: keep`. Helm reads that annotation from the `Site` in the cluster, so it protects the `Site` once a release of 1.3.0 or later has written it.
 
 | Action | Effect |
 |---|---|
-| `helm uninstall` | Deletes the `Site`, the controller and the gateway. The CRDs and the `SiteService`s stay, and so do the Services and EndpointSlices that Strait wrote. Each application name keeps the endpoints written last, and nothing updates them: they no longer follow the primary. |
-| `helm upgrade` with `site.create: false` on a release that created the `Site` | Deletes the `Site`. The controller then decides no route, and its names keep the endpoints written last. The gateway agent removes its WireGuard interfaces. The site's observation document names no site, so its peers reject it and count its members `Unknown`. |
-| `helm rollback`, or `helm upgrade` with `site.create: true` | Keeps the `Site`. |
+| `helm uninstall` | Keeps the `Site`, and deletes the controller and the gateway. The CRDs and the `SiteService`s stay, and so do the Services and EndpointSlices that Strait wrote. Each application name keeps the endpoints written last, and nothing updates them: they no longer follow the primary. |
+| `helm upgrade` with `site.create: false` | Keeps the `Site`. From a release before 1.3.0 in one upgrade, it deletes the `Site`: upgrade to 1.3.0 with `site.create: true` first. |
+| `helm install` again, after `helm uninstall` | With the same release name and namespace: takes the kept `Site` back. With another one, Helm refuses the install with `invalid ownership metadata`. |
+| `helm rollback`, or `helm upgrade`, to a release before 1.3.0 | Removes the annotation. A later `helm uninstall`, or `site.create: false`, deletes the `Site`. |
+| `helm upgrade` with `site.create: true` | Keeps the `Site`, or writes it again. |
 
-Never roll back with `helm uninstall`. To remove Strait from a site, first delete its `SiteService`s, so that their Services and EndpointSlices go with them.
+Without its `Site`, the controller decides no route, and its names keep the endpoints written last. The gateway agent removes its WireGuard interfaces. The site's observation document names no site, so its peers reject it and count its members `Unknown`.
+
+Never roll back with `helm uninstall`. To remove Strait from a site, first delete its `SiteService`s, so that their Services and EndpointSlices go with them, then run `helm uninstall` and delete the `Site`.
 
 To restore a deleted `Site`, run `helm upgrade` with `site.create: true` and the same values. The controller and the gateway agent write its status again.

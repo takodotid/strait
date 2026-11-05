@@ -5,6 +5,9 @@ metadata:
   name: {{ required "site.name is required" .Values.site.name }}
   labels:
     {{- include "strait.labels" . | nindent 4 }}
+  annotations:
+    # helm uninstall, and an upgrade with site.create false, leave the Site in place.
+    helm.sh/resource-policy: keep
 spec:
   {{- toYaml .Values.site.spec | nindent 2 }}
 {{- end }}

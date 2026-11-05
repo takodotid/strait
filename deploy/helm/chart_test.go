@@ -490,3 +490,40 @@ func TestCNPGFlagFollowsValue(t *testing.T) {
 		}
 	}
 }
+
+// The Site carries helm.sh/resource-policy: keep, so helm uninstall, and an upgrade with site.create false, leave it in
+// place. Helm reads the annotation from the live object.
+func TestSiteKept(t *testing.T) {
+	out, err := helmTemplate(t)
+	if err != nil {
+		t.Fatalf("helm template: %v: %s", err, out)
+	}
+	reader := utilyaml.NewYAMLReader(bufio.NewReader(strings.NewReader(out)))
+	sites := 0
+	for {
+		doc, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var o struct {
+			Kind     string
+			Metadata struct{ Annotations map[string]string }
+		}
+		if err := yaml.Unmarshal(doc, &o); err != nil {
+			t.Fatal(err)
+		}
+		if o.Kind != "Site" {
+			continue
+		}
+		sites++
+		if got := o.Metadata.Annotations["helm.sh/resource-policy"]; got != "keep" {
+			t.Errorf("Site: helm.sh/resource-policy %q, want keep", got)
+		}
+	}
+	if sites != 1 {
+		t.Fatalf("%d Sites rendered, want 1", sites)
+	}
+}

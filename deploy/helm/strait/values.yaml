@@ -50,7 +50,8 @@ gateway:
       limits: {memory: 128Mi}
 
 # The local Site. The chart renders it so the WireGuard Secret's name is stated once,
-# for both the Site and the gateway's RBAC.
+# for both the Site and the gateway's RBAC. It carries helm.sh/resource-policy: keep, so helm uninstall and an upgrade
+# with create false leave it in place (docs/runbooks/rollback.md).
 site:
   create: true
   # The site's name. Required when create is true.
