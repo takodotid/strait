@@ -46,6 +46,17 @@ case $url in
 esac
 `
 
+// fakeDocker records the arguments of docker buildx imagetools create in $FAKE_GH/create, and answers inspect with
+// the digest in $FAKE_DIGEST.
+const fakeDocker = `#!/usr/bin/env bash
+[[ $1 == buildx && $2 == imagetools ]] || { echo "fake docker: $*" >&2; exit 2; }
+case $3 in
+create) shift 3; printf '%s\n' "$@" >"$FAKE_GH/create" ;;
+inspect) printf '{"digest":"%s"}' "$FAKE_DIGEST" ;;
+*) echo "fake docker: $*" >&2; exit 2 ;;
+esac
+`
+
 // fixtureName is the file name that fakeGH reads for an API path.
 func fixtureName(path string) string {
 	return strings.Map(func(r rune) rune {
@@ -67,7 +78,7 @@ func run(t *testing.T, fixtures map[string]string, env []string, script string, 
 		t.Skip("jq is not installed")
 	}
 	bin, data := t.TempDir(), t.TempDir()
-	for name, body := range map[string]string{"gh": fakeGH, "curl": fakeCurl} {
+	for name, body := range map[string]string{"gh": fakeGH, "curl": fakeCurl, "docker": fakeDocker} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -87,6 +98,9 @@ func run(t *testing.T, fixtures map[string]string, env []string, script string, 
 	out, err := cmd.CombinedOutput()
 	if _, ok := err.(*exec.ExitError); err != nil && !ok {
 		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(data, "create")); err == nil {
+		out = append(out, "\ncreate: "+strings.Join(strings.Fields(string(b)), " ")...)
 	}
 	return string(out), err == nil
 }
@@ -301,3 +315,35 @@ func TestPinned(t *testing.T) {
 		t.Errorf("the repository: %s", out)
 	}
 }
+
+// tags.sh points the tags at the digest, and fails unless each tag then names it (RFC0007, requirement 22).
+func TestTags(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("e", 64)
+	source := "ghcr.io/o/strait@" + digest
+	for _, tt := range []struct {
+		name string
+		args []string
+		got  string
+		ok   bool
+		want string
+	}{
+		{"two tags", []string{source, "ghcr.io/o/strait:1.3.0", "ghcr.io/o/strait:1.3"}, digest, true,
+			"create: --tag ghcr.io/o/strait:1.3.0 --tag ghcr.io/o/strait:1.3 " + source},
+		{"an empty tag", []string{source, "", "ghcr.io/o/strait:1.3.0"}, digest, true, "create: --tag ghcr.io/o/strait:1.3.0 " + source},
+		{"a tag names another digest", []string{source, "ghcr.io/o/strait:1.3.0"}, "sha256:" + strings.Repeat("f", 64), false, "names sha256:fff"},
+		{"no tag", []string{source, ""}, digest, false, "no tag given"},
+		{"no digest", []string{"ghcr.io/o/strait:1.3.0", "ghcr.io/o/strait:1.3"}, digest, false, "is not IMAGE@sha256:"},
+		{"empty digest", []string{"ghcr.io/o/strait@", "ghcr.io/o/strait:1.3"}, digest, false, "is not IMAGE@sha256:"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out, ok := run(t, nil, []string{"FAKE_DIGEST=" + tt.got}, "tags.sh", tt.args...)
+			if ok != tt.ok {
+				t.Fatalf("exit 0: %v, want %v: %s", ok, tt.ok, out)
+			}
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output lacks %q: %s", tt.want, out)
+			}
+		})
+	}
+}
+
