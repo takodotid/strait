@@ -74,7 +74,7 @@ networkPolicy:
   # The metrics are plain HTTP.
   metricsFrom: []
   gateway:
-    # A policy on the gateway pods that admits every pod of this cluster and peerCIDRs only. Off by default: where
+    # A policy on the gateway pods that admits every pod of this cluster, peerCIDRs, and the probes only. Off by default: where
     # peer traffic comes from depends on the gateway Services' type and on the CNI (RFC0007), so a default would cut
     # the peers off.
     enabled: false

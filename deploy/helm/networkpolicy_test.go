@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // ports returns the ports of a policy rule.
@@ -33,8 +34,8 @@ func ruleFor(t *testing.T, p networkingv1.NetworkPolicy, port int32) networkingv
 
 // The controller's policy admits the gateway pods to the observation and xDS ports, and every source to the probes.
 // The metrics port admits every source by default, and the sources of networkPolicy.metricsFrom when set. A policy on
-// the gateway pods is off by default; when on, it admits every pod of the cluster and networkPolicy.gateway.peerCIDRs
-// (RFC0007; issue #30, row 39).
+// the gateway pods is off by default; when on, it admits every source to the probes, every pod of the cluster, and
+// networkPolicy.gateway.peerCIDRs (RFC0007; issue #30, row 39).
 func TestNetworkPolicies(t *testing.T) {
 	r := render(t)
 	if _, ok := r.networkPolicies["strait-gateway"]; ok {
@@ -74,7 +75,9 @@ func TestNetworkPolicies(t *testing.T) {
 	if !reflect.DeepEqual(g.Spec.PodSelector.MatchLabels, gatewayLabels) || !slices.Equal(g.Spec.PolicyTypes, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}) {
 		t.Errorf("gateway policy selects %v, types %v", g.Spec.PodSelector.MatchLabels, g.Spec.PolicyTypes)
 	}
+	probes := intstr.FromInt32(8090)
 	wantRules := []networkingv1.NetworkPolicyIngressRule{
+		{Ports: []networkingv1.NetworkPolicyPort{{Port: &probes}}},
 		{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{}}}},
 		{From: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.21/32"}}, {IPBlock: &networkingv1.IPBlock{CIDR: "2001:db8::/64"}}}},
 	}

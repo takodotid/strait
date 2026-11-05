@@ -36,7 +36,7 @@ spec:
 {{- if .Values.networkPolicy.gateway.enabled }}
 ---
 # The gateway pods admit the pods of this cluster, which reach imports and poll peers through the gateway, and the peer
-# gateways. The pod's own node, which runs the probes, is always admitted.
+# gateways. The probe port admits every source, as the controller's does: some CNIs enforce policies on host traffic.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -51,6 +51,9 @@ spec:
       app.kubernetes.io/component: gateway
   policyTypes: ["Ingress"]
   ingress:
+    # Probes, from the kubelet.
+    - ports:
+        - {port: 8090}
     - from:
         - namespaceSelector: {}
     {{- with .Values.networkPolicy.gateway.peerCIDRs }}
