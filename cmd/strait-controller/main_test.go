@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -342,6 +343,24 @@ func TestCNPGWatched(t *testing.T) {
 	} {
 		if got := cnpgWatched(tt.on, tt.mapper); got != tt.want {
 			t.Errorf("%s: watched %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// --namespaces lists the namespaces of the writes, and the gateway's is added. Empty writes in every namespace (RFC0007,
+// requirement 16).
+func TestWriteNamespaces(t *testing.T) {
+	for _, tt := range []struct {
+		list string
+		want []string
+	}{
+		{"", nil},
+		{" , ", nil},
+		{"db,web", []string{"db", "web", "strait-system"}},
+		{" db , ", []string{"db", "strait-system"}},
+	} {
+		if got := writeNamespaces(tt.list, "strait-system"); !slices.Equal(got, tt.want) {
+			t.Errorf("%q: %v, want %v", tt.list, got, tt.want)
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -46,7 +47,7 @@ import (
 func main() {
 	var (
 		metricsAddr, probeAddr, observationsAddr, xdsAddr string
-		gatewayNamespace, observationsService             string
+		gatewayNamespace, observationsService, namespaces string
 		leaderElect, cnpg                                 bool
 	)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Address of the metrics endpoint.")
@@ -56,6 +57,7 @@ func main() {
 	flag.StringVar(&gatewayNamespace, "gateway-namespace", os.Getenv("POD_NAMESPACE"), "Namespace of the gateway, its Lease and its Services.")
 	flag.StringVar(&observationsService, "observations-service", "", "Host name of the controller's Service, which the gateway forwards observation requests to.")
 	flag.BoolVar(&leaderElect, "leader-elect", true, "Elect one active controller.")
+	flag.StringVar(&namespaces, "namespaces", "", "Comma-separated namespaces where the controller writes Services and EndpointSlices, besides --gateway-namespace. Empty writes in every namespace. The chart sets it from controller.namespaces, which grants the writes.")
 	flag.BoolVar(&cnpg, "cnpg", true, "Watch and read CloudNativePG's kinds, when their CRDs exist. False reports every member of the cnpg plugin Unknown. The chart sets it from cnpg.enabled, which grants the read.")
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
@@ -66,13 +68,13 @@ func main() {
 		log.Error(errors.New("missing"), "--gateway-namespace or POD_NAMESPACE is required")
 		os.Exit(2)
 	}
-	if err := run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, leaderElect, cnpg); err != nil {
+	if err := run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, leaderElect, cnpg, writeNamespaces(namespaces, gatewayNamespace)); err != nil {
 		log.Error(err, "controller stopped")
 		os.Exit(1)
 	}
 }
 
-func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService string, leaderElect, cnpg bool) error {
+func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService string, leaderElect, cnpg bool, namespaces []string) error {
 	log := ctrl.Log.WithName("setup")
 	log.Info("starting", "version", version.Version)
 	scheme := runtime.NewScheme()
@@ -93,6 +95,9 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	}
 	watchCNPG := cnpgWatched(cnpg, mgr.GetRESTMapper())
 	log.Info("cloudnative-pg", "enabled", cnpg, "watched", watchCNPG)
+	log.Info("writes Services and EndpointSlices", "namespaces", namespaces)
+	// Every reconciler writes through it, so a write outside the namespaces shows in status (RFC0007, requirement 16).
+	writer := controller.NamespacedWrites(mgr.GetClient(), namespaces)
 
 	reader := mgr.GetClient()
 	local := &exchange.Local{}
@@ -128,7 +133,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	}
 
 	if err := (&controller.SiteServiceReconciler{
-		Client:    mgr.GetClient(),
+		Client:    writer,
 		Reader:    reader,
 		APIReader: mgr.GetAPIReader(),
 		Recorder:  mgr.GetEventRecorder("strait-controller"),
@@ -139,13 +144,13 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	}).SetupWithManager(mgr, ssChanges, watchCNPG); err != nil {
 		return fmt.Errorf("siteservice controller: %w", err)
 	}
-	if err := (&controller.ExportReconciler{Client: mgr.GetClient(), Reader: reader, Local: local}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.ExportReconciler{Client: writer, Reader: reader, Local: local}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("export controller: %w", err)
 	}
-	if err := (&controller.ImportReconciler{Client: mgr.GetClient(), Reader: reader, Peers: poller, Now: time.Now}).SetupWithManager(mgr, impChanges); err != nil {
+	if err := (&controller.ImportReconciler{Client: writer, Reader: reader, Peers: poller, Now: time.Now}).SetupWithManager(mgr, impChanges); err != nil {
 		return fmt.Errorf("import controller: %w", err)
 	}
-	if err := (&controller.GatewayReconciler{Client: mgr.GetClient(), Reader: reader, Namespace: gatewayNamespace, Version: version.Version}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.GatewayReconciler{Client: writer, Reader: reader, Namespace: gatewayNamespace, Version: version.Version}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("gateway controller: %w", err)
 	}
 	if err := (&controller.XDSTrigger{Trigger: xdsServer.Trigger, Namespace: gatewayNamespace}).SetupWithManager(mgr); err != nil {
@@ -227,6 +232,21 @@ func runnables(observationsAddr string, document func() exchange.Document, polle
 		leaderOnly(&exchange.StatusWriter{Client: c, Poller: poller}),
 		xdsServer,
 	}
+}
+
+// writeNamespaces returns the namespaces of the comma-separated list, and the gateway's, where the gateway Services
+// live. An empty list returns none: the controller then writes in every namespace.
+func writeNamespaces(list, gateway string) []string {
+	var out []string
+	for _, ns := range strings.Split(list, ",") {
+		if ns = strings.TrimSpace(ns); ns != "" {
+			out = append(out, ns)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return append(out, gateway)
 }
 
 // cnpgWatched reports whether the controller watches CloudNativePG's kinds: only while the cnpg plugin is on, since

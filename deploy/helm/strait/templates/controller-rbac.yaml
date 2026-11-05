@@ -1,3 +1,4 @@
+{{- $namespaces := .Values.controller.namespaces | default list }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -25,10 +26,19 @@ rules:
     verbs: ["get", "update", "patch"]
   - apiGroups: [""]
     resources: ["services"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["discovery.k8s.io"]
     resources: ["endpointslices"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    verbs: ["get", "list", "watch"]
+  {{- if not $namespaces }}
+  # Writes in every namespace. With controller.namespaces, the Roles below grant them in those namespaces only.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["create", "update", "patch", "delete"]
+  {{- end }}
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["create", "patch"]
@@ -91,3 +101,39 @@ subjects:
   - kind: ServiceAccount
     name: strait-controller
     namespace: {{ .Release.Namespace }}
+{{- if $namespaces }}
+{{- range append $namespaces .Release.Namespace | uniq }}
+---
+# The writes of Services and EndpointSlices in one namespace of controller.namespaces, or in the release namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $.Release.Name }}-controller-writes
+  namespace: {{ . }}
+  labels:
+    {{- include "strait.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $.Release.Name }}-controller-writes
+  namespace: {{ . }}
+  labels:
+    {{- include "strait.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $.Release.Name }}-controller-writes
+subjects:
+  - kind: ServiceAccount
+    name: strait-controller
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

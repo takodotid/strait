@@ -15,6 +15,10 @@ envoy:
 
 controller:
   logLevel: info
+  # The namespaces where the controller may write Services and EndpointSlices: those of the SiteServices and the
+  # Imports of this site. The release namespace, for the gateway Services, is added. Empty: every namespace. Each
+  # namespace must exist before helm install or helm upgrade. Reads stay cluster-wide (RFC0007).
+  namespaces: []
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}

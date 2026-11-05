@@ -52,6 +52,10 @@ spec:
             - --zap-log-level={{ .Values.controller.logLevel }}
             # Follows the read rule of controller-rbac.yaml: the controller watches and reads only what it may list.
             - --cnpg={{ .Values.cnpg.enabled }}
+            {{- with .Values.controller.namespaces }}
+            # Follows the Roles of controller-rbac.yaml.
+            - --namespaces={{ join "," . }}
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:

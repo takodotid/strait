@@ -40,6 +40,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | CloudNativePG Cluster | `cluster-a`, primary at start | `cluster-b`, replica cluster at start |
 | SiteLinks | `b-direct` (cost 10), `b-wan` (wireguard, cost 100, waits) | `a-direct` (cost 10), `a-wan` (wireguard, cost 100, dials) |
 | `directService` | `NodePort`, `externalTrafficPolicy: Local` | same |
+| `controller.namespaces` | `db`, `web`: the controller writes Services and EndpointSlices there and in `strait-system` only | same |
 
 | Docker network | Subnet | Carries |
 |---|---|---|
@@ -70,7 +71,7 @@ They run in this order on one fixture and stop at the first failure.
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |
 | 7 | Two writable members | Site b comes back with `cluster-b` still primary, still cut off from site a, and its controller restarts. With `startupHold: 30s` on `pg`, site b routes nowhere with `AwaitingPeers` and never to `pg-b` until the hold ends, then to `pg-b`. Once the cut is removed, within 30s both sites route nowhere and the `Multiple` condition is `True`. |
-| rbac | Least privilege | No Strait controller or gateway agent logged a `forbidden` request. |
+| rbac | Least privilege | No Strait controller or gateway agent logged a `forbidden` request, though the controller writes Services and EndpointSlices in `db`, `web` and `strait-system` only. |
 
 ## Output
 

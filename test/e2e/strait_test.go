@@ -52,6 +52,12 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	if err := ensureNamespace(ctx, s.c, straitNamespace, map[string]string{"pod-security.kubernetes.io/enforce": "privileged"}); err != nil {
 		return err
 	}
+	// The controller may write Services and EndpointSlices in these only: their Roles need them to exist.
+	for _, ns := range []string{dbNamespace, webNamespace} {
+		if err := ensureNamespace(ctx, s.c, ns, nil); err != nil {
+			return err
+		}
+	}
 	key, err := wgtypes.GeneratePrivateKey()
 	if err != nil {
 		return err
@@ -74,14 +80,14 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	// The peer dials the one node of the site, which hosts the gateway.
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
 envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}}
-controller: {logLevel: debug}
+controller: {logLevel: debug, namespaces: [%s, %s]}
 site:
   name: %s
   spec:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
     gateway: {directService: {type: NodePort, externalTrafficPolicy: Local}}
-`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, s.name, wireGuardSecret, pollInterval, peerTimeout)
+`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, dbNamespace, webNamespace, s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {
 		return err
