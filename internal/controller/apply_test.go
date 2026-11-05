@@ -413,3 +413,44 @@ func TestFailedWriteKeepsTheHoldTimer(t *testing.T) {
 		t.Fatalf("result %+v, error %v; want a requeue when the hold ends, in 1s, and no error", res, err)
 	}
 }
+
+// A route change writes the application name's EndpointSlices and the SiteService's status, and nothing else: the
+// Service, the Exports and the Imports stay as they are, so the gateway's configuration does not change either
+// (RFC#0002, requirement 14).
+func TestRouteChangeWritesOnlySlices(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(*testing.T, *faults) (*SiteServiceReconciler, client.Client)
+		to    string
+	}{
+		{"local to gateway", routedToA, "web-b"},
+		{"gateway to local", routedToB, "web-a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &faults{}
+			r, c := tc.setup(t, f)
+			declare(t, r, c, tc.to)
+			f.arm(0)
+			if err := reconcileWeb(r); err != nil {
+				t.Fatal(err)
+			}
+			f.disarm()
+			if m := sliceMembers(context.Background(), t, c); !slices.Equal(m, []string{tc.to}) {
+				t.Fatalf("slices of %v, want [%s]", m, tc.to)
+			}
+			slicesWritten := 0
+			for _, w := range f.writes {
+				switch {
+				case strings.Contains(w, " *v1.EndpointSlice web-web-"):
+					slicesWritten++
+				case w == "update status of *v1.SiteService web":
+				default:
+					t.Errorf("the route change wrote %q; all writes: %v", w, f.writes)
+				}
+			}
+			if slicesWritten == 0 {
+				t.Fatalf("the route change wrote no EndpointSlice: %v", f.writes)
+			}
+		})
+	}
+}
