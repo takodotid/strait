@@ -56,9 +56,13 @@ else
 	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
 endif
 
+# The Kubernetes version of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test.
+ENVTEST_K8S_VERSION ?= 1.37.0
+
 .PHONY: test
-test: ## Run unit tests.
-	go test ./...
+test: ## Run unit tests. Downloads envtest's API server into bin/envtest on first use.
+	assets=$$(go tool setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path); \
+	KUBEBUILDER_ASSETS=$$assets go test ./...
 
 .PHONY: images
 images: ## Build the container image.
