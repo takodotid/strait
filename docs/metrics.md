@@ -126,6 +126,6 @@ Liveness checks only work that waits for neither the API server nor a link, so a
 
 | Container | Liveness fails when |
 |---|---|
-| Controller | The elected controller's poll round, or its xDS rebuild loop, is overdue by 30s: twice its period plus 30s. |
+| Controller | The elected controller's poll round, or its xDS rebuild loop, has not begun for twice its period plus 30s: 34s with the default `pollInterval` of 2s. |
 | Gateway agent | The active replica's WireGuard session loop has not turned for 30s. It reads the interfaces only. |
 | Envoy | No probe: its admin interface is on 127.0.0.1 only. Envoy kills itself when a thread has not answered its watchdog for 60s, and the kubelet restarts it. |
