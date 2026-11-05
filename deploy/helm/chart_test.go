@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -127,6 +128,10 @@ func render(t *testing.T, set ...string) rendered {
 			r.serviceAccounts[o.Name] = o
 		case "Deployment":
 			var o appsv1.Deployment
+			decode(&o)
+			r.pods[o.Name] = o.Spec.Template
+		case "Job":
+			var o batchv1.Job
 			decode(&o)
 			r.pods[o.Name] = o.Spec.Template
 		case "PodDisruptionBudget":
@@ -362,6 +367,7 @@ var containers = map[string]struct{ pod, container string }{
 	"controller":    {"strait-controller", "controller"},
 	"gateway agent": {"strait-gateway", "agent"},
 	"Envoy":         {"strait-gateway", "envoy"},
+	"pre-pull":      {"strait-pre-pull", "pre-pull"},
 }
 
 // tokenPath is where a container finds a Kubernetes service account token.

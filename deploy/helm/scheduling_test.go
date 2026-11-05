@@ -5,10 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
 )
 
 // gatewayLabels select the gateway pods.
@@ -112,5 +114,48 @@ func TestAntiAffinityValue(t *testing.T) {
 	out, err := helmTemplate(t, "gateway.antiAffinity=soft")
 	if err == nil || !strings.Contains(out, "gateway.antiAffinity must be preferred or required") {
 		t.Errorf("helm template with antiAffinity soft: %v, %s; want the chart's failure", err, out)
+	}
+}
+
+// The pre-pull Job runs before an upgrade or a rollback, never at install, with the controller's image and its
+// scheduling values. With no controller affinity set, it prefers the node of the running controller pod. It fails
+// within its deadline, and is off with controller.prePull.enabled false (issue #30, row 15).
+func TestPrePull(t *testing.T) {
+	out, err := helmTemplate(t, "controller.nodeSelector.zone=a", "controller.prePull.deadlineSeconds=120")
+	if err != nil {
+		t.Fatalf("helm template: %v: %s", err, out)
+	}
+	_, after, ok := strings.Cut(out, "\nkind: Job\n")
+	if !ok {
+		t.Fatal("no Job rendered")
+	}
+	var job batchv1.Job
+	doc, _, _ := strings.Cut(after, "\n---")
+	if err := yaml.UnmarshalStrict([]byte("kind: Job\n"+doc), &job); err != nil {
+		t.Fatal(err)
+	}
+	if got := job.Annotations["helm.sh/hook"]; got != "pre-upgrade,pre-rollback" {
+		t.Errorf("hook %q, want pre-upgrade,pre-rollback", got)
+	}
+	r := render(t, "controller.nodeSelector.zone=a")
+	controller, pod := r.pods["strait-controller"].Spec, job.Spec.Template.Spec
+	if pod.Containers[0].Image != controller.Containers[0].Image || pod.Containers[0].ImagePullPolicy != controller.Containers[0].ImagePullPolicy {
+		t.Errorf("image %s %s, want the controller's, %s %s", pod.Containers[0].Image, pod.Containers[0].ImagePullPolicy, controller.Containers[0].Image, controller.Containers[0].ImagePullPolicy)
+	}
+	if !reflect.DeepEqual(pod.NodeSelector, controller.NodeSelector) || pod.RestartPolicy != corev1.RestartPolicyNever ||
+		ptr.Deref(job.Spec.BackoffLimit, -1) != 0 || ptr.Deref(job.Spec.ActiveDeadlineSeconds, 0) != 120 {
+		t.Errorf("job = %+v", job.Spec)
+	}
+	terms := pod.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+	if len(terms) != 1 || terms[0].PodAffinityTerm.TopologyKey != "kubernetes.io/hostname" ||
+		!reflect.DeepEqual(terms[0].PodAffinityTerm.LabelSelector.MatchLabels, map[string]string{"app.kubernetes.io/name": "strait", "app.kubernetes.io/component": "controller"}) {
+		t.Errorf("affinity = %+v, want a preferred one to the controller pod", pod.Affinity)
+	}
+	if a := render(t, "controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key=zone",
+		"controller.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator=Exists").pods; !reflect.DeepEqual(a["strait-pre-pull"].Spec.Affinity, a["strait-controller"].Spec.Affinity) {
+		t.Errorf("with controller.affinity: pre-pull affinity %+v, want the controller's %+v", a["strait-pre-pull"].Spec.Affinity, a["strait-controller"].Spec.Affinity)
+	}
+	if _, ok := render(t, "controller.prePull.enabled=false").pods["strait-pre-pull"]; ok {
+		t.Error("controller.prePull.enabled false renders the Job")
 	}
 }

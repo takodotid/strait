@@ -22,6 +22,13 @@ controller:
   resources:
     requests: {cpu: 50m, memory: 64Mi}
     limits: {memory: 256Mi}
+  # Before helm upgrade or helm rollback changes anything, a Job runs the release's image once, on the controller's
+  # node when a controller pod runs, with the scheduling values below. When the image cannot be pulled within
+  # deadlineSeconds, the Job fails, and so does the upgrade, while the old controller still runs. Helm gives up first
+  # after its --timeout, 5m by default.
+  prePull:
+    enabled: true
+    deadlineSeconds: 600
   # Scheduling of the controller pod. A PriorityClass keeps it from being preempted: while the controller is down,
   # the other sites count this site's members Unknown.
   priorityClassName: ""

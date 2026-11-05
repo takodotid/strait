@@ -1,0 +1,66 @@
+{{- if .Values.controller.prePull.enabled }}
+# Runs the release's image once, on the controller's node when a controller pod runs, before an upgrade or a rollback
+# changes anything. Helm waits for it: when the image cannot be pulled, the upgrade fails before the old controller
+# stops. The new controller pod lands on that node only by chance.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: strait-pre-pull
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pre-pull
+  annotations:
+    helm.sh/hook: pre-upgrade,pre-rollback
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.controller.prePull.deadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "strait.labels" . | nindent 8 }}
+        app.kubernetes.io/component: pre-pull
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- with .Values.controller.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        {{- if .Values.controller.affinity }}
+        {{- toYaml .Values.controller.affinity | nindent 8 }}
+        {{- else }}
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: strait
+                    app.kubernetes.io/component: controller
+        {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: pre-pull
+          image: {{ include "strait.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/strait", "version"]
+          securityContext:
+            {{- include "strait.restricted" . | nindent 12 }}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+{{- end }}

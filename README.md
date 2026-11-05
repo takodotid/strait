@@ -203,7 +203,7 @@ Upgrade one site at a time. Sites on different 1.x releases still read each othe
 
 | Step | What to do |
 |---|---|
-| 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. |
+| 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. From 1.3.0, the chart's pre-pull Job also runs the release's image on the controller's node before the upgrade changes anything (`controller.prePull`), but the new controller pod can start on another node. |
 | 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until then. |
 | 3. Wait | Run `strait --context SITE status -A` at every site. Go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. |
 | 4. Next site | Back to step 1. |
@@ -216,6 +216,8 @@ kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.ya
 helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" \
   --namespace strait-system --values values-a.yaml --wait
 ```
+
+When the release's image cannot be pulled or run, the pre-pull Job fails, and `helm upgrade` fails with `pre-upgrade hooks failed` on `Job/strait-system/strait-pre-pull`. Nothing else has changed, and the old controller still runs. Read why with `kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=pre-pull`. The failed Job stays until the next upgrade replaces it.
 
 What the site shows during an upgrade:
 
