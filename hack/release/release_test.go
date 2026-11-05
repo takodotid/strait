@@ -228,6 +228,17 @@ func TestGate(t *testing.T) {
 			}
 		})
 	}
+	// gate.sh reads the jobs from ci.yaml: each one counts.
+	for _, job := range jobs {
+		t.Run("without "+job, func(t *testing.T) {
+			fixtures := base()
+			fixtures[jobs1] = jobsJSON(slices.DeleteFunc(slices.Clone(jobs), func(j string) bool { return j == job }), nil)
+			out, ok := run(t, fixtures, nil, "gate.sh", repo, tag, commit)
+			if ok || !strings.Contains(out, "not successful: "+job) {
+				t.Errorf("exit 0: %v, want a refusal that names %s: %s", ok, job, out)
+			}
+		})
+	}
 }
 
 func TestAbsent(t *testing.T) {
