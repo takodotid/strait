@@ -834,3 +834,37 @@ func TestObservedGeneration(t *testing.T) {
 	}
 }
 
+// Endpoint-direct applies only to a direct link with endpointDirect, only while it is the active, healthy link to the
+// member's peer. Otherwise the member takes the gateway (RFC#0005, requirement 19).
+func TestEndpointDirectOnlyOnTheActiveHealthyLink(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		link func(*straitv1.SiteLink)
+	}{
+		{"endpointDirect false", func(l *straitv1.SiteLink) { l.Spec.Direct.EndpointDirect = false }},
+		{"not active", func(l *straitv1.SiteLink) { l.Status.Active = false }},
+		{"not healthy", func(l *straitv1.SiteLink) { l.Status.Healthy = false }},
+		{"a wireguard link", func(l *straitv1.SiteLink) {
+			l.Spec.Transport = straitv1.TransportWireGuard
+			l.Spec.WireGuard = &straitv1.WireGuardLink{Address: "100.64.0.1/30", PeerAddress: "100.64.0.2"}
+		}},
+		{"a direct link with no direct block", func(l *straitv1.SiteLink) { l.Spec.Direct = nil }},
+		{"a link to another peer", func(l *straitv1.SiteLink) { l.Spec.Peer = "c" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := directPeer(t, tc.link, "10.1.0.7")
+			es := endpointSlices(t, c)["web-b"]
+			if got := sliceAddresses(es); !slices.Equal(got, []string{"10.0.9.9"}) || *es.Ports[0].Port != 15001 {
+				t.Fatalf("addresses = %v, port %d; want the gateway, 10.0.9.9:15001", got, *es.Ports[0].Port)
+			}
+			if st := status(t, c); st.Members[1].Path != straitv1.PathGateway {
+				t.Fatalf("members = %+v", st.Members)
+			}
+		})
+	}
+	// The same link, active and healthy, takes endpoint-direct.
+	c := directPeer(t, nil, "10.1.0.7")
+	if got := sliceAddresses(endpointSlices(t, c)["web-b"]); !slices.Equal(got, []string{"10.1.0.7"}) {
+		t.Fatalf("control: addresses = %v, want [10.1.0.7]", got)
+	}
+}
