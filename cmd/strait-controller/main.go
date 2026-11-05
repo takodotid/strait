@@ -125,12 +125,13 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	}
 
 	if err := (&controller.SiteServiceReconciler{
-		Client:   mgr.GetClient(),
-		Reader:   reader,
-		Recorder: mgr.GetEventRecorder("strait-controller"),
-		Peers:    poller,
-		Local:    local,
-		Now:      time.Now,
+		Client:    mgr.GetClient(),
+		Reader:    reader,
+		APIReader: mgr.GetAPIReader(),
+		Recorder:  mgr.GetEventRecorder("strait-controller"),
+		Peers:     poller,
+		Local:     local,
+		Now:       time.Now,
 	}).SetupWithManager(mgr, ssChanges, watchCNPG); err != nil {
 		return fmt.Errorf("siteservice controller: %w", err)
 	}

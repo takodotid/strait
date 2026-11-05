@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -453,4 +454,74 @@ func TestRouteChangeWritesOnlySlices(t *testing.T) {
 			}
 		})
 	}
+}
+
+// lagging is a cache that shows an older version of some EndpointSlices.
+type lagging struct {
+	client.Client
+	old map[string]*discoveryv1.EndpointSlice
+}
+
+func (s *lagging) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if es, ok := obj.(*discoveryv1.EndpointSlice); ok && s.old[key.Name] != nil {
+		s.old[key.Name].DeepCopyInto(es)
+		return nil
+	}
+	return s.Client.Get(ctx, key, obj, opts...)
+}
+
+// A slice write right after the controller's own last write of that slice reads it from the API server when the cache
+// does not show that write yet, and writes again: the decision is applied in that reconcile (issue #38, item 1).
+func TestSliceWriteWhileCacheLags(t *testing.T) {
+	t.Run("cache shows no slice", func(t *testing.T) {
+		f := &faults{}
+		r, c := routedToA(t, f)
+		cache := &hiding{Client: c, hidden: map[string]bool{"web-web-a": true}}
+		r.Client, r.Reader, r.APIReader = cache, cache, c
+		if err := reconcileWeb(r); err != nil {
+			t.Fatal(err)
+		}
+		st := status(t, c)
+		if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue {
+			t.Fatalf("Applied = %+v, want True", applied)
+		}
+		if !slices.Equal(st.Route.Members, []string{"web-a"}) || st.Route.Endpoints != 1 {
+			t.Fatalf("route = %+v", st.Route)
+		}
+	})
+	t.Run("cache shows an older slice", func(t *testing.T) {
+		f := &faults{}
+		r, c := routedToA(t, f)
+		var old discoveryv1.EndpointSlice
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-web-a"}, &old); err != nil {
+			t.Fatal(err)
+		}
+		// web-a gets a second ready address, and the controller writes it into the slice.
+		var eps discoveryv1.EndpointSlice
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "web-a-x"}, &eps); err != nil {
+			t.Fatal(err)
+		}
+		eps.Endpoints = append(eps.Endpoints, discoveryv1.Endpoint{Addresses: []string{"10.0.0.2"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}})
+		if err := c.Update(context.Background(), &eps); err != nil {
+			t.Fatal(err)
+		}
+		run(t, r)
+		// The cache still shows the slice before that write. Then a third address comes.
+		cache := &lagging{Client: c, old: map[string]*discoveryv1.EndpointSlice{"web-web-a": &old}}
+		r.Client, r.Reader, r.APIReader = cache, cache, c
+		eps.Endpoints = append(eps.Endpoints, discoveryv1.Endpoint{Addresses: []string{"10.0.0.3"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}})
+		if err := c.Update(context.Background(), &eps); err != nil {
+			t.Fatal(err)
+		}
+		if err := reconcileWeb(r); err != nil {
+			t.Fatal(err)
+		}
+		st := status(t, c)
+		if applied := meta.FindStatusCondition(st.Conditions, straitv1.ConditionApplied); applied == nil || applied.Status != metav1.ConditionTrue {
+			t.Fatalf("Applied = %+v, want True", applied)
+		}
+		if st.Route.Endpoints != 3 {
+			t.Fatalf("route = %+v, want 3 endpoints", st.Route)
+		}
+	})
 }
