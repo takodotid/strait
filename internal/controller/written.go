@@ -47,6 +47,19 @@ func (w *written[T, P]) latest(obj P) {
 	delete(w.last, key)
 }
 
+// keys returns the keys of the objects whose last status write the cache may not show yet, and whose write matches.
+func (w *written[T, P]) keys(match func(P) bool) []types.NamespacedName {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	var out []types.NamespacedName
+	for key, l := range w.last {
+		if match(l.object) {
+			out = append(out, key)
+		}
+	}
+	return out
+}
+
 // forget drops what was kept for an object that is gone.
 func (w *written[T, P]) forget(key types.NamespacedName) {
 	w.mu.Lock()

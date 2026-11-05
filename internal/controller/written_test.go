@@ -3,9 +3,12 @@ package controller
 import (
 	"context"
 	"reflect"
+	"slices"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -46,17 +49,39 @@ func (l *laggingCache) Get(ctx context.Context, key client.ObjectKey, obj client
 	return l.Client.Get(ctx, key, obj, opts...)
 }
 
+// List lists as the API server holds the objects, less the frozen ones, which it lists as they were. A field
+// selector of one of the controller's indexes matches each object as the list returns it, as an informer's index does.
 func (l *laggingCache) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	if err := l.Client.List(ctx, list, opts...); err != nil {
+	o := &client.ListOptions{}
+	o.ApplyOptions(opts)
+	selector := o.FieldSelector
+	o.FieldSelector = nil
+	if err := l.Client.List(ctx, list, o); err != nil {
 		return err
 	}
 	items, err := meta.ExtractList(list)
 	if err != nil {
 		return err
 	}
+	var kept []runtime.Object
 	for _, item := range items {
-		o := item.(client.Object)
-		l.copyFrozen(client.ObjectKeyFromObject(o), o)
+		obj := item.(client.Object)
+		l.copyFrozen(client.ObjectKeyFromObject(obj), obj)
+		if selector == nil || indexed(obj, selector) {
+			kept = append(kept, obj)
+		}
 	}
-	return nil
+	return meta.SetList(list, kept)
+}
+
+// indexed reports whether obj matches every requirement of a selector of the controller's indexes.
+func indexed(obj client.Object, selector fields.Selector) bool {
+	index := map[string]client.IndexerFunc{IndexExportService: exportService, IndexGatewayPort: gatewayPortIndex}
+	for _, req := range selector.Requirements() {
+		f, ok := index[req.Field]
+		if !ok || !slices.Contains(f(obj), req.Value) {
+			return false
+		}
+	}
+	return true
 }

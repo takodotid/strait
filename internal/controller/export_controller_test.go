@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"sync/atomic"
@@ -524,5 +525,88 @@ func TestExportDuplicatePortRangeFull(t *testing.T) {
 	}
 	if cond := meta.FindStatusCondition(e.Status.Conditions, ConditionAllocated); e.Status.GatewayPort != 0 || cond == nil || cond.Reason != "RangeFull" {
 		t.Fatalf("port %d, Allocated = %+v; want no port, RangeFull", e.Status.GatewayPort, cond)
+	}
+}
+
+// listCounter counts the lists of Exports and Imports that read every object of the kind: those with no field
+// selector.
+type listCounter struct {
+	client.Client
+	full int
+}
+
+func (l *listCounter) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	o := &client.ListOptions{}
+	o.ApplyOptions(opts)
+	switch list.(type) {
+	case *straitv1.ExportList, *straitv1.ImportList:
+		if o.FieldSelector == nil {
+			l.full++
+		}
+	}
+	return l.Client.List(ctx, list, opts...)
+}
+
+// A reconcile of an Export or an Import that keeps its port lists no object of its kind but those that hold that
+// port. Only one that needs a port lists them all (issue #46, row 37).
+func TestPortKeptWithoutFullList(t *testing.T) {
+	var exports []client.Object
+	var imports []client.Object
+	for i := range 50 {
+		exports = append(exports, newExport(fmt.Sprintf("e%02d", i), int32(16000+i)))
+		imports = append(imports, newImport(fmt.Sprintf("i%02d", i), int32(15000+i)))
+	}
+	exports = append(exports, newExport("new", 0))
+	imports = append(imports, newImport("new", 0))
+
+	er, _, ec := portsExport(t, exports...)
+	counter := &listCounter{Client: er.Client}
+	er.Client, er.Reader = counter, counter
+	reconcileNamed(t, er, "e07")
+	if counter.full != 0 {
+		t.Errorf("an Export that keeps its port: %d lists of every Export, want none", counter.full)
+	}
+	reconcileNamed(t, er, "new")
+	if counter.full != 1 {
+		t.Errorf("an Export that needs a port: %d lists of every Export, want 1", counter.full)
+	}
+	if got := exportPorts(t, ec, "e07", "new"); !slices.Equal(got, []int32{16007, 16050}) {
+		t.Errorf("export ports = %v, want [16007 16050]", got)
+	}
+
+	ir, _, ic := portsImport(t, imports...)
+	counter = &listCounter{Client: ir.Client}
+	ir.Client, ir.Reader = counter, counter
+	reconcileNamed(t, ir, "i07")
+	if counter.full != 0 {
+		t.Errorf("an Import that keeps its port: %d lists of every Import, want none", counter.full)
+	}
+	reconcileNamed(t, ir, "new")
+	if counter.full != 1 {
+		t.Errorf("an Import that needs a port: %d lists of every Import, want 1", counter.full)
+	}
+	if got := importPorts(t, ic, "i07", "new"); !slices.Equal(got, []int32{15007, 15050}) {
+		t.Errorf("import ports = %v, want [15007 15050]", got)
+	}
+}
+
+// An Export that holds a port in the cache moves when the controller has just given that port to one that comes
+// first, though the cache does not show that write yet: as when an earlier leader gave the port twice.
+func TestPortKeptSeesTheLastWrite(t *testing.T) {
+	r, cache, c := portsExport(t, newExport("a-first", 0), newExport("b-second", 0))
+	cache.freeze(t, &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "a-first"}})
+	reconcileNamed(t, r, "a-first")
+	// Another leader's write gives b-second the same port.
+	var b straitv1.Export
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: "app", Name: "b-second"}, &b); err != nil {
+		t.Fatal(err)
+	}
+	b.Status.GatewayPort = 16000
+	if err := c.Status().Update(context.Background(), &b); err != nil {
+		t.Fatal(err)
+	}
+	reconcileNamed(t, r, "b-second")
+	if got := exportPorts(t, c, "a-first", "b-second"); !slices.Equal(got, []int32{16000, 16001}) {
+		t.Fatalf("ports = %v, want [16000 16001]", got)
 	}
 }

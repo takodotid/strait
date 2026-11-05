@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -55,10 +57,16 @@ func TestOneWorkerForExportsAndImports(t *testing.T) {
 	if err := straitv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	// The reconcilers' indexes need the kinds' mappings, which the API server at this address cannot give.
+	mapper := meta.NewDefaultRESTMapper(nil)
+	for _, kind := range []string{"Export", "Import"} {
+		mapper.Add(straitv1.GroupVersion.WithKind(kind), meta.RESTScopeNamespace)
+	}
 	newManager := func() *recording {
 		mgr, err := ctrl.NewManager(&rest.Config{Host: "https://127.0.0.1:1"}, ctrl.Options{
-			Scheme:  scheme,
-			Metrics: metricsserver.Options{BindAddress: "0"},
+			Scheme:         scheme,
+			Metrics:        metricsserver.Options{BindAddress: "0"},
+			MapperProvider: func(*rest.Config, *http.Client) (meta.RESTMapper, error) { return mapper, nil },
 			Controller: config.Controller{
 				MaxConcurrentReconciles: 4,
 				GroupKindConcurrency:    map[string]int{"Export.strait.tako.id": 4, "Import.strait.tako.id": 4},

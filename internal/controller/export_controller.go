@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -70,11 +72,14 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	old := exp.Status.DeepCopy()
 
 	rng := site.Spec.Gateway.ExportPorts
-	var list straitv1.ExportList
-	if err := r.List(ctx, &list); err != nil {
+	exp.Status.GatewayPort, err = nextPort(ctx, r.Client, rng, &exp, &r.written, exportPort, func(opts ...client.ListOption) ([]straitv1.Export, error) {
+		var list straitv1.ExportList
+		err := r.List(ctx, &list, opts...)
+		return list.Items, err
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	exp.Status.GatewayPort = gatewayPort(ctx, rng, &exp, exp.Status.GatewayPort, otherPorts(list.Items, exp.UID, &r.written, exportPort))
 	alloc := metav1.Condition{Type: ConditionAllocated, Status: metav1.ConditionTrue, Reason: "Allocated", ObservedGeneration: exp.Generation}
 	if exp.Status.GatewayPort == 0 {
 		alloc.Status, alloc.Reason, alloc.Message = metav1.ConditionFalse, "RangeFull", fmt.Sprintf("no free port in %d-%d", rng.First, rng.Last)
@@ -131,6 +136,67 @@ func otherPorts[T any, P interface {
 	return out
 }
 
+// IndexGatewayPort indexes Exports and Imports by the gateway port they hold. An object that holds none has no entry.
+const IndexGatewayPort = "status.gatewayPort"
+
+// gatewayPortIndex is the value of IndexGatewayPort.
+func gatewayPortIndex(o client.Object) []string {
+	var port int32
+	switch v := o.(type) {
+	case *straitv1.Export:
+		port = v.Status.GatewayPort
+	case *straitv1.Import:
+		port = v.Status.GatewayPort
+	}
+	if port == 0 {
+		return nil
+	}
+	return []string{strconv.Itoa(int(port))}
+}
+
+// nextPort returns the port that obj holds next, as gatewayPort does. While obj's port is in rng, it first reads only
+// the other objects that hold that port: through the cache's index, and, while the cache predates this controller's
+// last status write of an object, as that write set it. Only when obj does not keep its port does it list every
+// object of its kind, so that a reconcile that keeps a port costs no list of the kind (issue #46, row 37).
+func nextPort[T any, P interface {
+	*T
+	client.Object
+}](ctx context.Context, r client.Reader, rng straitv1.PortRange, obj P, w *written[T, P], port func(P) int32, list func(...client.ListOption) ([]T, error)) (int32, error) {
+	current := port(obj)
+	if current >= rng.First && current <= rng.Last {
+		at, err := list(client.MatchingFields{IndexGatewayPort: strconv.Itoa(int(current))})
+		if err != nil {
+			return 0, err
+		}
+		holders := otherPorts(at, obj.GetUID(), w, port)
+		for _, key := range w.keys(func(o P) bool { return port(o) == current }) {
+			if key == client.ObjectKeyFromObject(obj) || slices.ContainsFunc(holders, func(h portHolder) bool { return h.key == key }) {
+				continue
+			}
+			o := P(new(T))
+			if err := r.Get(ctx, key, o); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return 0, err
+			}
+			w.latest(o)
+			holders = append(holders, portHolder{key: key, port: port(o)})
+		}
+		first := slices.ContainsFunc(holders, func(h portHolder) bool {
+			return h.port == current && comesFirst(h.key, client.ObjectKeyFromObject(obj))
+		})
+		if !first {
+			return current, nil
+		}
+	}
+	all, err := list()
+	if err != nil {
+		return 0, err
+	}
+	return gatewayPort(ctx, rng, obj, current, otherPorts(all, obj.GetUID(), w, port)), nil
+}
+
 // comesFirst orders two holders of one port as the gateway does: the lower namespace, then the lower name, keeps it.
 func comesFirst(a, b types.NamespacedName) bool {
 	return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name)) < 0
@@ -173,8 +239,11 @@ func equalStatus[T any](a, b *T) bool {
 	return apiequality.Semantic.DeepEqual(a, b)
 }
 
-// SetupWithManager registers the reconciler.
+// SetupWithManager registers the reconciler and its index.
 func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &straitv1.Export{}, IndexGatewayPort, gatewayPortIndex); err != nil {
+		return err
+	}
 	inNamespace := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
 		var list straitv1.ExportList
 		if err := r.List(ctx, &list, client.InNamespace(o.GetNamespace())); err != nil {
@@ -226,11 +295,14 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	old := imp.Status.DeepCopy()
 
 	rng := site.Spec.Gateway.ImportPorts
-	var list straitv1.ImportList
-	if err := r.List(ctx, &list); err != nil {
+	imp.Status.GatewayPort, err = nextPort(ctx, r.Client, rng, &imp, &r.written, importPort, func(opts ...client.ListOption) ([]straitv1.Import, error) {
+		var list straitv1.ImportList
+		err := r.List(ctx, &list, opts...)
+		return list.Items, err
+	})
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	imp.Status.GatewayPort = gatewayPort(ctx, rng, &imp, imp.Status.GatewayPort, otherPorts(list.Items, imp.UID, &r.written, importPort))
 	alloc := metav1.Condition{Type: ConditionAllocated, Status: metav1.ConditionTrue, Reason: "Allocated", ObservedGeneration: imp.Generation}
 	if imp.Status.GatewayPort == 0 {
 		alloc.Status, alloc.Reason, alloc.Message = metav1.ConditionFalse, "RangeFull", fmt.Sprintf("no free port in %d-%d", rng.First, rng.Last)
@@ -353,6 +425,9 @@ func (r *ImportReconciler) deleteOwned(ctx context.Context, imp *straitv1.Import
 // SetupWithManager registers the reconciler. Any value on changes, and any change of the Site, requeues every Import.
 // The Site's status names the active gateway, which an Import's Service points at.
 func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan event.GenericEvent) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &straitv1.Import{}, IndexGatewayPort, gatewayPortIndex); err != nil {
+		return err
+	}
 	all := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []reconcile.Request {
 		var list straitv1.ImportList
 		if err := r.List(ctx, &list); err != nil {

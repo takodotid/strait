@@ -114,6 +114,8 @@ func fakeClient(t *testing.T, objs ...client.Object) client.Client {
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).
 		WithStatusSubresource(&straitv1.SiteService{}, &straitv1.Export{}, &straitv1.Import{}, &straitv1.Site{}).
 		WithIndex(&straitv1.Export{}, IndexExportService, exportService).
+		WithIndex(&straitv1.Export{}, IndexGatewayPort, gatewayPortIndex).
+		WithIndex(&straitv1.Import{}, IndexGatewayPort, gatewayPortIndex).
 		Build()
 }
 
