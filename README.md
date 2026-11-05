@@ -184,7 +184,7 @@ gh attestation verify SHA256SUMS --repo takodotid/strait --cert-identity "$id"
 
 | Value | Effect on the image |
 |---|---|
-| `image.tag` and `image.digest` empty | The chart's release image, `ghcr.io/takodotid/strait:X.Y.Z@sha256:...`. |
+| `image.tag` and `image.digest` empty | The image that the chart's release pushed: `ghcr.io/takodotid/strait:X.Y.Z@sha256:...`. |
 | `image.tag` set | That tag, without a digest, as before 1.3.0. |
 | `image.digest` set | That digest. |
 | `image.repository` set, for a mirror | The mirror, with the release's digest while `image.tag` and `image.digest` are empty. Copy the image with its digest, for example with `crane copy` or `skopeo copy --all`. |
