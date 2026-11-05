@@ -38,12 +38,25 @@ jq -r "$expr" "$f"
 `
 
 // fakeCurl answers a token request with a token, or fails as curl -f does when $FAKE_TOKEN is "fail". It answers a
-// manifest request with the HTTP status in $FAKE_MANIFEST.
+// manifest request with the HTTP status in $FAKE_MANIFEST, or with -D, with headers that hold that status and the
+// digest in $FAKE_DIGEST.
 const fakeCurl = `#!/usr/bin/env bash
-for a; do [[ $a == https://* ]] && url=$a; done
+headers=0
+for a; do
+	[[ $a == https://* ]] && url=$a
+	[[ $a == -D ]] && headers=1
+done
 case $url in
 */token\?*) [[ ${FAKE_TOKEN:-} == fail ]] && { echo "curl: (22) 403" >&2; exit 22; }; echo '{"token":"t"}' ;;
-*/manifests/*) printf %s "$FAKE_MANIFEST" ;;
+*/manifests/*)
+	if [[ $headers == 1 ]]; then
+		printf 'HTTP/2 %s\r\n' "$FAKE_MANIFEST"
+		[[ -n ${FAKE_DIGEST:-} ]] && printf 'docker-content-digest: %s\r\n' "$FAKE_DIGEST"
+		printf '\r\n'
+	else
+		printf %s "$FAKE_MANIFEST"
+	fi
+	;;
 *) echo "fake curl: $url" >&2; exit 2 ;;
 esac
 `
@@ -526,5 +539,34 @@ func TestReleaseWorkflow(t *testing.T) {
 		if !slices.Contains(strings.Fields(publish.Steps[attest].With["subject-path"]), f) {
 			t.Errorf("publish: %s is not attested", f)
 		}
+	}
+}
+
+// digest.sh prints the digest that the registry gives for a tag, and fails on anything else.
+func TestDigest(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("9", 64)
+	for _, tt := range []struct {
+		name string
+		args []string
+		env  []string
+		ok   bool
+		want string
+	}{
+		{"pushed", []string{"ghcr.io/o/charts/strait:1.3.0"}, []string{"FAKE_MANIFEST=200", "FAKE_DIGEST=" + digest}, true, digest + "\n"},
+		{"absent", []string{"ghcr.io/o/charts/strait:1.3.0"}, []string{"FAKE_MANIFEST=404", "FAKE_DIGEST=" + digest}, false, "HTTP 404"},
+		{"no digest", []string{"ghcr.io/o/charts/strait:1.3.0"}, []string{"FAKE_MANIFEST=200", "FAKE_DIGEST="}, false, "no sha256 digest"},
+		{"other algorithm", []string{"ghcr.io/o/charts/strait:1.3.0"}, []string{"FAKE_MANIFEST=200", "FAKE_DIGEST=sha512:ab"}, false, "no sha256 digest"},
+		{"no token", []string{"ghcr.io/o/charts/strait:1.3.0"}, []string{"FAKE_TOKEN=fail", "FAKE_MANIFEST=200", "FAKE_DIGEST=" + digest}, false, "no pull token"},
+		{"no tag", []string{"ghcr.io/o/charts/strait"}, []string{"FAKE_MANIFEST=200", "FAKE_DIGEST=" + digest}, false, "is not HOST/NAME:TAG"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out, ok := run(t, nil, tt.env, "digest.sh", tt.args...)
+			if ok != tt.ok {
+				t.Fatalf("exit 0: %v, want %v: %s", ok, tt.ok, out)
+			}
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output lacks %q: %s", tt.want, out)
+			}
+		})
 	}
 }
