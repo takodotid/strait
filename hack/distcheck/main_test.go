@@ -290,4 +290,3 @@ func wantErr(t *testing.T, err error, want string) {
 		t.Fatalf("want an error with %q, have %v", want, err)
 	}
 }
-
