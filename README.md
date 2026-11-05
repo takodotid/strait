@@ -217,12 +217,34 @@ helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait 
   --namespace strait-system --values values-a.yaml --wait
 ```
 
-Why:
-- The controller runs as one replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). A site has no controller from the moment its old pod stops until its new pod serves. That gap holds the image pull, the start, and the wait for the leader election Lease.
-- The Lease wait is none when the old controller released the Lease as it stopped, and 15s when it did not ([RFC0004](rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. So an upgrade from an earlier release still waits 15s.
-- In the gap, no other site can read the site's observations, so the other sites count its members `Unknown`. A routed `Unknown` member stays in the route for `policy.unknownHold` after it was last confirmed, 30s by default. Then the name routes nowhere until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17).
-- So the smallest `policy.unknownHold` of the names with a member at the site is the budget for the site's controller gap. Pull the images first when a pull can take longer than that budget, less the start and the Lease wait.
-- One site at a time, only that site's members are at risk, and step 3 shows the upgrade worked before the next site. Every site at once puts every site's members at risk together.
+What the site shows during an upgrade:
+
+| Part | What happens | What the operator sees |
+|---|---|---|
+| Controller | One replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). The site has no controller from the moment its old pod stops until its new pod serves. That gap holds the image pull, the start, and the wait for the leader election Lease: none when the old controller released the Lease as it stopped, 15s when it did not ([RFC0004](rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. | At the other sites: the site's peer is not `REACHABLE`, and its members are `Unknown`. A routed `Unknown` member stays in the route for `policy.unknownHold` after it was last confirmed, 30s by default, with reason `HeldUnknown`. Then the name routes nowhere with `UnknownTimeout` until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17). At the site: its names keep the endpoints written last, and their status does not change. Then `AwaitingPeers` until the new controller's first poll of every peer has ended. |
+| Gateway | Every release rolls the gateway: its agent runs the release's image. With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left. When the active pod stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a ready replica takes it ([RFC0005, Failover sequence](rfcs/RFC0005.md#failover-sequence)). The Lease moves once or twice: twice when the active pod stops first and the other old pod takes the Lease. | Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members. Connections to a local member, and endpoint-direct connections, do not cross the gateway. New connections through the gateway fail until the new active pod's links pass their health checks. `strait status` shows the new active gateway pod. |
+
+How to plan:
+
+| Plan | Why |
+|---|---|
+| Keep the controller gap under the smallest `policy.unknownHold` of the names with a member at the site. | Past that, those names route nowhere at the other sites until the new controller serves. |
+| Pull the images first (step 1) when a pull can take longer than that budget, less the start and the Lease wait. | The pull is part of the gap. |
+| Upgrade while the clients of names that cross the gateway can reconnect. | Each move of the gateway Lease resets their connections. |
+| Move no primary at any site while a site upgrades. | During the gap, the site's names keep the endpoints written last, and the other sites cannot read what the site declares. |
+| One site at a time. | Only that site's members are at risk, and step 3 shows the upgrade worked before the next site. Every site at once puts every site's members at risk together. |
+
+#### Node drains
+
+A drain moves Strait's pods off a node. The chart sets no PodDisruptionBudget, so `kubectl drain` evicts them at once.
+
+| The drained node runs | Effect |
+|---|---|
+| The controller | The controller gap, as in an upgrade. The new pod pulls its image on its new node, unless step 1 of the upgrade pulled it there. |
+| The active gateway pod | One move of the gateway Lease, as in an upgrade. |
+| A standby gateway pod | None. |
+
+Drain the nodes of one site at a time, and plan each drain as an upgrade. After a node that ran the controller or the active gateway pod, wait as in step 3 before the next node. `kubectl --context site-a -n strait-system get pods -o wide` shows each pod's node, and `strait --context site-a status` the active gateway pod.
 
 #### From 0.1 to 1.0
 
