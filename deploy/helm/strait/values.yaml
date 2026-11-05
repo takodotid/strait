@@ -67,4 +67,18 @@ cnpg:
   enabled: true
 
 networkPolicy:
+  # A policy on the controller pod: only gateway pods reach its observation and xDS ports.
   enabled: true
+  # The sources that may reach the controller's metrics port, 8080, as NetworkPolicy peers, for example
+  # [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]. Empty admits every source.
+  # The metrics are plain HTTP.
+  metricsFrom: []
+  gateway:
+    # A policy on the gateway pods that admits every pod of this cluster and peerCIDRs only. Off by default: where
+    # peer traffic comes from depends on the gateway Services' type and on the CNI (RFC0007), so a default would cut
+    # the peers off.
+    enabled: false
+    # The addresses that the peer gateways connect from, as CIDRs: their gateway pods' addresses, or their nodes'
+    # addresses where their clusters masquerade traffic that leaves them. With NodePort gateway Services, set
+    # externalTrafficPolicy Local, so that the gateway pod sees the peer's address.
+    peerCIDRs: []

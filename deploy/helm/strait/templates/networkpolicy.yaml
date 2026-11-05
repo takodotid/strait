@@ -22,8 +22,42 @@ spec:
       ports:
         - {port: 8082}
         - {port: 18000}
-    # Probes and metrics.
+    # Probes, from the kubelet.
+    - ports:
+        - {port: 8081}
+    # Metrics.
     - ports:
         - {port: 8080}
-        - {port: 8081}
+      {{- with .Values.networkPolicy.metricsFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- if .Values.networkPolicy.gateway.enabled }}
+---
+# The gateway pods admit the pods of this cluster, which reach imports and poll peers through the gateway, and the peer
+# gateways. The pod's own node, which runs the probes, is always admitted.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: strait-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "strait.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: strait
+      app.kubernetes.io/component: gateway
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector: {}
+    {{- with .Values.networkPolicy.gateway.peerCIDRs }}
+    - from:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+    {{- end }}
 {{- end }}
