@@ -433,3 +433,40 @@ func TestDeletionCostOnTheActivePod(t *testing.T) {
 	reconcileGateway(t, r)
 	check("")
 }
+
+// The gateway Services' EndpointSlice has the address type of the active pod's address. An EndpointSlice's address
+// type cannot change, so a slice of the other family is replaced (issue #45).
+func TestGatewaySliceFollowsTheAddressFamily(t *testing.T) {
+	objs := activeGatewayPod()
+	pod := objs[1].(*corev1.Pod)
+	pod.Status.PodIP = "fd00::9"
+	c := fakeClient(t, append(objs, gatewaySite(straitv1.ServiceExposure{}))...)
+	r := &GatewayReconciler{Client: c, Reader: c, Namespace: gatewayNamespace}
+	check := func(at discoveryv1.AddressType, addr string) {
+		t.Helper()
+		for _, name := range []string{GatewayDirectService} {
+			var es discoveryv1.EndpointSlice
+			if err := c.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: name}, &es); err != nil {
+				t.Fatal(err)
+			}
+			if es.AddressType != at || len(es.Endpoints) != 1 || es.Endpoints[0].Addresses[0] != addr {
+				t.Errorf("%s: %s slice with endpoints %+v, want %s with %s", name, es.AddressType, es.Endpoints, at, addr)
+			}
+		}
+		if cond := meta.FindStatusCondition(siteStatus(t, c).Conditions, "GatewayServices"); cond == nil || cond.Status != metav1.ConditionTrue {
+			t.Errorf("GatewayServices = %+v", cond)
+		}
+	}
+	reconcileGateway(t, r)
+	check(discoveryv1.AddressTypeIPv6, "fd00::9")
+
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(pod), pod); err != nil {
+		t.Fatal(err)
+	}
+	pod.Status.PodIP = "10.0.9.9"
+	if err := c.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	reconcileGateway(t, r)
+	check(discoveryv1.AddressTypeIPv4, "10.0.9.9")
+}
