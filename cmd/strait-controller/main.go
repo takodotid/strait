@@ -174,12 +174,12 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	return start(ctrl.SetupSignalHandler(), mgr, lock, leaderElect)
 }
 
-// start runs the manager until ctx ends or the manager fails. Once it has stopped on ctx, it releases the Lease if this
-// controller still holds it, so the next controller takes it at once instead of after the lease duration (RFC0004,
-// requirement 14). The manager then waits for every runnable to stop, with no timeout, so no leader-only work runs any
-// more. On a failure, as when the Lease could not be renewed, the manager does not wait for its runnables, so the
-// Lease stays held until it expires (requirement 16). client-go's own release on cancel would come first in that case.
-// The release is safe only because the process exits right after: main returns once run does.
+// start runs the manager until ctx ends or the manager fails. The manager returns nil only once it stopped on ctx and
+// every runnable has returned: it waits for them with no timeout. start then releases the Lease if this controller
+// still holds it, so the next controller takes it at once instead of after the lease duration (RFC0004, requirement
+// 14). On a failure, as when the Lease could not be renewed, the manager does not wait for its runnables, so the Lease
+// stays held until it expires (requirement 16). client-go's own release on cancel would come before the runnables
+// stop on that path. The release is safe only because the process exits right after: main returns once run does.
 func start(ctx context.Context, mgr manager.Manager, lock resourcelock.Interface, leaderElect bool) error {
 	if err := mgr.Start(ctx); err != nil {
 		return err
