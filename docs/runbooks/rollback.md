@@ -20,6 +20,7 @@ Rolling back across these releases changes what the site does:
 
 | Roll back to | Effect | Before the rollback |
 |---|---|---|
+| Before 1.2.1 | Local `Cluster`s that name different primaries route to the one writable member again, `Active`, where 1.2.1 routes nowhere with `DeclarationsDisagree`. A member whose Service lacks its port is `Unknown` with `ReadFailed` again, and is held while routed. A member whose addresses change family keeps an EndpointSlice with no endpoint until the slice is deleted. | Make the local `Cluster`s of each `SiteService` name one primary: no route at the site is `DeclarationsDisagree` with a message that says `the workloads of site` and names this site. |
 | Before 1.2.0 | `SiteLink.spec.direct.endpointCIDRs` is ignored, and endpoint-direct writes any address from the peer's document, unchecked ([RFC0005](../../rfcs/RFC0005.md#endpoint-direct-addresses), requirement 35). The `Applied` condition of each `SiteService` keeps what 1.2 last wrote: the older controller does not update it. | Set `endpointDirect: false` on each `direct` link, unless every peer and the path to it are trusted. Read the route from `strait status`, not from `Applied`. |
 | Before 1.1.3 | The controller does not release its leader election Lease when it stops. Each later restart or upgrade of the controller waits 15s more for the Lease ([RFC0004, Leader election](../../rfcs/RFC0004.md#leader-election)). | Count the 15s in the budget of the next upgrade. |
 

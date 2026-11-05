@@ -780,8 +780,9 @@ func TestMultipleWritableWarns(t *testing.T) {
 	}
 }
 
-// status.declarations shows the declaration of each known site: the local site and every fresh peer, also one that
-// declares none. A peer that is not fresh is not known, so it is not shown (RFC#0002, requirement 26).
+// status.declarations shows the declaration of each known site: the local site and every peer in the exchange's view,
+// also one that declares none. The view holds the fresh peers only (TestView), so peer c, read once and stale now, is
+// not shown (RFC#0002, requirement 26).
 func TestDeclarations(t *testing.T) {
 	ss := webService("web-a")
 	ss.Spec.Members = append(ss.Spec.Members,
