@@ -31,6 +31,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -109,13 +110,14 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	if err != nil {
 		return err
 	}
-	opts := managerOptions(scheme, lock, gatewayNamespace, metricsAddr, probeAddr, leaderElect)
-	readsIn(&opts.Cache, reads, cnpg)
+	opts, watchCNPG, err := options(cfg, scheme, lock, gatewayNamespace, metricsAddr, probeAddr, leaderElect, cnpg, reads)
+	if err != nil {
+		return err
+	}
 	mgr, err := ctrl.NewManager(cfg, opts)
 	if err != nil {
 		return err
 	}
-	watchCNPG := cnpgWatched(cnpg, mgr.GetRESTMapper())
 	log.Info("cloudnative-pg", "enabled", cnpg, "watched", watchCNPG)
 	log.Info("writes Services and EndpointSlices", "namespaces", namespaces)
 	log.Info("reads Services, EndpointSlices and CloudNativePG's objects", "namespaces", reads)
@@ -374,6 +376,25 @@ func managerOptions(scheme *runtime.Scheme, lock resourcelock.Interface, namespa
 		},
 		Client: client.Options{Cache: &client.CacheOptions{Unstructured: true}},
 	}
+}
+
+// options returns the manager's options, with the cache's reads limited to reads, and whether CloudNativePG's kinds are
+// watched. The manager shares the REST mapper that tells: the cache maps each kind it limits when it starts, and a
+// kind whose CRD does not exist would stop it.
+func options(cfg *rest.Config, scheme *runtime.Scheme, lock resourcelock.Interface, namespace, metricsAddr, probeAddr string, leaderElect, cnpg bool, reads []string) (ctrl.Options, bool, error) {
+	httpClient, err := rest.HTTPClientFor(cfg)
+	if err != nil {
+		return ctrl.Options{}, false, err
+	}
+	mapper, err := apiutil.NewDynamicRESTMapper(cfg, httpClient)
+	if err != nil {
+		return ctrl.Options{}, false, err
+	}
+	watchCNPG := cnpgWatched(cnpg, mapper)
+	opts := managerOptions(scheme, lock, namespace, metricsAddr, probeAddr, leaderElect)
+	opts.MapperProvider = func(*rest.Config, *http.Client) (meta.RESTMapper, error) { return mapper, nil }
+	readsIn(&opts.Cache, reads, watchCNPG)
+	return opts, watchCNPG, nil
 }
 
 // readsIn limits the cache's Services, EndpointSlices and, with cnpg, CloudNativePG's clusters and poolers to

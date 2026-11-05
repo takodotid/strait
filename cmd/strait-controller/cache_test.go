@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -406,5 +408,85 @@ func TestMemoryLimit(t *testing.T) {
 		if got != c.want || ok != c.ok {
 			t.Errorf("memoryLimit(%q, %q) = %d, %v; want %d, %v", c.limit, c.gomemlimit, got, ok, c.want, c.ok)
 		}
+	}
+}
+
+// TestOptionsFollowCNPGCRDs: with --namespaced-reads and the cnpg plugin on, the cache limits CloudNativePG's kinds
+// only when their CRDs exist. The cache maps each kind it limits when it is made, so a kind with no CRD would stop the
+// controller.
+func TestOptionsFollowCNPGCRDs(t *testing.T) {
+	cfg := apiServer(t)
+	scheme := testScheme(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	reads := []string{"db", "strait-system"}
+	newCache := func() (bool, error) {
+		t.Helper()
+		opts, watched, err := options(cfg, scheme, &memoryLock{id: "a"}, "strait-system", "0", "0", false, true, reads)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := opts.Cache
+		c.Scheme = scheme
+		if c.Mapper, err = opts.MapperProvider(cfg, nil); err != nil {
+			t.Fatal(err)
+		}
+		_, err = cache.New(cfg, c)
+		return watched, err
+	}
+	if watched, err := newCache(); watched || err != nil {
+		t.Fatalf("no CloudNativePG CRDs: watched %v, cache %v; want not watched and a cache", watched, err)
+	}
+
+	dir := t.TempDir()
+	for _, kind := range []string{"Cluster", "Pooler"} {
+		plural := strings.ToLower(kind) + "s"
+		crd := fmt.Sprintf(`apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: %[2]s.%[3]s
+spec:
+  group: %[3]s
+  names: {kind: %[1]s, listKind: %[1]sList, plural: %[2]s, singular: %[4]s}
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}
+`, kind, plural, controller.CNPGCluster.Group, strings.ToLower(kind))
+		if err := os.WriteFile(filepath.Join(dir, plural+".yaml"), []byte(crd), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := envtest.InstallCRDs(cfg, envtest.CRDInstallOptions{Paths: []string{dir}, ErrorIfPathMissing: true}); err != nil {
+		t.Fatal(err)
+	}
+	watched, err := newCache()
+	if !watched || err != nil {
+		t.Fatalf("CloudNativePG CRDs: watched %v, cache %v; want watched and a cache", watched, err)
+	}
+	opts, _, _ := options(cfg, scheme, &memoryLock{id: "a"}, "strait-system", "0", "0", false, true, reads)
+	opts.Cache.Scheme = scheme
+	opts.Cache.Mapper, _ = opts.MapperProvider(cfg, nil)
+	c, err := cache.New(cfg, opts.Cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clusters := &unstructured.UnstructuredList{}
+	clusters.SetGroupVersionKind(controller.CNPGCluster.GroupVersion().WithKind("ClusterList"))
+	if _, err := c.GetInformer(ctx, &unstructured.Unstructured{Object: map[string]any{"apiVersion": controller.CNPGCluster.GroupVersion().String(), "kind": "Cluster"}}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = c.Start(ctx) }()
+	if !c.WaitForCacheSync(ctx) {
+		t.Fatal("the cache did not sync")
+	}
+	if err := c.List(ctx, clusters, client.InNamespace("db")); err != nil {
+		t.Errorf("list the Clusters of db: %v", err)
+	}
+	if err := c.List(ctx, clusters, client.InNamespace("app")); err == nil {
+		t.Error("the cache lists the Clusters of app, which it does not read")
 	}
 }
