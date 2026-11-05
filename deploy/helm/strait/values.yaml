@@ -2,6 +2,9 @@ image:
   repository: ghcr.io/takodotid/strait
   # Defaults to the chart's appVersion.
   tag: ""
+  # The image's digest, sha256:..., which pins it. A released chart pins its own image by digest while tag and digest
+  # are both empty: a mirror of the image must keep its digest (README, Verify a release).
+  digest: ""
   pullPolicy: IfNotPresent
 
 envoy:

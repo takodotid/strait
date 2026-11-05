@@ -3,19 +3,94 @@ name: release
 on:
   push:
     tags: ['v*']
-permissions:
-  contents: read
+# Each job states what it may do (RFC0007, requirement 19).
+permissions: {}
+# pipefail in every step.
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  image:
+  # A signed tag on main, whose ci run on main succeeded, and a version that no release published (RFC0007,
+  # requirements 17 and 20). The environment lets the operator require a review before anything runs.
+  gate:
     runs-on: ubuntu-26.04
+    environment: release
     permissions:
       contents: read
-      packages: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Signed tag on main, with ci green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: hack/release/gate.sh "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA"
+      - name: Version not published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          hack/release/absent.sh oci "ghcr.io/takodotid/strait:$v" "ghcr.io/takodotid/charts/strait:$v"
+          hack/release/absent.sh release "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+  # Every Go program of the release runs here, before any push, with read access only (RFC0007, requirements 18
+  # and 19). The archives go to publish.
+  test:
+    runs-on: ubuntu-26.04
+    needs: gate
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # Modules come from the proxy, checked against go.sum, not from a cache that another run saved.
+          cache: false
+      - uses: ./.github/actions/setup-helm
+      - run: make verify test
+      - name: CLI archives
+        run: |
+          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            make dist VERSION="$GITHUB_REF_NAME" GOOS="${p%/*}" GOARCH="${p#*/}"
+          done
+          cat config/crd/*.yaml > dist/strait-crds.yaml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/strait-crds.yaml
+          if-no-files-found: error
+  # The image, pushed by its digest with no tag, and signed keyless with this workflow's identity (RFC0007,
+  # requirements 22 and 23). publish moves the tags last. The build runs Go in BuildKit's build containers, which get
+  # neither this job's environment nor its credentials.
+  image:
+    runs-on: ubuntu-26.04
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The build time: two builds of one commit then give the same platform images (Dockerfile).
+      - name: The commit's time
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
@@ -31,55 +106,91 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           build-args: |
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          outputs: type=image,name=ghcr.io/takodotid/strait,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-  release:
+          # No build cache: every layer of a release comes from this build.
+          no-cache: true
+      - uses: ./.github/actions/setup-cosign
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/takodotid/strait@$DIGEST"
+  # The chart, which names the image by its digest, the attestations, the GitHub release, and the image's tags last.
+  # Everything that can fail without a push runs first. Each push checks again, right before it, that its version is
+  # not published (RFC0007, requirements 20 to 23). No Go runs here.
+  publish:
     runs-on: ubuntu-26.04
-    needs: image
+    needs: [test, image]
     permissions:
       contents: write
       packages: write
+      id-token: write
+      attestations: write
+    env:
+      DIGEST: ${{ needs.image.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          go-version-file: go.mod
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-      - run: make verify test
-      - name: CLI archives
+          name: dist
+          path: dist
+      - uses: ./.github/actions/setup-helm
+      - uses: ./.github/actions/setup-cosign
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package the chart
+        run: hack/release/chart.sh "$GITHUB_REF_NAME" "$DIGEST"
+      - name: Checksums
         run: |
-          for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
-            make dist VERSION="$GITHUB_REF_NAME" GOOS="${p%/*}" GOARCH="${p#*/}"
-          done
-      - name: Helm chart
+          cd dist
+          sha256sum *.tar.gz *.zip *.tgz strait-crds.yaml > SHA256SUMS
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.tgz
+            dist/strait-crds.yaml
+            dist/SHA256SUMS
+      - name: Push and sign the chart
         env:
           ACTOR: ${{ github.actor }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v="${GITHUB_REF_NAME#v}"
-          helm package deploy/helm/strait --version "$v" --app-version "$v" -d dist
+          hack/release/absent.sh oci "ghcr.io/takodotid/charts/strait:$v"
           printf '%s' "$TOKEN" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
           helm push "dist/strait-$v.tgz" oci://ghcr.io/takodotid/charts
+          chart=$(hack/release/digest.sh "ghcr.io/takodotid/charts/strait:$v")
+          cosign sign --yes "ghcr.io/takodotid/charts/strait@$chart"
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat config/crd/*.yaml > dist/strait-crds.yaml
+          hack/release/absent.sh release "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
           cd dist
-          sha256sum *.tar.gz *.zip *.tgz strait-crds.yaml > SHA256SUMS
           gh release create "$GITHUB_REF_NAME" --verify-tag --title "Strait $GITHUB_REF_NAME" --generate-notes *.tar.gz *.zip *.tgz strait-crds.yaml SHA256SUMS
+      - name: Image tags
+        env:
+          TAGS: ${{ needs.image.outputs.tags }}
+        run: |
+          hack/release/absent.sh oci "ghcr.io/takodotid/strait:${GITHUB_REF_NAME#v}"
+          mapfile -t tags <<<"$TAGS"
+          hack/release/tags.sh "ghcr.io/takodotid/strait@$DIGEST" "${tags[@]}"

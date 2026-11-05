@@ -57,6 +57,24 @@ else
 	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
 endif
 
+# The digest of the Strait image that make chart writes into the chart, sha256:... Empty: the chart names the image by
+# its tag only.
+IMAGE_DIGEST ?=
+
+.PHONY: chart
+chart: ## Package the chart into dist/ at VERSION, naming the Strait image by IMAGE_DIGEST when set.
+	hack/release/chart.sh $(VERSION) $(IMAGE_DIGEST)
+
+.PHONY: lint
+lint: ## Verify the module's downloads, scan for known vulnerabilities, run staticcheck and helm lint, check action pins.
+	go mod verify
+	go tool -modfile=hack/tools/go.mod govulncheck ./...
+	go tool -modfile=hack/tools/go.mod staticcheck ./...
+	go tool -modfile=hack/tools/go.mod staticcheck -tags e2e ./test/e2e/...
+	go tool -modfile=hack/tools/go.mod staticcheck -tags envoy ./internal/xds/
+	helm lint --strict deploy/helm/strait --set site.name=a
+	hack/release/pinned.sh
+
 # The Kubernetes version of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test.
 ENVTEST_K8S_VERSION ?= 1.37.0
 

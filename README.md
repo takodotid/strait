@@ -165,6 +165,30 @@ sudo install "strait_${v}_linux_amd64/strait" "strait_${v}_linux_amd64/kubectl-s
 
 The archive also holds the man pages in `man/man1/` and the skill document `SKILL.md`.
 
+### Verify a release
+
+From 1.3.0, each release signs the image and the chart with Sigstore, keyless, under the identity of its release workflow. It attests the CLI archives, the chart archive, `strait-crds.yaml` and `SHA256SUMS` with GitHub artifact attestations. The chart names the image by its digest, in the annotation `strait.tako.id/image-digest` ([RFC0007, Releases](rfcs/RFC0007.md#releases)).
+
+Verify the chart and its image with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) 3, and an archive with the GitHub CLI's `gh attestation verify`:
+
+```sh
+v=v1.3.0
+id="https://github.com/takodotid/strait/.github/workflows/release.yaml@refs/tags/$v"
+issuer=https://token.actions.githubusercontent.com
+cosign verify "ghcr.io/takodotid/charts/strait:${v#v}" --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
+digest=$(helm show chart oci://ghcr.io/takodotid/charts/strait --version "${v#v}" | sed -n 's|^  strait.tako.id/image-digest: ||p')
+cosign verify "ghcr.io/takodotid/strait@$digest" --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
+gh attestation verify "strait_${v}_linux_amd64.tar.gz" --repo takodotid/strait --cert-identity "$id"
+gh attestation verify SHA256SUMS --repo takodotid/strait --cert-identity "$id"
+```
+
+| Value | Effect on the image |
+|---|---|
+| `image.tag` and `image.digest` empty | The image that the chart's release pushed: `ghcr.io/takodotid/strait:X.Y.Z@sha256:...`. |
+| `image.tag` set | That tag, without a digest, as before 1.3.0. |
+| `image.digest` set | That digest. |
+| `image.repository` set, for a mirror | The mirror, with the release's digest while `image.tag` and `image.digest` are empty. Copy the image with its digest, for example with `crane copy` or `skopeo copy --all`. |
+
 ### CLI on Windows
 
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
@@ -330,7 +354,7 @@ For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skil
 |---|---|
 | [Getting started](docs/getting-started.md) | Two clusters, a WireGuard link, and a `SiteService` with the `cnpg` plugin. |
 | [Troubleshooting](docs/troubleshooting.md) | A name routed nowhere, Unknown members, unreachable peers, unhealthy links. |
-| [Runbooks](docs/troubleshooting.md#runbooks) | Site loss and return, WireGuard key rotation, a controller or a gateway that is not ready, rollback. |
+| [Runbooks](docs/troubleshooting.md#runbooks) | Site loss and return, WireGuard key rotation, a controller or a gateway that is not ready, rollback, a release. |
 | [Gateway benchmark](docs/benchmark.md) | What the gateway adds per round trip and per connection, and what endpoint-direct saves. |
 | [End-to-end tests](test/e2e/README.md) | The kind fixture and its scenarios. |
 | [RFC0001](rfcs/RFC0001.md) | Scope, glossary, resources and components. |
@@ -339,7 +363,7 @@ For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skil
 | [RFC0004](rfcs/RFC0004.md) | The observation exchange. |
 | [RFC0005](rfcs/RFC0005.md) | The data plane: links, transports, the gateway, endpoint-direct. |
 | [RFC0006](rfcs/RFC0006.md) | The CLI. |
-| [RFC0007](rfcs/RFC0007.md) | Security: permissions, credentials, links. |
+| [RFC0007](rfcs/RFC0007.md) | Security: permissions, credentials, links, releases. |
 
 `strait --help` and the man pages cover every command and flag.
 

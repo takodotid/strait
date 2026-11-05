@@ -1,0 +1,18 @@
+name: setup-helm
+description: Installs helm, pinned by version and SHA-256 (RFC0007, requirement 24).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: v4.3.1
+        SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+      run: |
+        [[ $RUNNER_OS == Linux && $RUNNER_ARCH == X64 ]] || { echo "helm is pinned for Linux on amd64 only" >&2; exit 1; }
+        dir="$RUNNER_TEMP/helm-$VERSION"
+        mkdir -p "$dir"
+        curl -fsSLo "$dir/helm.tar.gz" "https://get.helm.sh/helm-$VERSION-linux-amd64.tar.gz"
+        echo "$SHA256  $dir/helm.tar.gz" | sha256sum -c
+        tar -xzf "$dir/helm.tar.gz" -C "$dir" --strip-components 1 linux-amd64/helm
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/helm" version

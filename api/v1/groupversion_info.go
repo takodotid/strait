@@ -16,6 +16,7 @@ var (
 	DeprecatedGroupVersion = schema.GroupVersion{Group: GroupVersion.Group, Version: "v1alpha1"}
 
 	// SchemeBuilder registers the types of this package.
+	//lint:ignore SA1019 controller-gen's layout: each types file registers its kinds in init.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
 
 	// AddToScheme adds the types of this package to a scheme.
