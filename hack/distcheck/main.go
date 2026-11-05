@@ -232,7 +232,7 @@ func (c check) binary(name, goos, goarch string, data []byte) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	if settings["GOOS"] != goos || settings["GOARCH"] != goarch {
-		return fmt.Errorf("%s: built for %s/%s, want %s/%s (RFC0006 requirement 15)", name, settings["GOOS"], settings["GOARCH"], goos, goarch)
+		return fmt.Errorf("%s: built for %s/%s, want %s/%s", name, settings["GOOS"], settings["GOARCH"], goos, goarch)
 	}
 	if !bytes.Contains(data, []byte(c.version)) || !bytes.Contains(data, []byte(c.commit)) {
 		return fmt.Errorf("%s: does not carry version %s and commit %s (RFC0006 requirement 13)", name, c.version, c.commit)
