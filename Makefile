@@ -41,21 +41,23 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 DIST := dist/strait_$(VERSION)_$(GOOS)_$(GOARCH)
 EXE := $(if $(filter windows,$(GOOS)),.exe)
+ARCHIVE := $(DIST)$(if $(filter windows,$(GOOS)),.zip,.tar.gz)
+# The time of every entry of the CLI archive, and the date of its man pages: the commit's time, read once, so that two
+# builds of one commit give the same archive (RFC0006 requirement 17). Without git, the current time.
+ifndef SOURCE_DATE_EPOCH
+SOURCE_DATE_EPOCH := $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
+endif
 # Runs a tool of the build on the host, whatever GOOS and GOARCH the archive is for.
 HOSTGO := GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) go
 
 .PHONY: dist
-dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill document. A .zip for windows, a .tar.gz otherwise.
+dist: ## Build the CLI release archive: strait, kubectl-strait, man pages, skill document. A .zip for windows, a .tar.gz otherwise. The same bytes for one commit, Go version and SOURCE_DATE_EPOCH.
 	rm -rf $(DIST) $(DIST).zip $(DIST).tar.gz && mkdir -p $(DIST)/man/man1
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -ldflags "-s -w $(VERSION_LDFLAGS)" -o $(DIST)/strait$(EXE) ./cmd/strait
 	cp $(DIST)/strait$(EXE) $(DIST)/kubectl-strait$(EXE)
-	$(HOSTGO) run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
+	SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) $(HOSTGO) run ./hack/gendocs -skill $(DIST)/SKILL.md $(DIST)/man/man1
 	cp LICENSE README.md $(DIST)/
-ifeq ($(GOOS),windows)
-	$(HOSTGO) run ./hack/zipdir $(DIST).zip $(DIST)
-else
-	tar -C dist -czf $(DIST).tar.gz $(notdir $(DIST))
-endif
+	SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH) $(HOSTGO) run ./hack/archive $(ARCHIVE) $(DIST)
 
 # The digest of the Strait image that make chart writes into the chart, sha256:... Empty: the chart names the image by
 # its tag only.

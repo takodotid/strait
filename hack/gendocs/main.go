@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -45,10 +47,22 @@ func run(args []string, stderr io.Writer) error {
 	}
 	noTag(root)
 
+	header := &doc.GenManHeader{Source: "Strait", Manual: "Strait Manual"}
+	// Each man page carries a month as its date. With SOURCE_DATE_EPOCH, it is that time's month in UTC, so that two
+	// builds of one commit match, whatever their time zone (RFC0006 requirement 17). Without it, cobra takes the
+	// current month.
+	if epoch := os.Getenv("SOURCE_DATE_EPOCH"); epoch != "" {
+		secs, err := strconv.ParseInt(epoch, 10, 64)
+		if err != nil {
+			return fmt.Errorf("SOURCE_DATE_EPOCH %q is not a number of seconds", epoch)
+		}
+		date := time.Unix(secs, 0).UTC()
+		header.Date = &date
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if err := doc.GenManTree(root, &doc.GenManHeader{Source: "Strait", Manual: "Strait Manual"}, dir); err != nil {
+	if err := doc.GenManTree(root, header, dir); err != nil {
 		return err
 	}
 	if *skill == "" {
