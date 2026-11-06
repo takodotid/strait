@@ -2,15 +2,19 @@ package xds
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	discovery "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
@@ -41,6 +45,12 @@ func gatewayPod(name, ip string) *corev1.Pod {
 // startServer runs a Server until the test ends.
 func startServer(t *testing.T, c client.Client, addr string) *Server {
 	s := NewServer(c, "strait", addr, "controller.example:8080")
+	runServer(t, s)
+	return s
+}
+
+// runServer runs s until the test ends.
+func runServer(t *testing.T, s *Server) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- s.Start(ctx) }()
@@ -50,7 +60,6 @@ func startServer(t *testing.T, c client.Client, addr string) *Server {
 			t.Error(err)
 		}
 	})
-	return s
 }
 
 type adsStream struct {
@@ -157,6 +166,89 @@ func TestServer(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("the snapshot of a closed node is kept")
+		}
+	}
+}
+
+// logs is a logr.LogSink that records each line: "error <msg> <values>", or "V<level> <msg> <values>".
+type logs struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *logs) Init(logr.RuntimeInfo)          {}
+func (l *logs) Enabled(int) bool               { return true }
+func (l *logs) WithValues(...any) logr.LogSink { return l }
+func (l *logs) WithName(string) logr.LogSink   { return l }
+func (l *logs) Info(level int, msg string, kv ...any) {
+	l.add(fmt.Sprintf("V%d %s %v", level, msg, kv))
+}
+func (l *logs) Error(err error, msg string, kv ...any) {
+	l.add(fmt.Sprintf("error %s %v %v", msg, kv, err))
+}
+func (l *logs) add(line string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, line)
+}
+
+// with returns the lines that start with prefix.
+func (l *logs) with(prefix string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []string
+	for _, line := range l.lines {
+		if strings.HasPrefix(line, prefix) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// A gateway pod's Envoy can connect before the kubelet writes the pod's address. The server logs that at V(1), not as
+// an error, and sets the configuration on the rebuild that follows the address: the trigger of the pod's update
+// (controller.XDSTrigger), or the rebuild every 2s. Any other failure to set a configuration is still an error.
+func TestPodWithoutAddress(t *testing.T) {
+	c := fixture(t)
+	pod := gatewayPod("strait-gateway-0", "")
+	if err := c.Create(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	addr := freeAddress(t, "127.0.0.1")
+	rec := &logs{}
+	s := NewServer(c, "strait", addr, "controller.example:8080")
+	s.log = logr.New(rec)
+	runServer(t, s)
+
+	a := dial(t, addr, "strait-gateway-0")
+	for deadline := time.Now().Add(time.Second); len(rec.with("V1 the gateway configuration waits for the pod's address")) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no V(1) line for the pod with no address; logged %q", rec.with(""))
+		}
+	}
+	if _, err := s.cache.GetSnapshot("strait-gateway-0"); err == nil {
+		t.Fatal("a pod with no address has a configuration")
+	}
+
+	// The kubelet writes the address. XDSTrigger turns the pod's update into a trigger, and the configuration follows
+	// within the debounce, not at the next rebuild every 2s.
+	pod.Status.PodIP = podIP
+	if err := c.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	s.Trigger()
+	if r := a.recv(time.Second); len(r.GetResources()) == 0 {
+		t.Fatal("the pod got no clusters once it had its address")
+	}
+	if got := rec.with("error"); len(got) > 0 {
+		t.Fatalf("a pod with no address yet was logged as an error: %q", got)
+	}
+
+	// A pod that does not exist is still an error.
+	dial(t, addr, "strait-gateway-9")
+	for deadline := time.Now().Add(time.Second); len(rec.with("error cannot set the gateway configuration [node strait-gateway-9]")) == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("a node with no pod was not logged as an error; logged %q", rec.with(""))
 		}
 	}
 }

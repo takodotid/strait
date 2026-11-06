@@ -56,7 +56,8 @@ func TestXDSTriggerFollowsExportedSlices(t *testing.T) {
 }
 
 // TestXDSTriggerEvents: a renewal of a Lease and a change of an EndpointSlice that no Export reads do not rebuild the
-// gateway's configuration. A change of an exported Service's EndpointSlice does.
+// gateway's configuration. A change of an exported Service's EndpointSlice does, and so does the update that writes a
+// gateway pod's address: a pod's Envoy can connect before it, and its configuration waits for it.
 func TestXDSTriggerEvents(t *testing.T) {
 	exp := &straitv1.Export{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "pg-pg-a"},
@@ -132,4 +133,11 @@ func TestXDSTriggerEvents(t *testing.T) {
 		Labels: map[string]string{discoveryv1.LabelServiceName: "pg-a-rw"}}}
 	slices.Add(exported)
 	waitTriggers("an exported Service's EndpointSlice", base+1)
+
+	pods, _ := informers.FakeInformerFor(ctx, &corev1.Pod{})
+	pending := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "strait-system", Name: "strait-gateway-0"}}
+	addressed := pending.DeepCopy()
+	addressed.Status.PodIP = "10.244.1.7"
+	pods.Update(pending, addressed)
+	waitTriggers("a gateway pod's address", base+2)
 }

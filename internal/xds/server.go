@@ -2,6 +2,7 @@ package xds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"slices"
@@ -319,8 +320,13 @@ func (s *Server) nodes() []string {
 	return out
 }
 
+// errNoAddress is the error of set for a pod that has no address yet. A new gateway pod's Envoy can connect before the
+// kubelet writes the pod's address. The update that writes it triggers a rebuild (controller.XDSTrigger watches the
+// gateway pods), and the rebuild every 2s retries too.
+var errNoAddress = errors.New("has no address yet")
+
 // rebuild reads the model once and sets the configuration of each node.
-// On an error a node keeps its last configuration.
+// On an error a node keeps its last configuration. A pod with no address yet is not an error.
 func (s *Server) rebuild(ctx context.Context, nodes []string) {
 	if len(nodes) == 0 {
 		return
@@ -333,7 +339,10 @@ func (s *Server) rebuild(ctx context.Context, nodes []string) {
 		return
 	}
 	for _, node := range nodes {
-		if err := s.set(ctx, m, node); err != nil {
+		switch err := s.set(ctx, m, node); {
+		case errors.Is(err, errNoAddress):
+			s.log.V(1).Info("the gateway configuration waits for the pod's address", "node", node)
+		case err != nil:
 			s.log.Error(err, "cannot set the gateway configuration", "node", node)
 		}
 	}
@@ -345,7 +354,7 @@ func (s *Server) set(ctx context.Context, m Model, node string) error {
 		return err
 	}
 	if pod.Status.PodIP == "" {
-		return fmt.Errorf("pod %s has no address", node)
+		return fmt.Errorf("pod %s %w", node, errNoAddress)
 	}
 	snap, err := Build(m, pod.Status.PodIP)
 	if err != nil {
