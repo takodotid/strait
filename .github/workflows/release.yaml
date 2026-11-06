@@ -54,6 +54,10 @@ jobs:
           cache: false
       - uses: ./.github/actions/setup-helm
       - run: make verify test
+      # The time of every entry of the archives, which make dist writes and hack/distcheck checks (RFC0006,
+      # requirement 17). Set after the tests, which set their own.
+      - name: The commit's time
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - name: CLI archives
         run: |
           for p in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
@@ -61,7 +65,8 @@ jobs:
           done
           cat config/crd/*.yaml > dist/strait-crds.yaml
       # One archive per platform, each with its files and man pages, and binaries of its platform that carry the version
-      # and the commit (RFC0006, requirements 10, 13, 15 and 16).
+      # and the commit. Each entry with the time SOURCE_DATE_EPOCH, no owner, and a fixed mode (RFC0006, requirements
+      # 10, 13, 15, 16 and 17).
       - name: Check the CLI archives
         run: |
           go run ./hack/gendocs "$RUNNER_TEMP/man"
