@@ -504,11 +504,15 @@ func TestReleaseWorkflow(t *testing.T) {
 		}
 	}
 
-	// RFC0006 requirements 10, 13, 15 and 16: the archives are checked in test, after they are built, and the image in
-	// a job that can write nothing and that publish needs.
+	// RFC0006 requirements 10, 13, 15, 16 and 17: the archives are checked in test, after they are built from the
+	// commit's time, and the image in a job that can write nothing and that publish needs.
 	built, checked := test.step("make dist"), test.step("hack/distcheck", "archives dist")
 	if built < 0 || checked < built {
 		t.Errorf("test: the archives are built at step %d and checked at %d", built, checked)
+	}
+	tested, epoch := test.step("make verify test"), test.step(`SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`, "$GITHUB_ENV")
+	if epoch < tested || epoch > built {
+		t.Errorf("test: SOURCE_DATE_EPOCH is set at step %d, want after make verify test (%d) and before make dist (%d)", epoch, tested, built)
 	}
 	image, ok := w.Jobs["image-check"]
 	if !ok || image.step("hack/distcheck", " image ", "linux/$arch") < 0 {
