@@ -223,6 +223,61 @@ func TestRemoteActiveMemberThroughGateway(t *testing.T) {
 	}
 }
 
+// A gateway handover leaves a member reached through the gateway with no endpoint, from when the active replica stops
+// being active until a standby holds the Lease and is ready: the Site has no gateway address (RFC0005, requirement
+// 11, and its failover sequence). The route and its reason stay, since the decision has not changed, and the Routed
+// condition is False with reason NoEndpoints, since the Service has none (RFC0002, requirement 27). Then the endpoint
+// is the new replica's address.
+func TestGatewayHandoverLeavesNoEndpoint(t *testing.T) {
+	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
+	imp.Status.GatewayPort = 15001
+	p := peers{
+		fresh: map[string]bool{"b": true},
+		view: map[string]observe.Report{"b": {Declared: "web-b", Members: map[string]observe.Observation{
+			"web-b": {Member: "web-b", Site: "b", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, ObservedAt: now},
+		}}},
+	}
+	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-b"), imp)
+	r, c := reconciler(t, p, objs...)
+	gateway := func(address string) {
+		t.Helper()
+		var s straitv1.Site
+		if err := c.Get(context.Background(), types.NamespacedName{Name: "a"}, &s); err != nil {
+			t.Fatal(err)
+		}
+		s.Status.Gateway.Address = address
+		if err := c.Status().Update(context.Background(), &s); err != nil {
+			t.Fatal(err)
+		}
+		run(t, r)
+	}
+	check := func(when, address string, routed metav1.ConditionStatus, reason string) {
+		t.Helper()
+		var addresses []string
+		for _, e := range endpointSlices(t, c)["web-b"].Endpoints {
+			addresses = append(addresses, e.Addresses...)
+		}
+		st := status(t, c)
+		cond := meta.FindStatusCondition(st.Conditions, straitv1.ConditionRouted)
+		if address == "" && len(addresses) > 0 || address != "" && !slices.Equal(addresses, []string{address}) {
+			t.Errorf("%s: endpoints %v, want %q", when, addresses, address)
+		}
+		if !slices.Equal(st.Route.Members, []string{"web-b"}) || st.Route.Reason != straitv1.ReasonActive {
+			t.Errorf("%s: route %v %s, want [web-b] Active", when, st.Route.Members, st.Route.Reason)
+		}
+		if cond == nil || cond.Status != routed || cond.Reason != reason {
+			t.Errorf("%s: Routed %+v, want %s %s", when, cond, routed, reason)
+		}
+	}
+
+	run(t, r)
+	check("before", "10.0.9.9", metav1.ConditionTrue, straitv1.ReasonActive)
+	gateway("")
+	check("no active replica", "", metav1.ConditionFalse, "NoEndpoints")
+	gateway("10.0.9.10")
+	check("a standby took the Lease", "10.0.9.10", metav1.ConditionTrue, straitv1.ReasonActive)
+}
+
 func TestRemoteActiveMemberEndpointDirect(t *testing.T) {
 	imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web-web-b"}, Spec: straitv1.ImportSpec{Site: "b", Export: "web-web-b"}}
 	imp.Status.GatewayPort = 15001
