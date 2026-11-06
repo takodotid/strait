@@ -1,11 +1,12 @@
-// Command distcheck checks the CLI archives of a release, or the files of one platform of its image, against RFC0006
-// requirements 10, 13, 15 and 16. The release workflow runs it before it publishes anything.
+// Command distcheck checks the CLI archives of a release against RFC0006 requirements 10, 13, 15, 16 and 17, or the
+// files of one platform of its image against requirements 10 and 13. The release workflow runs it before it publishes
+// anything.
 //
-//	go run ./hack/distcheck -version vX.Y.Z -commit SHA -man DIR archives DIST
+//	SOURCE_DATE_EPOCH=<seconds> go run ./hack/distcheck -version vX.Y.Z -commit SHA -man DIR archives DIST
 //	go run ./hack/distcheck -version vX.Y.Z -commit SHA -man DIR image ARCH FILE.tar
 //
-// DIR holds the man pages that hack/gendocs writes. DIST holds the archives that make dist writes. FILE.tar is the
-// image's file system, as docker export writes it.
+// DIR holds the man pages that hack/gendocs writes. DIST holds the archives that make dist writes, with
+// SOURCE_DATE_EPOCH as the time of every entry. FILE.tar is the image's file system, as docker export writes it.
 package main
 
 import (
@@ -18,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -25,7 +27,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // platforms are the platforms of the CLI archives (RFC0006 requirement 15).
@@ -48,6 +52,8 @@ type check struct {
 	man []string
 	// tmp holds the binaries that are read or run.
 	tmp string
+	// epoch is SOURCE_DATE_EPOCH, the time of every entry of the archives.
+	epoch time.Time
 }
 
 func run(args []string, stdout io.Writer) error {
@@ -82,6 +88,12 @@ func run(args []string, stdout io.Writer) error {
 	var errs []error
 	switch rest := fs.Args(); {
 	case len(rest) == 2 && rest[0] == "archives":
+		epoch := os.Getenv("SOURCE_DATE_EPOCH")
+		secs, err := strconv.ParseInt(epoch, 10, 64)
+		if err != nil || secs < 0 {
+			return fmt.Errorf("SOURCE_DATE_EPOCH %q is not a number of seconds: it is the time of every entry of the archives", epoch)
+		}
+		c.epoch = time.Unix(secs, 0).UTC()
 		errs = c.archives(rest[1])
 	case len(rest) == 3 && rest[0] == "image":
 		errs = c.image(rest[1], rest[2])
@@ -102,7 +114,8 @@ func (c check) archiveName(goos, goarch string) string {
 
 // archives checks that dist holds one archive per platform and no other of this version (requirement 15), each with
 // one directory named after it that holds exactly the files of requirement 16, the man pages of requirement 10, and
-// binaries of its platform that carry the version and the commit (requirement 13).
+// binaries of its platform that carry the version and the commit (requirement 13). Each entry of an archive must be
+// what make dist writes from SOURCE_DATE_EPOCH (requirement 17).
 func (c check) archives(dist string) []error {
 	var errs []error
 	want := map[string]string{}
@@ -138,19 +151,28 @@ func (c check) archives(dist string) []error {
 		for _, e := range c.archive(c.archiveName(goos, goarch), goos, goarch, files) {
 			errs = append(errs, fmt.Errorf("%s: %w", file, e))
 		}
+		for _, e := range c.entries(filepath.Join(dist, file), binaries(c.archiveName(goos, goarch), goos)) {
+			errs = append(errs, fmt.Errorf("%s: %w", file, e))
+		}
 	}
 	return errs
 }
 
-// archive checks the files of one archive, by path.
-func (c check) archive(dir, goos, goarch string, files map[string][]byte) []error {
+// binaries returns the paths of the binaries in the archive of dir.
+func binaries(dir, goos string) []string {
 	exe := ""
 	if goos == "windows" {
 		exe = ".exe"
 	}
+	return []string{dir + "/strait" + exe, dir + "/kubectl-strait" + exe}
+}
+
+// archive checks the files of one archive, by path.
+func (c check) archive(dir, goos, goarch string, files map[string][]byte) []error {
+	bins := binaries(dir, goos)
 	want := map[string]bool{}
-	for _, f := range []string{"strait" + exe, "kubectl-strait" + exe, "SKILL.md", "LICENSE", "README.md"} {
-		want[dir+"/"+f] = true
+	for _, f := range append([]string{dir + "/SKILL.md", dir + "/LICENSE", dir + "/README.md"}, bins...) {
+		want[f] = true
 	}
 	for _, m := range c.man {
 		want[dir+"/man/man1/"+m] = true
@@ -166,14 +188,116 @@ func (c check) archive(dir, goos, goarch string, files map[string][]byte) []erro
 			errs = append(errs, fmt.Errorf("lacks %s (RFC0006 requirements 10 and 16)", name))
 		}
 	}
-	for _, b := range []string{"strait" + exe, "kubectl-strait" + exe} {
-		if data, ok := files[dir+"/"+b]; ok {
-			if err := c.binary(b, goos, goarch, data); err != nil {
+	for _, b := range bins {
+		if data, ok := files[b]; ok {
+			if err := c.binary(path.Base(b), goos, goarch, data); err != nil {
 				errs = append(errs, err)
 			}
 		}
 	}
 	return errs
+}
+
+// entries checks what make dist fixes in each entry of an archive, so that two builds of one commit give the same bytes
+// (requirement 17): the entries sorted by name, each with the time SOURCE_DATE_EPOCH, and the mode 0755 for a directory
+// or a binary, 0644 otherwise. A .tar.gz must have owner 0 with no names in each entry and no name or time in its gzip
+// header. A .zip must store its times in UTC. Each error names the entry.
+func (c check) entries(file string, binaries []string) []error {
+	var errs []error
+	fail := func(name, format string, args ...any) {
+		errs = append(errs, fmt.Errorf("entry %s: %s (RFC0006 requirement 17)", name, fmt.Sprintf(format, args...)))
+	}
+	prev := ""
+	// both checks what the two formats share: the order, the kind, and the mode of the kind.
+	both := func(name string, dir bool, mode int64) {
+		if prev != "" && name <= prev {
+			fail(name, "comes after %s, want the entries sorted by name", prev)
+		}
+		prev = name
+		if dir != strings.HasSuffix(name, "/") {
+			fail(name, "a directory's name must end with a slash, and only a directory's")
+		}
+		want := int64(0o644)
+		if dir || slices.Contains(binaries, name) {
+			want = 0o755
+		}
+		if mode != want {
+			fail(name, "mode %o, want %o", mode, want)
+		}
+	}
+
+	if strings.HasSuffix(file, ".zip") {
+		r, err := zip.OpenReader(file)
+		if err != nil {
+			return []error{err}
+		}
+		defer r.Close()
+		date, clock := msDosTime(c.epoch)
+		for _, f := range r.File {
+			// The MS-DOS fields hold no zone, and readers take them as local time. They must hold the time in UTC.
+			if !f.Modified.Equal(c.epoch) || f.ModifiedDate != date || f.ModifiedTime != clock {
+				fail(f.Name, "time %s, MS-DOS %s, want SOURCE_DATE_EPOCH %s, in UTC in both",
+					f.Modified.UTC().Format(time.RFC3339), msDosString(f.ModifiedDate, f.ModifiedTime), c.epoch.Format(time.RFC3339))
+			}
+			mode := f.Mode()
+			if t := mode.Type(); t != 0 && t != fs.ModeDir {
+				fail(f.Name, "type %s, want a directory or a regular file", t)
+			}
+			both(f.Name, mode.IsDir(), int64(mode.Perm()))
+		}
+		return errs
+	}
+
+	f, err := os.Open(file)
+	if err != nil {
+		return []error{err}
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return []error{err}
+	}
+	if gz.Name != "" || !gz.ModTime.IsZero() {
+		errs = append(errs, fmt.Errorf("the gzip header holds the name %q and the time %s, want neither (RFC0006 requirement 17)",
+			gz.Name, gz.ModTime.UTC().Format(time.RFC3339)))
+	}
+	tr := tar.NewReader(gz)
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return errs
+		}
+		if err != nil {
+			return append(errs, err)
+		}
+		if !h.ModTime.Equal(c.epoch) {
+			fail(h.Name, "time %s, want SOURCE_DATE_EPOCH %s", h.ModTime.UTC().Format(time.RFC3339), c.epoch.Format(time.RFC3339))
+		}
+		if !h.AccessTime.IsZero() || !h.ChangeTime.IsZero() {
+			fail(h.Name, "an access or a change time, want neither")
+		}
+		if h.Uid != 0 || h.Gid != 0 || h.Uname != "" || h.Gname != "" {
+			fail(h.Name, "owner %d:%d (%q:%q), want 0:0 with no names", h.Uid, h.Gid, h.Uname, h.Gname)
+		}
+		if h.Typeflag != tar.TypeDir && h.Typeflag != tar.TypeReg {
+			fail(h.Name, "type %q, want a directory or a regular file", h.Typeflag)
+		}
+		both(h.Name, h.Typeflag == tar.TypeDir, h.Mode)
+	}
+}
+
+// msDosTime returns the MS-DOS date and time of t in UTC, as a .zip entry stores them, to 2 seconds.
+func msDosTime(t time.Time) (date, clock uint16) {
+	t = t.UTC()
+	date = uint16(t.Day() + int(t.Month())<<5 + (t.Year()-1980)<<9)
+	clock = uint16(t.Second()/2 + t.Minute()<<5 + t.Hour()<<11)
+	return date, clock
+}
+
+// msDosString formats an MS-DOS date and time.
+func msDosString(date, clock uint16) string {
+	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d",
+		int(date>>9)+1980, date>>5&0xf, date&0x1f, clock>>11, clock>>5&0x3f, clock&0x1f*2)
 }
 
 // image checks one platform of the image, from the tar of its file system: the binaries of its platform, which carry
