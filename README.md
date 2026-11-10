@@ -111,7 +111,7 @@ Applied               True    Synced                  12m    -
 
 | Item | Value |
 |---|---|
-| Release | v1.4.0 |
+| Release | v1.3.2 |
 | API | `strait.tako.id/v1`. `v1alpha1` is still served, deprecated. A change that breaks a user comes as a new API version. |
 
 ## Quick start
@@ -146,7 +146,7 @@ Each release publishes:
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
 ```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.4.0 \
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
@@ -155,7 +155,7 @@ Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two c
 Install the CLI, here for Linux on amd64:
 
 ```sh
-v=v1.4.0
+v=v1.3.2
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
@@ -172,7 +172,7 @@ From 1.3.0, each release signs the image and the chart with Sigstore, keyless, u
 Verify the chart and its image with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) 3, and an archive with the GitHub CLI's `gh attestation verify`:
 
 ```sh
-v=v1.4.0
+v=v1.3.2
 id="https://github.com/takodotid/strait/.github/workflows/release.yaml@refs/tags/$v"
 issuer=https://token.actions.githubusercontent.com
 cosign verify "ghcr.io/takodotid/charts/strait:${v#v}" --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
@@ -194,7 +194,7 @@ gh attestation verify SHA256SUMS --repo takodotid/strait --cert-identity "$id"
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
 
 ```powershell
-$v = "v1.4.0"
+$v = "v1.3.2"
 $a = "strait_${v}_windows_amd64"
 $url = "https://github.com/takodotid/strait/releases/download/$v"
 Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
@@ -233,7 +233,7 @@ Upgrade one site at a time. Sites on different 1.x releases still read each othe
 | 4. Next site | Back to step 1. |
 
 ```sh
-v=v1.4.0
+v=v1.3.2
 helm template strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" --values values-a.yaml | grep 'image:' | sort -u
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml

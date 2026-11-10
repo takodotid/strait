@@ -74,11 +74,11 @@ Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its 
 Check the rendered `Site`, then install at both sites:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.4.0 \
+helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
   --namespace strait-system --values values-a.yaml | strait validate -f -
 
 for s in a b; do
-  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.4.0 \
+  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
     --namespace strait-system --values values-$s.yaml --wait
 done
 ```
@@ -164,7 +164,7 @@ Check each site's objects together with its `Site`. The output must end with `Er
 
 ```sh
 for s in a b; do
-  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.4.0 \
+  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
     --namespace strait-system --values values-$s.yaml | strait validate -f - -f site-$s.yaml
 done
 ```
