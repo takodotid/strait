@@ -1,9 +1,26 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "local>takodotid/renovate-config"
+    "config:recommended",
+    "group:allNonMajor",
+    ":semanticCommits"
   ],
+  "labels": ["meta: dependencies"],
+  "schedule": ["before 6am"],
+  "timezone": "Asia/Jakarta",
+  "rangeStrategy": "bump",
   "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "extends": [
+        "helpers:pinGitHubActionDigests"
+      ],
+      "extractVersion": "^(?<version>v?\\d+\\.\\d+\\.\\d+)$",
+      "versioning": "regex:^v?(?<major>\\d+)(\\.(?<minor>\\d+)\\.(?<patch>\\d+))?$"
+    },
     {
       "description": "The chart's own image follows the chart's appVersion; never pin it.",
       "matchPackageNames": ["ghcr.io/takodotid/strait"],
