@@ -3,7 +3,8 @@
   "extends": [
     "config:recommended",
     "group:allNonMajor",
-    ":semanticCommits"
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigestsToSemver"
   ],
   "labels": ["meta: dependencies"],
   "schedule": ["before 6am"],
@@ -13,13 +14,6 @@
     {
       "matchDatasources": ["docker"],
       "pinDigests": true
-    },
-    {
-      "extends": [
-        "helpers:pinGitHubActionDigests"
-      ],
-      "extractVersion": "^(?<version>v?\\d+\\.\\d+\\.\\d+)$",
-      "versioning": "regex:^v?(?<major>\\d+)(\\.(?<minor>\\d+)\\.(?<patch>\\d+))?$"
     },
     {
       "description": "The chart's own image follows the chart's appVersion; never pin it.",
