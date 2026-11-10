@@ -1,6 +1,6 @@
 # Site return
 
-A site comes back after a [site loss](site-loss.md). Its workload may still run a primary that the other sites have replaced. Until it is demoted, that primary takes the writes of the returning site's clients wherever Strait routes them to it.
+A site comes back after a [site loss](site-loss.md), or a partition between sites heals. Its workload may still run a primary that the other sites have replaced. Until it is demoted, that primary takes the writes of the returning site's clients wherever Strait routes them to it.
 
 ## Ahead of time: `startupHold`
 
@@ -13,7 +13,7 @@ Set `spec.policy.startupHold` on every `Single` mode `SiteService`, at every sit
 | Without it | The returning site routes its clients to its old primary from its controller's first decision until it reads the other sites. In a two-site test, that lasted about 20 seconds ([RFC0002, Motivation](../../rfcs/RFC0002.md#motivation)). |
 | Suggested value | 30s, as in the end-to-end test. The hold ends once every other site with a member has been read, so it costs time only when a controller starts while cut off from those sites. |
 | Cost | A controller that starts during a real partition, for example after an upgrade or a crash, keeps its local primary unrouted for up to `startupHold`. |
-| Not covered | A controller that kept running through the loss, such as on a site that was only cut off, or whose nodes were frozen and resumed. It is not held ([RFC0002, Limitations](../../rfcs/RFC0002.md#limitations)). |
+| Not covered | A controller that kept running through the loss, such as on a site that was only cut off, or whose nodes were frozen and resumed. It is not held ([RFC0002, Limitations](../../rfcs/RFC0002.md#limitations)): [A partition that heals](#a-partition-that-heals). |
 
 Set it at each site, then check that the controller reads it:
 
@@ -50,3 +50,14 @@ kubectl --context site-b -n app patch cluster.postgresql.cnpg.io pg-b --type mer
 ```
 
 The end-to-end step `Two writable members` runs step 1, and the two cases above, on two sites: [`test/e2e/README.md`](../../test/e2e/README.md#scenarios).
+
+## A partition that heals
+
+A site that was only cut off kept its controller running, so no hold applies. Through the partition, it routes its own clients to its own primary ([RFC0002, Why a partition does not stop the local primary](../../rfcs/RFC0002.md#why-a-partition-does-not-stop-the-local-primary)). Once the sites read each other again:
+
+| Case | Route at every site | Reason, conditions | End-to-end step |
+|---|---|---|---|
+| No member was promoted during the partition. | The one primary. | `Active` | `Partition`: site a routes `pg-b` again within 15s of the heal. In local runs, 2.3 to 3.7s. |
+| A member was promoted at another site during the partition. | Nowhere, until one primary is demoted. | `DeclarationsDisagree` when the sites declare different primaries, else `MultipleWritable`. The `Multiple` condition is True, and a Warning event fires. | `Two writable members`: both sites route nowhere, with `Multiple` True, within 30s of the heal. In local runs, 2.7 to 3.8s. |
+
+In the second case, run steps 2 and 3 above: demote the primary that the other sites replaced, then check every site.
