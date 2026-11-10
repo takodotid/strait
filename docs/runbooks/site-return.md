@@ -53,11 +53,11 @@ The end-to-end step `Two writable members` runs step 1, and the two cases above,
 
 ## A partition that heals
 
-A site that was only cut off kept its controller running, so no hold applies. Through the partition, it routes its own clients to its own primary ([RFC0002, Why a partition does not stop the local primary](../../rfcs/RFC0002.md#why-a-partition-does-not-stop-the-local-primary)). Once the sites read each other again:
+A site that was only cut off kept its controller running, so no hold applies. Through the partition, each side routes as in a [site loss](site-loss.md#what-strait-does): a site with the primary keeps routing to it, and a site whose primary is on the other side holds it for `policy.unknownHold`, then routes nowhere ([RFC0002, Why a partition does not stop the local primary](../../rfcs/RFC0002.md#why-a-partition-does-not-stop-the-local-primary)). Once the sites read each other again:
 
 | Case | Route at every site | Reason, conditions | End-to-end step |
 |---|---|---|---|
-| No member was promoted during the partition. | The one primary. | `Active` | `Partition`: site a routes `pg-b` again within 15s of the heal. In local runs, 2.3 to 3.7s. |
-| A member was promoted at another site during the partition. | Nowhere, until one primary is demoted. | `DeclarationsDisagree` when the sites declare different primaries, else `MultipleWritable`. The `Multiple` condition is True, and a Warning event fires. | `Two writable members`: both sites route nowhere, with `Multiple` True, within 30s of the heal. In local runs, 2.7 to 3.8s. |
+| No member was promoted during the partition. | The one primary. | `Active` | `Partition`: site a routes `pg-b` again within 15s of the heal. In 4 CI runs from v1.3.0 on, 1.6 to 2.9s. |
+| A member was promoted at another site during the partition. | Nowhere, until one primary is demoted. | `DeclarationsDisagree` when the sites declare different primaries, else `MultipleWritable`. The `Multiple` condition is True, and a Warning event fires. | `Two writable members`: both sites route nowhere, with `Multiple` True, within 30s of the heal. In 4 CI runs from v1.3.0 on, 2.1 to 3.7s. |
 
 In the second case, run steps 2 and 3 above: demote the primary that the other sites replaced, then check every site.
