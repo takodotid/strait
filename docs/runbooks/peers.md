@@ -26,7 +26,7 @@ The examples add site c to sites a and b.
 Step 3 at site a, with `site-a-c.yaml` holding the `SitePeer` c and the `SiteLink` to c. The check must end with `Errors: 0. Warnings: 0.`:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.3.1 \
+helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.4.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f - -f site-a-c.yaml
 kubectl --context site-a apply -f site-a-c.yaml --dry-run=server
 kubectl --context site-a apply -f site-a-c.yaml
