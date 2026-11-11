@@ -45,6 +45,7 @@ type GatewaySpec struct {
 	// ControlPort serves the observation document and export health to peers.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:validation:XValidation:rule="!(self in [8090, 8091, 9901])",message="must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"
 	// +kubebuilder:default=30900
 	// +optional
 	ControlPort int32 `json:"controlPort,omitempty"`
@@ -62,6 +63,7 @@ type GatewaySpec struct {
 	// PeerPort is the local listener that the controller polls peers through. Peers never reach it.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
+	// +kubebuilder:validation:XValidation:rule="!(self in [8090, 8091, 9901])",message="must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"
 	// +kubebuilder:default=14999
 	// +optional
 	PeerPort int32 `json:"peerPort,omitempty"`
@@ -149,8 +151,9 @@ type ServiceExposure struct {
 	ExternalTrafficPolicy string `json:"externalTrafficPolicy,omitempty"`
 }
 
-// PortRange is an inclusive range of ports.
+// PortRange is an inclusive range of the gateway's ports.
 // +kubebuilder:validation:XValidation:rule="self.first <= self.last",message="first must not exceed last"
+// +kubebuilder:validation:XValidation:rule="[8090, 8091, 9901].all(p, p < self.first || p > self.last)",message="must not include 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"
 type PortRange struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
