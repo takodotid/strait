@@ -46,6 +46,11 @@ const (
 	EnvoyNotReady = 6 * time.Second
 )
 
+// APITimeout bounds each request of the agent to the API server, apart from its cache's lists and watches. A request on
+// the gateway Lease ends sooner: within half the election round's renew deadline (RFC#0005, requirement 49). Tests
+// shorten it.
+var APITimeout = 5 * time.Second
+
 // Agent is the gateway agent.
 type Agent struct {
 	// Client reads Sites, SitePeers and SiteLinks from a cache, reads Secrets from the API server, and writes status.
@@ -229,8 +234,17 @@ func (l *lease) reset() {
 	l.holding = false
 }
 
+// timeout bounds each request on the Lease: half the round's renew deadline, so that a renewal whose request hangs is
+// tried again before the deadline, and at most APITimeout. client-go bounds no request of a replica that waits to take
+// the Lease, so without it one request that hangs would hold the takeover (RFC#0005, requirement 49).
+func (l *lease) timeout() time.Duration {
+	return min(l.deadline()/2, APITimeout)
+}
+
 // Get implements resourcelock.Interface.
 func (l *lease) Get(ctx context.Context) (*resourcelock.LeaderElectionRecord, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, l.timeout())
+	defer cancel()
 	r, raw, err := l.Interface.Get(ctx)
 	if err == nil && r.HolderIdentity != l.Identity() {
 		l.reset()
@@ -243,6 +257,8 @@ func (l *lease) Create(ctx context.Context, r resourcelock.LeaderElectionRecord)
 	if err := l.mayTake(ctx); err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(ctx, l.timeout())
+	defer cancel()
 	start := time.Now()
 	err := l.Interface.Create(ctx, r)
 	l.record(start, err)
@@ -253,6 +269,8 @@ func (l *lease) Create(ctx context.Context, r resourcelock.LeaderElectionRecord)
 func (l *lease) Update(ctx context.Context, r resourcelock.LeaderElectionRecord) error {
 	if r.HolderIdentity == "" {
 		l.before()
+		ctx, cancel := context.WithTimeout(ctx, l.timeout())
+		defer cancel()
 		err := l.Interface.Update(ctx, r)
 		if err == nil {
 			l.reset()
@@ -267,6 +285,8 @@ func (l *lease) Update(ctx context.Context, r resourcelock.LeaderElectionRecord)
 			return err
 		}
 	}
+	ctx, cancel := context.WithTimeout(ctx, l.timeout())
+	defer cancel()
 	start := time.Now()
 	err := l.Interface.Update(ctx, r)
 	l.record(start, err)
@@ -542,6 +562,8 @@ func (a *Agent) inputs(ctx context.Context) (*straitv1.Site, Inputs, error) {
 
 // privateKey reads the site's private key. Neither the key nor the Secret's data ever reaches an error or a log.
 func (a *Agent) privateKey(ctx context.Context, ref straitv1.SecretKeyRef) (*wgtypes.Key, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, APITimeout)
+	defer cancel()
 	var s corev1.Secret
 	if err := a.Client.Get(ctx, types.NamespacedName{Namespace: a.Namespace, Name: ref.Name}, &s); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -572,7 +594,9 @@ func (a *Agent) publishKey(ctx context.Context, site *straitv1.Site, key *wgtype
 	}
 	patch := client.MergeFrom(site.DeepCopy())
 	site.Status.WireGuardPublicKey = pub
-	if err := a.Client.Status().Patch(ctx, site, patch); err != nil {
+	pctx, cancel := context.WithTimeout(ctx, APITimeout)
+	defer cancel()
+	if err := a.Client.Status().Patch(pctx, site, patch); err != nil {
 		if ctx.Err() == nil {
 			a.Log.Error(err, "publish the WireGuard public key", "site", site.Name)
 		}
@@ -615,7 +639,9 @@ func (a *Agent) reportHealth(ctx context.Context) {
 		l.Status = st
 		patch, err := statusPatch(old, l)
 		if err == nil {
-			err = a.Client.Status().Patch(ctx, l, patch)
+			pctx, cancel := context.WithTimeout(ctx, APITimeout)
+			err = a.Client.Status().Patch(pctx, l, patch)
+			cancel()
 		}
 		if err != nil {
 			if ctx.Err() == nil {

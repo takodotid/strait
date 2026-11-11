@@ -28,7 +28,7 @@ To move the active gateway off a node without a drain, for example before work o
 |---|---|---|
 | 1. A ready standby | The site runs at least 2 gateway replicas. With one, the site has no gateway until the replacement pod is ready. | `kubectl --context site-a -n strait-system get pods -l app.kubernetes.io/component=gateway -o wide`: 2 or more ready. |
 | 2. Keep the replacement off the node | `kubectl --context site-a cordon NODE`. Otherwise the replacement pod may start on the same node. | |
-| 3. Delete the active pod | Its agent removes its WireGuard interfaces and releases the Lease as it stops. A standby takes the Lease within `lease.retryPeriod`, 1s by default. | [After a handover](#after-a-handover). |
+| 3. Delete the active pod | Its agent removes its WireGuard interfaces and releases the Lease as it stops. A standby takes the Lease within 2.2 × `lease.retryPeriod`, 2.2s by default. | [After a handover](#after-a-handover). |
 | 4. After the work | `kubectl --context site-a uncordon NODE`. | |
 
 Step 3, with the active pod from `strait --context site-a status`:
