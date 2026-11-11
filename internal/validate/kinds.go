@@ -343,7 +343,7 @@ var agentPorts = []int32{8090, 8091, 9901}
 func gatewayPort(p *field.Path, v int32) field.ErrorList {
 	errs := port(p, v)
 	if slices.Contains(agentPorts, v) {
-		errs = append(errs, field.Invalid(p, "integer", "must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"))
+		errs = append(errs, field.Invalid(p, v, "must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"))
 	}
 	return errs
 }

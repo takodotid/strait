@@ -224,7 +224,7 @@ spec:
     lease:
       retryPeriod: 3500ms
 ---
-# want: spec.gateway.controlPort: Invalid value: "integer": must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
+# want: spec.gateway.controlPort: Invalid value: 8090: must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
 apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
@@ -233,7 +233,7 @@ spec:
   gateway:
     controlPort: 8090
 ---
-# want: spec.gateway.peerPort: Invalid value: "integer": must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
+# want: spec.gateway.peerPort: Invalid value: 9901: must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
 apiVersion: strait.tako.id/v1
 kind: Site
 metadata:
