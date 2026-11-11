@@ -122,6 +122,7 @@ The conditions of the `Site`:
 | A site is lost, and a member at another site must become primary. | [Site loss](runbooks/site-loss.md) |
 | A lost site comes back, or a partition heals, maybe with two primaries. `startupHold` for production. | [Site return](runbooks/site-return.md) |
 | A site joins the others, or leaves them. | [Add or remove a site](runbooks/peers.md) |
+| A site goes into production: socket load balancing, clients that write, gateway node ports, `endpointCIDRs`. | [Before production](runbooks/before-production.md) |
 | A site's WireGuard private key must change. | [WireGuard key rotation](runbooks/wireguard-key-rotation.md) |
 | The controller or a gateway pod does not become ready, or restarts. | [Not ready](runbooks/not-ready.md) |
 | The active gateway moves to another replica, or must move off a node. | [Gateway handover](runbooks/gateway-handover.md) |

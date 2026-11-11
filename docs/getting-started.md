@@ -295,6 +295,7 @@ With `endpointDirect: true` on the direct link, and pod addresses routable betwe
 
 | Topic | Where |
 |---|---|
+| The checks before production | [Before production](runbooks/before-production.md) |
 | A name routed nowhere, Unknown members, unhealthy links | [Troubleshooting](troubleshooting.md) |
 | Every command and flag | `strait --help`, the man pages |
 | Design and rules | [`rfcs/`](../rfcs/) |
