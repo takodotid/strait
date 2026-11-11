@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -278,6 +279,36 @@ type ImportReconciler struct {
 
 	// written keeps what the last status write of each Import returned, until the cache shows it.
 	written written[straitv1.Import, *straitv1.Import]
+	// failed keeps the last sync error of each Import, until a sync succeeds or the Import is gone.
+	failed lastErrors
+}
+
+// lastErrors keeps the last error of each object, so that a retry that fails the same way logs at V(1).
+type lastErrors struct {
+	mu   sync.Mutex
+	last map[types.NamespacedName]string
+}
+
+// changed records err as the last error of key, and reports whether it differs from the one before: true on the
+// first failure after a success.
+func (l *lastErrors) changed(key types.NamespacedName, err error) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.last[key] == err.Error() {
+		return false
+	}
+	if l.last == nil {
+		l.last = map[types.NamespacedName]string{}
+	}
+	l.last[key] = err.Error()
+	return true
+}
+
+// forget drops the last error of key.
+func (l *lastErrors) forget(key types.NamespacedName) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.last, key)
 }
 
 // Reconcile implements reconcile.Reconciler.
@@ -286,6 +317,7 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := r.Get(ctx, req.NamespacedName, &imp); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.written.forget(req.NamespacedName)
+			r.failed.forget(req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -354,9 +386,15 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if syncErr != nil {
 		// Not returned: the controller's backoff would wait up to about 16 minutes between tries.
 		retry := cmp.Or(r.Retry, resync)
-		log.FromContext(ctx).Error(syncErr, "Import Service not synced", "retry", retry.String())
+		// An error only when it is new: a permanent one would log every retry. The SyncFailed condition holds it.
+		if r.failed.changed(req.NamespacedName, syncErr) {
+			log.FromContext(ctx).Error(syncErr, "Import Service not synced", "retry", retry.String())
+		} else {
+			log.FromContext(ctx).V(1).Info("Import Service not synced", "error", syncErr, "retry", retry.String())
+		}
 		return ctrl.Result{RequeueAfter: retry}, nil
 	}
+	r.failed.forget(req.NamespacedName)
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 

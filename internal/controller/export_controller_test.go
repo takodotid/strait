@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -696,4 +698,107 @@ func TestImportSyncRetriesWithNoBackoff(t *testing.T) {
 		t.Fatalf("%d tries in 2s, longest wait %s; want a try every %s", len(at)-1, longest.Round(time.Millisecond), r.Retry)
 	}
 	t.Logf("%d tries in 2s, longest wait %s", len(at)-1, longest.Round(time.Millisecond))
+}
+
+// logLines is a logr.LogSink that records each line: "error <msg> <values> <err>", or "V<level> <msg> <values>".
+type logLines struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *logLines) Init(logr.RuntimeInfo)          {}
+func (l *logLines) Enabled(int) bool               { return true }
+func (l *logLines) WithValues(...any) logr.LogSink { return l }
+func (l *logLines) WithName(string) logr.LogSink   { return l }
+func (l *logLines) Info(level int, msg string, kv ...any) {
+	l.add(fmt.Sprintf("V%d %s %v", level, msg, kv))
+}
+func (l *logLines) Error(err error, msg string, kv ...any) {
+	l.add(fmt.Sprintf("error %s %v %v", msg, kv, err))
+}
+func (l *logLines) add(line string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, line)
+}
+
+// take returns the lines that hold msg, and forgets every line.
+func (l *logLines) take(msg string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []string
+	for _, line := range l.lines {
+		if strings.Contains(line, msg) {
+			out = append(out, line)
+		}
+	}
+	l.lines = nil
+	return out
+}
+
+// A failed sync of an Import logs at error level only when its error is new: the first failure after a success, a
+// change of the error, and the first failure of an Import created again. Every other try logs at V(1), with the error.
+// The Import's SyncFailed condition holds the message. A permanent error, such as a namespace outside
+// controller.namespaces, would otherwise log an error every 2s: about 43,000 a day per Import (RFC0005,
+// requirement 51; issue #62).
+func TestImportSyncErrorLoggedWhenItChanges(t *testing.T) {
+	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
+	// fail is the error of the next read of the Import's Service; nil reads it.
+	var fail error
+	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Service); ok && fail != nil {
+				return fail
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	rec := &logLines{}
+	ctx := ctrllog.IntoContext(context.Background(), logr.New(rec))
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}}
+	refused := errors.New("injected: the API server refuses the read")
+	outside := errors.New("injected: app is not one where the controller writes")
+	for _, step := range []struct {
+		name    string
+		do      func()
+		fail    error
+		want    string
+		requeue time.Duration
+	}{
+		{name: "first failure", fail: refused, want: "error", requeue: resync},
+		{name: "same error", fail: refused, want: "V1", requeue: resync},
+		{name: "same error again", fail: refused, want: "V1", requeue: resync},
+		{name: "another error", fail: outside, want: "error", requeue: resync},
+		{name: "that error again", fail: outside, want: "V1", requeue: resync},
+		{name: "success", requeue: 30 * time.Second},
+		{name: "failure after a success", fail: outside, want: "error", requeue: resync},
+		{name: "that error again, before the Import is deleted", fail: outside, want: "V1", requeue: resync},
+		{name: "the Import deleted", do: func() {
+			if err := c.Delete(context.Background(), webImport(webPort)); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "the Import created again, same error", do: func() {
+			if err := c.Create(context.Background(), webImport(webPort)); err != nil {
+				t.Fatal(err)
+			}
+		}, fail: outside, want: "error", requeue: resync},
+	} {
+		if step.do != nil {
+			step.do()
+		}
+		fail = step.fail
+		res, err := r.Reconcile(ctx, req)
+		if err != nil || res.RequeueAfter != step.requeue {
+			t.Fatalf("%s: %+v, %v; want a retry after %s and no error", step.name, res, err, step.requeue)
+		}
+		lines := rec.take("Import Service not synced")
+		switch {
+		case step.want == "" && len(lines) != 0:
+			t.Fatalf("%s: logged %q, want no line", step.name, lines)
+		case step.want == "":
+		case len(lines) != 1 || !strings.HasPrefix(lines[0], step.want+" ") || !strings.Contains(lines[0], step.fail.Error()):
+			t.Fatalf("%s: logged %q, want one %s line with %q", step.name, lines, step.want, step.fail)
+		}
+	}
 }

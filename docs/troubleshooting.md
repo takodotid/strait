@@ -109,7 +109,7 @@ The conditions of the `Site`:
 |---|---|
 | Versions | `strait version` for the CLI. `VERSION` in `strait status` for the site's controller. |
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
-| Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
+| Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller`. An `Import` whose Service is not written logs `Import Service not synced` when its error is new. `controller.logLevel: debug` logs each retry, every 2s. |
 | CloudNativePG watch | The controller logs `cloudnative-pg` at start. `enabled` follows `cnpg.enabled`. `watched` false with `enabled` true means CloudNativePG's CRDs were missing then: restart the controller. [Getting started, Prerequisites](getting-started.md#prerequisites). |
 | Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. Each link that fails, comes back, or starts or stops carrying traffic logs `SiteLink status`. `gateway.logLevel: debug` logs every write of a link's status. |
 | Gateway handovers | `kubectl --context site-a get events -A --field-selector reason=GatewayHandover`. Each one resets every connection across the site's gateway. |
