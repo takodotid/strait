@@ -1,7 +1,7 @@
 // The linters of make lint, apart from the main module, so they never change its dependencies.
 module github.com/takodotid/strait/hack/tools
 
-go 1.27.3
+go 1.27.4
 
 tool (
 	golang.org/x/vuln/cmd/govulncheck
