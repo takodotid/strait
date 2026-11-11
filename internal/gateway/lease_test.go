@@ -150,12 +150,13 @@ func TestStandbyTakesTheLeaseWhileARequestHangs(t *testing.T) {
 			up.Store(true)
 			a.EnvoyAdmin = envoy(t, up)
 			now := metav1.NewMicroTime(time.Now())
-			var hung atomic.Int32
+			// seen counts the requests of the method. The server never answers the first.
+			var seen atomic.Int32
 			api, leases := newLeaseAPI(t, &coordinationv1.Lease{
 				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "strait-gateway"},
 				Spec: coordinationv1.LeaseSpec{HolderIdentity: ptr.To("gw-1"), LeaseDurationSeconds: ptr.To[int32](2),
 					AcquireTime: &now, RenewTime: &now},
-			}, func(m string) bool { return m == method && hung.Add(1) == 1 })
+			}, func(m string) bool { return m == method && seen.Add(1) == 1 })
 			a.Leases = leases
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -168,12 +169,12 @@ func TestStandbyTakesTheLeaseWhileARequestHangs(t *testing.T) {
 			}()
 			for api.holder() != "gw-0" {
 				if time.Since(start) > bound+slack {
-					t.Fatalf("the Lease is held by %q %s after the standby joined, want gw-0 within %s; requests hung: %d",
-						api.holder(), time.Since(start).Round(time.Millisecond), bound, min(hung.Load(), 1))
+					t.Fatalf("the Lease is held by %q %s after the standby joined, want gw-0 within %s; %s requests: %d, the first hung",
+						api.holder(), time.Since(start).Round(time.Millisecond), bound, method, seen.Load())
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
-			if hung.Load() == 0 {
+			if seen.Load() == 0 {
 				t.Fatalf("no %s request was hung", method)
 			}
 			t.Logf("took the Lease %s after joining, bound %s", time.Since(start).Round(time.Millisecond), bound)

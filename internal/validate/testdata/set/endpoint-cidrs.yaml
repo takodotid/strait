@@ -11,7 +11,8 @@ spec:
     address: 192.0.2.10
     endpointDirect: true
 ---
-# With endpointCIDRs, or without endpointDirect, endpoint-direct writes no address outside the peer's ranges.
+# No warning for the next two. With endpointCIDRs, endpoint-direct writes only addresses in the peer's ranges. Without
+# endpointDirect, it writes no address from the peer's document.
 apiVersion: strait.tako.id/v1
 kind: SiteLink
 metadata:
