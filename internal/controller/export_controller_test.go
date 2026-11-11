@@ -2,9 +2,12 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,10 +24,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
@@ -609,4 +616,84 @@ func TestPortKeptSeesTheLastWrite(t *testing.T) {
 	if got := exportPorts(t, c, "a-first", "b-second"); !slices.Equal(got, []int32{16000, 16001}) {
 		t.Fatalf("ports = %v, want [16000 16001]", got)
 	}
+}
+
+// failingImport is an Import reconciler whose writes of the Import's Service fail. Tries records the time of each.
+func failingImport(t *testing.T) (r *ImportReconciler, c client.Client, tries func() []time.Time) {
+	t.Helper()
+	r, c = importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
+	var mu sync.Mutex
+	var at []time.Time
+	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if _, ok := obj.(*corev1.Service); ok {
+				mu.Lock()
+				at = append(at, time.Now())
+				mu.Unlock()
+				return errors.New("injected: the API server refuses the Service")
+			}
+			return c.Create(ctx, obj, opts...)
+		},
+	})
+	return r, c, func() []time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(at)
+	}
+}
+
+// A failed sync of an Import's Service writes SyncFailed, and asks for the next try after a fixed delay, with no error:
+// an error would retry with the controller's backoff, which grows to about 16 minutes (RFC0005, requirement 51;
+// issue #62).
+func TestImportSyncFailureRequeuesAfterAFixedDelay(t *testing.T) {
+	r, c, tries := failingImport(t)
+	for i := range 5 {
+		res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
+		if err != nil || res.RequeueAfter != resync {
+			t.Fatalf("try %d: %+v, %v; want a retry after %s and no error", i+1, res, err, resync)
+		}
+		if n := len(tries()); n != i+1 {
+			t.Fatalf("try %d: %d writes of the Service, want %d", i+1, n, i+1)
+		}
+	}
+	cond := meta.FindStatusCondition(importStatus(t, c).Conditions, ConditionService)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "SyncFailed" || !strings.Contains(cond.Message, "injected") {
+		t.Errorf("service condition = %+v", cond)
+	}
+}
+
+// The controller tries a failed sync again after the same delay, however often it fails. The test runs the reconciler
+// in a controller with controller-runtime's default queue, as the manager builds it, with the delay shortened from 2s
+// to 50ms. Its backoff starts at 5ms and doubles, so a count of tries would not tell: the test checks the longest wait
+// between two tries, and since the last one.
+func TestImportSyncRetriesWithNoBackoff(t *testing.T) {
+	r, _, tries := failingImport(t)
+	r.Retry = 50 * time.Millisecond
+	ctl, err := controller.NewUnmanaged("import-retry", controller.Options{Reconciler: r, SkipNameValidation: ptr.To(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := make(chan event.GenericEvent, 1)
+	ch <- event.GenericEvent{Object: webImport(webPort)}
+	if err := ctl.Watch(source.Channel(ch, &handler.EnqueueRequestForObject{})); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- ctl.Start(ctx) }()
+	time.Sleep(2 * time.Second)
+	end := time.Now()
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	at := append(tries(), end)
+	var longest time.Duration
+	for i := 1; i < len(at); i++ {
+		longest = max(longest, at[i].Sub(at[i-1]))
+	}
+	if len(at) < 11 || longest > r.Retry+250*time.Millisecond {
+		t.Fatalf("%d tries in 2s, longest wait %s; want a try every %s", len(at)-1, longest.Round(time.Millisecond), r.Retry)
+	}
+	t.Logf("%d tries in 2s, longest wait %s", len(at)-1, longest.Round(time.Millisecond))
 }

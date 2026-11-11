@@ -272,6 +272,9 @@ type ImportReconciler struct {
 	Reader client.Reader
 	Peers  Peers
 	Now    func() time.Time
+	// Retry is the time between two tries to write the Service and the EndpointSlice of an Import whose last try
+	// failed: resync when zero (RFC#0005, requirement 51).
+	Retry time.Duration
 
 	// written keeps what the last status write of each Import returned, until the cache shows it.
 	written written[straitv1.Import, *straitv1.Import]
@@ -349,7 +352,10 @@ func (r *ImportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 	if syncErr != nil {
-		return ctrl.Result{}, syncErr
+		// Not returned: the controller's backoff would wait up to about 16 minutes between tries.
+		retry := cmp.Or(r.Retry, resync)
+		log.FromContext(ctx).Error(syncErr, "Import Service not synced", "retry", retry.String())
+		return ctrl.Result{RequeueAfter: retry}, nil
 	}
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
