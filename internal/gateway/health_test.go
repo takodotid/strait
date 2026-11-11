@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/links"
@@ -154,5 +155,64 @@ func TestLinkStatus(t *testing.T) {
 	down := LinkStatus(l, Observation{Reason: "HealthCheckFailed"}, "", time.Time{}, t1)
 	if down.Healthy || down.Active || down.Interface != "" || down.LastHandshakeTime != nil || !down.LastTransitionTime.Time.Equal(t1.Truncate(time.Second)) {
 		t.Fatalf("status = %+v", down)
+	}
+}
+
+// A direct link with endpointDirect has the condition EndpointsLimited, False while it sets no endpointCIDRs. Other
+// links lose it. A status that an earlier release wrote, with Healthy only, gains it, and keeps Healthy as it was
+// (RFC0005, requirement 48; issue #60).
+func TestEndpointsLimitedCondition(t *testing.T) {
+	t0 := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	ok := Observation{Healthy: true, Active: true, Reason: "HealthCheckPassed", Message: "ok"}
+	earlier := metav1.NewTime(t0.Add(-time.Hour))
+	written := straitv1.SiteLinkStatus{Healthy: true, Active: true, LastTransitionTime: &earlier, Conditions: []metav1.Condition{{
+		Type: ConditionHealthy, Status: metav1.ConditionTrue, Reason: "HealthCheckPassed", Message: "ok", ObservedGeneration: 1, LastTransitionTime: earlier,
+	}}}
+	limited := func(l straitv1.SiteLink) straitv1.SiteLink {
+		l.Spec.Direct.EndpointDirect = true
+		l.Spec.Direct.EndpointCIDRs = []string{"10.120.0.0/16"}
+		return l
+	}
+	unlimited := func(l straitv1.SiteLink) straitv1.SiteLink {
+		l.Spec.Direct.EndpointDirect = true
+		return l
+	}
+	for _, tc := range []struct {
+		name   string
+		link   straitv1.SiteLink
+		status metav1.ConditionStatus
+		reason string
+	}{
+		{"endpointDirect, no endpointCIDRs", unlimited(directLink("lan", "b", 10, "192.0.2.1")), metav1.ConditionFalse, "NoEndpointCIDRs"},
+		{"endpointDirect and endpointCIDRs", limited(directLink("lan", "b", 10, "192.0.2.1")), metav1.ConditionTrue, "EndpointCIDRs"},
+		{"no endpointDirect", directLink("lan", "b", 10, "192.0.2.1"), "", ""},
+		{"wireguard", wgLink("wan", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2"), "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := tc.link
+			l.Generation = 1
+			l.Status = *written.DeepCopy()
+			st := LinkStatus(l, ok, "", time.Time{}, t0)
+			c := meta.FindStatusCondition(st.Conditions, ConditionEndpointsLimited)
+			switch {
+			case tc.status == "" && c != nil:
+				t.Fatalf("condition = %+v, want none", c)
+			case tc.status != "" && (c == nil || c.Status != tc.status || c.Reason != tc.reason || c.ObservedGeneration != 1):
+				t.Fatalf("condition = %+v, want %s %s", c, tc.status, tc.reason)
+			}
+			if h := meta.FindStatusCondition(st.Conditions, ConditionHealthy); h == nil || !h.LastTransitionTime.Equal(&earlier) || !st.LastTransitionTime.Equal(&earlier) {
+				t.Errorf("Healthy = %+v, status time %v: want them as written", h, st.LastTransitionTime)
+			}
+
+			// The condition follows the spec: it goes when endpointDirect goes.
+			l.Status = st
+			l.Spec.Direct = &straitv1.DirectLink{Address: "192.0.2.1"}
+			if l.Spec.Transport != straitv1.TransportDirect {
+				l.Spec.Direct = nil
+			}
+			if c := meta.FindStatusCondition(LinkStatus(l, ok, "", time.Time{}, t0).Conditions, ConditionEndpointsLimited); c != nil {
+				t.Errorf("after endpointDirect is removed: condition = %+v, want none", c)
+			}
+		})
 	}
 }

@@ -55,6 +55,8 @@ Each strait.tako.id object is decoded strictly, so an unknown field is an error.
 
 The objects are then checked together: at most one Site, a SitePeer for the peer of every SiteLink, spec.wireguard on the Site and on the SitePeer of every wireguard SiteLink, and a distinct listen port for each wireguard SiteLink to one peer. A rule that needs an object missing from the input is a warning.
 
+A direct SiteLink with endpointDirect and no endpointCIDRs is a warning: endpoint-direct then points application names at any address that the peer's document gives, apart from unspecified, loopback, link-local and multicast ones. A peer, or anyone on the path of the link, could pick that address. In production, set endpointCIDRs to the peer's pod CIDRs.
+
 Every problem names its file, document, object and field. The exit status is 1 when there is an error. Warnings alone exit with 0.`,
 		Example: `  # Check every manifest under a directory.
   strait validate -f deploy/site-a/

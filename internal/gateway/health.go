@@ -20,6 +20,11 @@ const PeerCluster = "peer/"
 // ConditionHealthy is the SiteLink condition that holds the link's health.
 const ConditionHealthy = "Healthy"
 
+// ConditionEndpointsLimited is the SiteLink condition of a direct link with endpointDirect. It is False while the link
+// sets no endpointCIDRs, so that endpoint-direct accepts any address from the peer's document that is not special
+// (RFC#0005, requirement 48). Other links do not have it.
+const ConditionEndpointsLimited = "EndpointsLimited"
+
 // Host is one endpoint of an Envoy cluster, as the admin interface reports it.
 type Host struct {
 	Address                 string
@@ -173,5 +178,26 @@ func LinkStatus(l straitv1.SiteLink, o Observation, iface string, handshake, now
 		cond.Status = metav1.ConditionTrue
 	}
 	meta.SetStatusCondition(&st.Conditions, cond)
+	if c, ok := endpointsLimited(l, ts); ok {
+		meta.SetStatusCondition(&st.Conditions, c)
+	} else {
+		meta.RemoveStatusCondition(&st.Conditions, ConditionEndpointsLimited)
+	}
 	return st
+}
+
+// endpointsLimited returns the EndpointsLimited condition of a direct link with endpointDirect, from its spec.
+func endpointsLimited(l straitv1.SiteLink, ts metav1.Time) (metav1.Condition, bool) {
+	d := l.Spec.Direct
+	if l.Spec.Transport != straitv1.TransportDirect || d == nil || !d.EndpointDirect {
+		return metav1.Condition{}, false
+	}
+	c := metav1.Condition{Type: ConditionEndpointsLimited, Status: metav1.ConditionTrue, Reason: "EndpointCIDRs",
+		Message: "endpoint-direct writes only the member addresses in endpointCIDRs", ObservedGeneration: l.Generation, LastTransitionTime: ts}
+	if len(d.EndpointCIDRs) == 0 {
+		c.Status, c.Reason = metav1.ConditionFalse, "NoEndpointCIDRs"
+		c.Message = "endpoint-direct writes any member address from the peer's document that is not unspecified, " +
+			"loopback, link-local or multicast. In production, set endpointCIDRs to the peer's pod CIDRs"
+	}
+	return c, true
 }

@@ -18,7 +18,8 @@ type Severity string
 const (
 	// SeverityError means the object would be rejected or cannot work.
 	SeverityError Severity = "Error"
-	// SeverityWarning means a rule could not be checked with the objects at hand.
+	// SeverityWarning means a rule could not be checked with the objects at hand, or an object is valid but unsafe in
+	// production.
 	SeverityWarning Severity = "Warning"
 )
 
@@ -120,7 +121,8 @@ var kinds = []string{"Site", "SitePeer", "SiteLink", "Export", "Import", "SiteSe
 //   - at most one Site;
 //   - a SiteLink's peer has a SitePeer, a warning when the set holds none;
 //   - a wireguard SiteLink needs spec.wireguard on the Site and on its SitePeer, a warning when the set holds no Site;
-//   - two wireguard SiteLinks to one peer use different listen ports.
+//   - two wireguard SiteLinks to one peer use different listen ports;
+//   - a direct SiteLink with endpointDirect sets endpointCIDRs, a warning (RFC#0006, requirement 18).
 //
 // Problems are ordered by object.
 func Set(objs []runtime.Object) []Problem {
@@ -137,6 +139,10 @@ func Set(objs []runtime.Object) []Problem {
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Index < out[b].Index })
 	return out
 }
+
+// NoEndpointCIDRs is the warning about a direct SiteLink with endpointDirect and no endpointCIDRs.
+const NoEndpointCIDRs = "not set: endpoint-direct accepts any member address from the peer's document that is not " +
+	"unspecified, loopback, link-local or multicast. In production, set the peer's pod CIDRs"
 
 func spanning(objs []runtime.Object) []Problem {
 	var out []Problem
@@ -168,6 +174,10 @@ func spanning(objs []runtime.Object) []Problem {
 		if !found && l.Spec.Peer != "" {
 			out = append(out, newProblem(i, l, SeverityWarning, detail(field.NotFound(spec.Child("peer"), l.Spec.Peer),
 				"no SitePeer of that name in the set")))
+		}
+		if d := l.Spec.Direct; l.Spec.Transport == straitv1.TransportDirect && d != nil && d.EndpointDirect && len(d.EndpointCIDRs) == 0 {
+			out = append(out, Problem{Index: i, Object: RefOf(l), Severity: SeverityWarning,
+				Field: spec.Child("direct", "endpointCIDRs").String(), Message: NoEndpointCIDRs})
 		}
 		if l.Spec.Transport != straitv1.TransportWireGuard {
 			continue

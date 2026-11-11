@@ -92,6 +92,8 @@ The `Healthy` condition of a `SiteLink`:
 | `EndpointUnhealthy` | Envoy marks the endpoint unhealthy. | The controller's and the gateway agent's logs. |
 | `EnvoyUnreachable` | The gateway agent cannot read Envoy's admin interface. | The `envoy` container of the active gateway pod. |
 
+A `direct` `SiteLink` with `endpointDirect` also has the condition `EndpointsLimited`. False, with `NoEndpointCIDRs`: endpoint-direct writes any member address from the peer's document that is not unspecified, loopback, link-local or multicast. Set `endpointCIDRs` to the peer's pod CIDRs ([RFC0005, Endpoint-direct](../rfcs/RFC0005.md#endpoint-direct)).
+
 The conditions of the `Site`:
 
 | Condition | Means | Next step |
