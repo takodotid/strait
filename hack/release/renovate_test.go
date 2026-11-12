@@ -1,9 +1,12 @@
 package release
 
 import (
+	"cmp"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -86,6 +89,95 @@ func TestRenovatePresets(t *testing.T) {
 	for _, p := range got {
 		if !builtinPreset.MatchString(p) {
 			t.Errorf("renovate.json extends %q, which is not one of Renovate's built-in presets", p)
+		}
+	}
+}
+
+// TestRenovateCustomManagers checks that Renovate's custom managers find every pin that RFC0007 requirement 24 makes:
+// the version, and the SHA-256 where Renovate can read it, of each tool of .github/actions/, and the release's BuildKit
+// image by tag and digest (requirement 29). Go's regexp reads Renovate's named groups.
+func TestRenovateCustomManagers(t *testing.T) {
+	data, err := os.ReadFile("../../renovate.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		CustomManagers []struct {
+			CustomType          string
+			ManagerFilePatterns []string
+			MatchStrings        []string
+			DepNameTemplate     string
+		}
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	// What each pinned file holds, and the dependency that must be found there.
+	want := map[string]struct{ dep, value, digest string }{
+		".github/actions/setup-cosign/action.yaml": {"sigstore/cosign", "VERSION: ", "SHA256: "},
+		".github/actions/setup-helm/action.yaml":   {"helm/helm", "VERSION: ", ""},
+		".github/workflows/release.yaml":           {"moby/buildkit", "image=moby/buildkit:", "@"},
+	}
+	actions, err := filepath.Glob("../../.github/actions/*/action.yaml")
+	if err != nil || len(actions) == 0 {
+		t.Fatal("no actions in .github/actions")
+	}
+	for _, a := range actions {
+		body, err := os.ReadFile(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name := strings.TrimPrefix(a, "../../"); strings.Contains(string(body), "VERSION: ") {
+			if _, ok := want[name]; !ok {
+				t.Errorf("%s pins a version that no custom manager of renovate.json updates", name)
+			}
+		}
+	}
+	found := map[string]bool{}
+	for _, m := range cfg.CustomManagers {
+		if m.CustomType != "regex" || len(m.ManagerFilePatterns) != 1 || len(m.MatchStrings) != 1 {
+			t.Errorf("custom manager %+v: want a regex manager with one file pattern and one match string", m)
+			continue
+		}
+		file := regexp.MustCompile(strings.Trim(m.ManagerFilePatterns[0], "/"))
+		match := regexp.MustCompile(m.MatchStrings[0])
+		for name, w := range want {
+			if !file.MatchString(name) {
+				continue
+			}
+			body, err := os.ReadFile("../../" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sub := match.FindStringSubmatch(string(body))
+			if sub == nil {
+				t.Errorf("%s: %q matches nothing", name, m.MatchStrings[0])
+				continue
+			}
+			group := func(g string) string {
+				if i := match.SubexpIndex(g); i >= 0 {
+					return sub[i]
+				}
+				return ""
+			}
+			dep := cmp.Or(group("depName"), m.DepNameTemplate)
+			value, digest := group("currentValue"), group("currentDigest")
+			switch {
+			case dep != w.dep:
+				t.Errorf("%s: dependency %q, want %q", name, dep, w.dep)
+			case value == "" || !strings.Contains(string(body), w.value+value):
+				t.Errorf("%s: version %q is not the file's", name, value)
+			case (w.digest == "") != (digest == ""):
+				t.Errorf("%s: digest %q, want one only where Renovate can read it", name, digest)
+			case digest != "" && !strings.Contains(string(body), w.digest+digest):
+				t.Errorf("%s: digest %q is not the file's", name, digest)
+			}
+			found[name] = true
+		}
+	}
+	for name := range want {
+		if !found[name] {
+			t.Errorf("no custom manager of renovate.json covers %s", name)
 		}
 	}
 }

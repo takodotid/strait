@@ -19,6 +19,36 @@
       "description": "The chart's own image follows the chart's appVersion; never pin it.",
       "matchPackageNames": ["ghcr.io/takodotid/strait"],
       "enabled": false
+    },
+    {
+      "description": "helm's SHA-256 is changed by hand (customManagers), so its update stays out of the group, and fails CI alone until then.",
+      "matchDepNames": ["helm/helm"],
+      "groupName": "helm"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "cosign of .github/actions/setup-cosign: its version, and the SHA-256 of cosign-linux-amd64, which the release's cosign_checksums.txt holds (RFC0007, requirement 29).",
+      "managerFilePatterns": ["/^\\.github/actions/setup-cosign/action\\.yaml$/"],
+      "matchStrings": ["VERSION: (?<currentValue>v\\S+)\\s+SHA256: (?<currentDigest>[a-f0-9]{64})"],
+      "depNameTemplate": "sigstore/cosign",
+      "datasourceTemplate": "github-release-attachments"
+    },
+    {
+      "customType": "regex",
+      "description": "helm of .github/actions/setup-helm: its version only. Helm publishes its archives and their SHA-256 on get.helm.sh, not as assets of its GitHub releases, so the SHA-256 is changed by hand, and the job fails on it until then (RFC0007, requirement 29).",
+      "managerFilePatterns": ["/^\\.github/actions/setup-helm/action\\.yaml$/"],
+      "matchStrings": ["VERSION: (?<currentValue>v\\S+)"],
+      "depNameTemplate": "helm/helm",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "The release's BuildKit image, by tag and digest (RFC0007, requirement 29).",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yaml$/"],
+      "matchStrings": ["image=(?<depName>moby/buildkit):(?<currentValue>v[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      "datasourceTemplate": "docker"
     }
   ]
 }
