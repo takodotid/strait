@@ -170,7 +170,7 @@ type Kernel interface {
 	// is in place.
 	Filter() ([]netip.Addr, bool, error)
 	// SetFilter puts the filter in place, or replaces it: a packet that arrives on an interface whose name starts with
-	// Prefix is dropped, unless it is addressed to one of addrs.
+	// Prefix is dropped, unless it is addressed to one of addrs. One that the namespace would forward is dropped too.
 	SetFilter(addrs []netip.Addr) error
 }
 

@@ -13,7 +13,9 @@ import (
 )
 
 // The nftables table of the gateway pod's network namespace that filters what arrives on the WireGuard interfaces.
-// Only the gateway agent may change the namespace's netfilter state: Envoy has no capability.
+// Its input chain admits what is addressed to a tunnel address. Its forward chain drops all of it: a pod's namespace
+// can forward, since IPv4 forwarding starts as the node's. Only the gateway agent may change the namespace's netfilter
+// state: Envoy has no capability.
 var filterTable = &nftables.Table{Name: "strait", Family: nftables.TableFamilyINet}
 
 // filterSet is the set of the tunnel addresses of one family, and where that family's packets hold the destination.
@@ -84,6 +86,16 @@ func (n *Netlink) SetFilter(addrs []netip.Addr) error {
 		Name: "wireguard-input", Table: t, Type: nftables.ChainTypeFilter,
 		Hooknum: nftables.ChainHookInput, Priority: nftables.ChainPriorityFilter, Policy: &accept,
 	})
+	fwd := c.AddChain(&nftables.Chain{
+		Name: "wireguard-forward", Table: t, Type: nftables.ChainTypeFilter,
+		Hooknum: nftables.ChainHookForward, Priority: nftables.ChainPriorityFilter, Policy: &accept,
+	})
+	// iifname "st*" drop
+	c.AddRule(&nftables.Rule{Table: t, Chain: fwd, Exprs: []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyIIFNAME, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte(Prefix)},
+		&expr.Verdict{Kind: expr.VerdictDrop},
+	}})
 	for _, fs := range filterSets {
 		s := &nftables.Set{Table: t, Name: fs.name, KeyType: fs.keyType}
 		var els []nftables.SetElement
