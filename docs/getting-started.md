@@ -6,7 +6,7 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 
 | Requirement | Detail |
 |---|---|
-| Two Kubernetes clusters | One per site, reached with the kubeconfig contexts `site-a` and `site-b`. |
+| Two Kubernetes clusters | One per site, of a version that [Install](../README.md#install) supports, reached with the kubeconfig contexts `site-a` and `site-b`. |
 | Kernel modules `wireguard` and `nf_tables` | On every node that can run a gateway pod. The gateway agent does not load them. It filters what arrives on its WireGuard interfaces with nftables, and holds no interface without it. |
 | Pod Security level `privileged` | In the gateway's namespace. The gateway agent runs as root with `NET_ADMIN`, to hold the WireGuard interfaces ([RFC0007](../rfcs/RFC0007.md)). |
 | A UDP path from site b to site a | Site b dials a node of site a on UDP port 32100. Here, `203.0.113.10` stands for that node's address. |
