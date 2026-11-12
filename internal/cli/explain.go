@@ -56,7 +56,9 @@ explain reads the SiteService's status. It never decides the route itself, so it
 
 In the members table, ROUTED is true for the members the name points at. PATH is how a routed member with endpoints takes traffic: Local is its own pods at this site, Gateway is the local gateway over the active link, EndpointDirect is its own pods at its site over a direct link, with no gateway. A member with STATE - is in the spec but not in the status yet. OBSERVED is the age of the member's last observation. CONFIRMED is how long ago it was last seen Stable and eligible.
 
-With -A, explain looks for the name in every namespace. It fails if more than one namespace holds it.`,
+With -A, explain looks for the name in every namespace. It fails if more than one namespace holds it.
+
+On a terminal, a symbol marks the route: ✔ a route to a confirmed member, ▲ a route kept while a member is Unknown or the controller awaits its peers, ■ a route to nowhere. Colours show what works in green, a warning in yellow and what stops traffic in red, and the tables have box lines. Colours are off when NO_COLOR is set. Piped or redirected, the output is plain text, and -o json and -o yaml never change.`,
 		Example: `  # Explain the application name pg in namespace app at site a.
   strait explain pg -n app --context site-a
 
@@ -165,7 +167,72 @@ func pluginText(p straitv1.PluginSpec) string {
 	return "-"
 }
 
+// routeLook returns the symbol and the paint of a route on a terminal: a check mark in green for a route to a confirmed
+// member, a triangle in yellow for a route kept while a member is Unknown or the controller awaits its peers, and a
+// square in red for a route to nowhere.
+func routeLook(st style, members []string, reason string) (string, func(string) string) {
+	switch {
+	case len(members) == 0 && reason == "":
+		return "", func(s string) string { return s }
+	case len(members) == 0:
+		return "■", st.red
+	case reason == straitv1.ReasonActive || reason == straitv1.ReasonPreferDeclared || reason == straitv1.ReasonEligible:
+		return "✔", st.green
+	}
+	return "▲", st.yellow
+}
+
+// conditionPaint returns the paint of a condition's status: green where it is as it should be, red where it stops or
+// risks traffic, yellow for a hold.
+func conditionPaint(st style, c metav1.Condition) func(string) string {
+	good := map[string]metav1.ConditionStatus{
+		straitv1.ConditionRouted:               metav1.ConditionTrue,
+		straitv1.ConditionApplied:              metav1.ConditionTrue,
+		straitv1.ConditionMultiple:             metav1.ConditionFalse,
+		straitv1.ConditionDeclarationsDisagree: metav1.ConditionFalse,
+		straitv1.ConditionDeclarationUnmatched: metav1.ConditionFalse,
+		straitv1.ConditionHeld:                 metav1.ConditionFalse,
+	}
+	want, ok := good[c.Type]
+	switch {
+	case !ok:
+		return func(s string) string { return s }
+	case c.Status == want:
+		return st.green
+	case c.Type == straitv1.ConditionHeld:
+		return st.yellow
+	}
+	return st.red
+}
+
+// statePaint returns the paint of a member's state.
+func statePaint(st style, state straitv1.State) func(string) string {
+	switch state {
+	case straitv1.StateUnknown:
+		return st.red
+	case straitv1.StateTransitioning:
+		return st.yellow
+	}
+	return func(s string) string { return s }
+}
+
+// explainTable prints the view as text. Piped, the text is plain. On a terminal, it has colours, symbols and box
+// tables (style).
 func (o *options) explainTable(w io.Writer, v explainView) {
+	st := o.styleFor(w)
+	printFields := fields
+	printTable := func(w io.Writer, columns []column, rows [][]string) {
+		header := make([]string, len(columns))
+		for i, c := range columns {
+			header[i] = c.title
+		}
+		table(w, header, rows)
+	}
+	heading := func(text string) string { return text }
+	if st.terminal {
+		printFields, printTable, heading = st.fields, st.boxTable, st.bold
+	}
+
 	pairs := [][2]string{
 		{"SiteService", v.Namespace + "/" + v.Name},
 		{"Mode", string(v.Mode)},
@@ -190,42 +257,57 @@ func (o *options) explainTable(w io.Writer, v explainView) {
 	)
 	switch {
 	case v.ObservedGeneration == 0 && v.Route.Reason == "":
-		pairs = append(pairs, [2]string{"Status", "none. The controller has not written a status yet."})
+		pairs = append(pairs, [2]string{"Status", st.yellow("none. The controller has not written a status yet.")})
 	case v.ObservedGeneration < v.Generation:
-		pairs = append(pairs, [2]string{"Status", fmt.Sprintf("stale. It is from generation %d, and the spec is at generation %d.", v.ObservedGeneration, v.Generation)})
+		pairs = append(pairs, [2]string{"Status", st.yellow(fmt.Sprintf("stale. It is from generation %d, and the spec is at generation %d.", v.ObservedGeneration, v.Generation))})
 	}
 	r := v.Route
 	routeText := route(r.Members, r.Reason)
+	symbol, paint := routeLook(st, r.Members, r.Reason)
 	if routeText == "nowhere" {
-		routeText = "nowhere. The name has no endpoints, and new connections are refused."
+		routeText = paint(st.bold("nowhere")) + ". The name has no endpoints, and new connections are refused."
+	} else {
+		routeText = paint(st.bold(routeText))
+	}
+	if st.terminal && symbol != "" {
+		routeText = paint(symbol) + " " + routeText
+	}
+	reason := dash(r.Reason)
+	if r.Reason != "" {
+		reason = paint(st.bold(r.Reason))
 	}
 	pairs = append(pairs,
 		[2]string{"Route", routeText},
-		[2]string{"Reason", dash(r.Reason)},
+		[2]string{"Reason", reason},
 	)
 	if r.Meaning != "" {
-		pairs = append(pairs, [2]string{"Meaning", r.Meaning})
+		pairs = append(pairs, [2]string{"Meaning", st.dim(r.Meaning)})
 	}
 	pairs = append(pairs,
 		[2]string{"Message", dash(r.Message)},
 		[2]string{"Since", o.when(r.LastChangeTime)},
 		[2]string{"Endpoints", number(r.Endpoints)},
 	)
-	fields(w, pairs...)
+	printFields(w, pairs...)
 
-	fmt.Fprintln(w, "\nMembers:")
+	fmt.Fprintln(w, "\n"+heading("Members:"))
 	var rows [][]string
 	for _, m := range v.Members {
 		eligible := "-"
 		if m.Observed {
 			eligible = boolean(m.Eligible)
 		}
-		rows = append(rows, []string{m.Name, m.Site, boolean(m.Routed), dash(string(m.Path)), dash(string(m.Role)), eligible, dash(string(m.State)),
-			dash(m.Reason), o.age(m.ObservedTime), o.age(m.LastConfirmedTime)})
+		routed := boolean(m.Routed)
+		if m.Routed {
+			routed = st.green(routed)
+		}
+		rows = append(rows, []string{m.Name, m.Site, routed, dash(string(m.Path)), dash(string(m.Role)), eligible,
+			statePaint(st, m.State)(dash(string(m.State))), dash(m.Reason), st.dim(o.age(m.ObservedTime)), st.dim(o.age(m.LastConfirmedTime))})
 	}
-	table(w, []string{"NAME", "SITE", "ROUTED", "PATH", "ROLE", "ELIGIBLE", "STATE", "REASON", "OBSERVED", "CONFIRMED"}, rows)
+	printTable(w, []column{{title: "NAME"}, {title: "SITE"}, {title: "ROUTED"}, {title: "PATH"}, {title: "ROLE"}, {title: "ELIGIBLE"},
+		{title: "STATE"}, {title: "REASON"}, {title: "OBSERVED", right: true}, {title: "CONFIRMED", right: true}}, rows)
 
-	fmt.Fprintln(w, "\nDeclarations:")
+	fmt.Fprintln(w, "\n"+heading("Declarations:"))
 	if len(v.Declarations) == 0 {
 		fmt.Fprintln(w, "None.")
 	} else {
@@ -233,17 +315,17 @@ func (o *options) explainTable(w io.Writer, v explainView) {
 		for _, d := range v.Declarations {
 			rows = append(rows, []string{d.Site, dash(d.Primary)})
 		}
-		table(w, []string{"SITE", "PRIMARY"}, rows)
+		printTable(w, []column{{title: "SITE"}, {title: "PRIMARY"}}, rows)
 	}
 
-	fmt.Fprintln(w, "\nConditions:")
+	fmt.Fprintln(w, "\n"+heading("Conditions:"))
 	if len(v.Conditions) == 0 {
 		fmt.Fprintln(w, "None.")
 		return
 	}
 	rows = nil
 	for _, c := range v.Conditions {
-		rows = append(rows, []string{c.Type, string(c.Status), dash(c.Reason), o.age(&c.LastTransitionTime), dash(c.Message)})
+		rows = append(rows, []string{c.Type, conditionPaint(st, c)(string(c.Status)), dash(c.Reason), st.dim(o.age(&c.LastTransitionTime)), dash(c.Message)})
 	}
-	table(w, []string{"TYPE", "STATUS", "REASON", "SINCE", "MESSAGE"}, rows)
+	printTable(w, []column{{title: "TYPE"}, {title: "STATUS"}, {title: "REASON"}, {title: "SINCE", right: true}, {title: "MESSAGE"}}, rows)
 }

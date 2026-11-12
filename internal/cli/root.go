@@ -34,6 +34,8 @@ type options struct {
 	// connect returns a reader of the cluster and the namespace of the context. Tests replace it.
 	connect func(o *options) (client.Reader, string, error)
 	now     func() time.Time
+	// terminal reports whether a stream is a terminal, and its width. Nil is detectTerminal. Tests replace it.
+	terminal func(io.Writer) (bool, int)
 }
 
 // usageError is a mistake in the command line. It exits with status 2.
