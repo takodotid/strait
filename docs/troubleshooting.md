@@ -129,3 +129,4 @@ The conditions of the `Site`:
 | An upgrade, or a node drain. | [Upgrade](../README.md#upgrade) |
 | A site must go back to an earlier 1.x release. | [Roll back within 1.x](runbooks/rollback.md) |
 | The operator publishes a release, or the release workflow refuses one. | [Release](runbooks/release.md) |
+| Someone checks that a release's CLI archive or image is what its tag builds. | [Rebuild a release](runbooks/rebuild.md) |

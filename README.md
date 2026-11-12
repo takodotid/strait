@@ -185,6 +185,8 @@ gh attestation verify "strait_${v}_linux_amd64.tar.gz" --repo takodotid/strait -
 gh attestation verify SHA256SUMS --repo takodotid/strait --cert-identity "$id"
 ```
 
+To rebuild a CLI archive or the image from the release's tag, and compare it with what the release published: [Rebuild a release](docs/runbooks/rebuild.md).
+
 | Value | Effect on the image |
 |---|---|
 | `image.tag` and `image.digest` empty | The image that the chart's release pushed: `ghcr.io/takodotid/strait:X.Y.Z@sha256:...`. |

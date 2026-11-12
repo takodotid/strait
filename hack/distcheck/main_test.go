@@ -27,9 +27,13 @@ var mtime = time.Unix(1796068800, 0).UTC()
 
 var pages = []string{"strait.1", "strait-status.1", "strait-version.1"}
 
-// fakeBinary is a binary as the fakes of readBuildSettings and runVersion read it: its platform and what it carries.
-func fakeBinary(goos, goarch, carries string) []byte {
-	return []byte(fmt.Sprintf("GOOS=%s GOARCH=%s %s", goos, goarch, carries))
+// fakeBinary is a binary as the fakes of readBuildSettings and runVersion read it: its platform, what it carries, and
+// its other build settings, -trimpath=true unless settings are given.
+func fakeBinary(goos, goarch, carries string, settings ...string) []byte {
+	if len(settings) == 0 {
+		settings = []string{"-trimpath=true"}
+	}
+	return []byte(fmt.Sprintf("GOOS=%s GOARCH=%s %s %s", goos, goarch, carries, strings.Join(settings, " ")))
 }
 
 func init() {
@@ -411,6 +415,18 @@ func TestImage(t *testing.T) {
 		{"a binary without the version", "amd64", func(f map[string][]byte) {
 			f["usr/local/bin/strait-gateway"] = fakeBinary("linux", "amd64", "dev "+commit)
 		}, "strait-gateway: does not carry version"},
+		{"a binary built without -trimpath", "amd64", func(f map[string][]byte) {
+			f["usr/local/bin/strait-gateway"] = fakeBinary("linux", "amd64", version+" "+commit, "-trimpath=false")
+		}, "strait-gateway: built without -trimpath"},
+		{"a binary stamped with the commit, not modified", "amd64", func(f map[string][]byte) {
+			f["usr/local/bin/strait"] = fakeBinary("linux", "amd64", version+" "+commit, "-trimpath=true", "vcs.revision="+commit, "vcs.modified=false")
+		}, ""},
+		{"a binary stamped with another commit", "amd64", func(f map[string][]byte) {
+			f["usr/local/bin/strait"] = fakeBinary("linux", "amd64", version+" "+commit, "-trimpath=true", "vcs.revision=0123abcd", "vcs.modified=false")
+		}, "strait: stamped with commit 0123abcd, modified false; want commit " + commit},
+		{"a binary stamped as modified", "amd64", func(f map[string][]byte) {
+			f["usr/local/bin/strait"] = fakeBinary("linux", "amd64", version+" "+commit, "-trimpath=true", "vcs.revision="+commit, "vcs.modified=true")
+		}, "strait: stamped with commit " + commit + ", modified true"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			files := good(tt.goarch)

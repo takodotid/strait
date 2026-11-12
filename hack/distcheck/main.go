@@ -338,7 +338,9 @@ func (c check) image(goarch, file string) []error {
 
 // binary checks that a binary was built for its platform, and that it carries the version and the commit. The binary
 // of the host's platform is also run: `strait version` must print them (requirement 13). The others are searched for
-// both strings, which only the build's -X flags put there when it ran with no .git, as the image's build does.
+// both strings, which only the build's -X flags put there when it ran with no .git, as the image's build does. It
+// must be built with -trimpath, and a VCS stamp, which a build in a git checkout adds, must name the commit with no
+// change (requirement 21). The image's build has no .git, so its binaries carry no VCS stamp.
 func (c check) binary(name, goos, goarch string, data []byte) error {
 	p, err := os.CreateTemp(c.tmp, name+"-")
 	if err != nil {
@@ -357,6 +359,13 @@ func (c check) binary(name, goos, goarch string, data []byte) error {
 	}
 	if settings["GOOS"] != goos || settings["GOARCH"] != goarch {
 		return fmt.Errorf("%s: built for %s/%s, want %s/%s", name, settings["GOOS"], settings["GOARCH"], goos, goarch)
+	}
+	if settings["-trimpath"] != "true" {
+		return fmt.Errorf("%s: built without -trimpath, so it holds the build machine's paths (RFC0006 requirement 21)", name)
+	}
+	if rev, ok := settings["vcs.revision"]; ok && (rev != c.commit || settings["vcs.modified"] != "false") {
+		return fmt.Errorf("%s: stamped with commit %s, modified %s; want commit %s, not modified (RFC0006 requirement 21)",
+			name, rev, settings["vcs.modified"], c.commit)
 	}
 	if !bytes.Contains(data, []byte(c.version)) || !bytes.Contains(data, []byte(c.commit)) {
 		return fmt.Errorf("%s: does not carry version %s and commit %s (RFC0006 requirement 13)", name, c.version, c.commit)
