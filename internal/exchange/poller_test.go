@@ -531,9 +531,9 @@ func TestPolledWhilePollingIsOff(t *testing.T) {
 // A document as a site on 1.2 publishes it, byte for byte, is read by this release, and so is an aged member as this
 // release publishes it: a reader counts it Unknown, as a 1.2 reader does (RFC0004, requirement 15).
 func TestReadDocumentOfOtherReleases(t *testing.T) {
-	v12 := strings.Replace(rfcExample, `"site": "a"`, `"site": "b"`, 1)
+	v12 := strings.Replace(rfcExample(t), `"site": "a"`, `"site": "b"`, 1)
 	aged := strings.NewReplacer(`"state": "Stable"`, `"state": "Unknown"`, `"role": "primary"`, `"role": "unknown"`,
-		`"eligible": true`, `"eligible": false`, `"reason": "ClusterPrimary"`, `"reason": "ObservationStale"`).Replace(v12)
+		`"eligible": true`, `"eligible": false`, `"reason": "PrimaryCluster"`, `"reason": "ObservationStale"`).Replace(v12)
 	for _, tc := range []struct {
 		name, body string
 		want       straitv1.State
@@ -565,7 +565,7 @@ func TestReadDocumentWithUnknownFields(t *testing.T) {
 		`"declaredPrimary": "pg-a",`, `"declaredPrimary": "pg-a", "added": [1, 2],`,
 		`"port": 5432`, `"port": 5432, "added": "x"`,
 		`"ready": true }`, `"ready": true, "added": null }`,
-	).Replace(rfcExample)
+	).Replace(rfcExample(t))
 	if n := strings.Count(doc, `"added"`); n != 4 {
 		t.Fatalf("the document has %d added fields, want 4: %s", n, doc)
 	}

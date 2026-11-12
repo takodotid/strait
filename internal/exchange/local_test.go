@@ -72,7 +72,7 @@ func TestDocumentAgesObservations(t *testing.T) {
 	maxAge := 6 * time.Second
 	l := &Local{}
 	old := obs("pg-a", "a")
-	old.Role, old.Reason = straitv1.RolePrimary, "ClusterPrimary"
+	old.Role, old.Reason = straitv1.RolePrimary, "PrimaryCluster"
 	old.Endpoint = observe.Endpoint{Addresses: []string{"10.0.0.1"}, Port: 5432}
 	fresh := obs("pg-c", "a")
 	fresh.ObservedAt = at.Add(5 * time.Second)
