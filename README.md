@@ -371,6 +371,7 @@ For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skil
 | [Getting started](docs/getting-started.md) | Two clusters, a WireGuard link, and a `SiteService` with the `cnpg` plugin. |
 | [Troubleshooting](docs/troubleshooting.md) | A name routed nowhere, Unknown members, unreachable peers, unhealthy links. |
 | [Metrics and alerts](docs/metrics.md) | Every metric, how to scrape it, the alert rules, and what the probes check. |
+| [Failover time](docs/failover-time.md) | Strait's share of the time until writes work again: detection, holds, the workload's move, applying the route, what to tune, and when the route became `Active` again. |
 | [Sizing](docs/sizing.md) | The controller's memory per Service of the cluster, its limit, and how to cache fewer objects. |
 | [Runbooks](docs/troubleshooting.md#runbooks) | The checks before production, site loss and return, a partition that heals, adding or removing a site, WireGuard key rotation, a controller or a gateway that is not ready, a gateway handover, rollback, a release. |
 | [Gateway benchmark](docs/benchmark.md) | What the gateway adds per round trip and per connection, and what endpoint-direct saves. |
