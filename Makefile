@@ -27,6 +27,7 @@ verify: generate ## Fail if generated files are out of date.
 	go vet ./...
 	go vet -tags e2e ./test/e2e/...
 	go vet -tags envoy ./internal/xds/
+	go vet -tags netns ./internal/gateway/
 	git diff --exit-code -- api config deploy/helm/strait/crds deploy/helm/strait/files
 
 .PHONY: build
@@ -74,20 +75,29 @@ lint: ## Verify the module's downloads, scan for known vulnerabilities, run stat
 	go tool -modfile=hack/tools/go.mod staticcheck ./...
 	go tool -modfile=hack/tools/go.mod staticcheck -tags e2e ./test/e2e/...
 	go tool -modfile=hack/tools/go.mod staticcheck -tags envoy ./internal/xds/
+	go tool -modfile=hack/tools/go.mod staticcheck -tags netns ./internal/gateway/
 	helm lint --strict deploy/helm/strait --set site.name=a
 	hack/release/pinned.sh
 
-# The Kubernetes version of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test.
-ENVTEST_K8S_VERSION ?= 1.37.0
+# The Kubernetes versions of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test: the oldest that
+# the README supports, and the latest.
+ENVTEST_K8S_VERSIONS ?= 1.31.0 1.37.0
 
 .PHONY: test
-test: ## Run unit tests. Downloads envtest's API server into bin/envtest on first use.
-	assets=$$(go tool setup-envtest use $(ENVTEST_K8S_VERSION) --bin-dir $(CURDIR)/bin/envtest -p path); \
-	KUBEBUILDER_ASSETS=$$assets go test ./...
+test: ## Run unit tests, once on each of ENVTEST_K8S_VERSIONS. Downloads envtest's API servers into bin/envtest on first use.
+	for v in $(ENVTEST_K8S_VERSIONS); do \
+	  echo "envtest $$v"; \
+	  assets=$$(go tool setup-envtest use $$v --bin-dir $(CURDIR)/bin/envtest -p path); \
+	  KUBEBUILDER_ASSETS=$$assets go test ./...; \
+	done
 
 .PHONY: test-envoy
 test-envoy: ## Run the xDS configuration in a real Envoy, the chart's image, in docker.
 	go test -tags envoy -count=1 ./internal/xds/
+
+.PHONY: test-netns
+test-netns: ## Run the gateway's WireGuard interfaces and their filter in network namespaces, as root in a container, in docker. Needs the wireguard module.
+	CGO_ENABLED=0 go test -tags netns -count=1 -run '^TestWireGuardPeer' ./internal/gateway/
 
 .PHONY: images
 images: ## Build the container image.

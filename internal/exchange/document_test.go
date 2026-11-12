@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,35 +12,23 @@ import (
 	"github.com/takodotid/strait/internal/observe"
 )
 
-// rfcExample is the document of RFC#0004, verbatim.
-const rfcExample = `{
-  "apiVersion": "strait.tako.id/v1alpha1",
-  "kind": "Observations",
-  "site": "a",
-  "generatedAt": "2026-10-27T10:00:00Z",
-  "services": [
-    {
-      "namespace": "app",
-      "name": "pg",
-      "declaredPrimary": "pg-a",
-      "members": [
-        {
-          "name": "pg-a",
-          "role": "primary",
-          "eligible": true,
-          "state": "Stable",
-          "reason": "ClusterPrimary",
-          "observedAt": "2026-10-27T10:00:00Z",
-          "addresses": ["10.110.1.5"],
-          "port": 5432
-        }
-      ]
-    }
-  ],
-  "exports": [
-    { "namespace": "app", "name": "pg-pg-a", "port": 30901, "ready": true }
-  ]
-}`
+// rfcExample returns the example document of RFC#0004, read from the RFC: its one JSON block.
+func rfcExample(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile("../../rfcs/RFC0004.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, block, ok := strings.Cut(string(data), "```json\n")
+	if !ok {
+		t.Fatal("RFC0004 has no JSON block")
+	}
+	block, _, ok = strings.Cut(block, "```")
+	if !ok || strings.Contains(block, "```json") {
+		t.Fatal("RFC0004's JSON block does not end")
+	}
+	return block
+}
 
 var at = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
 
@@ -51,11 +40,11 @@ func exampleLocal() *Local {
 		Role:       straitv1.RolePrimary,
 		Eligible:   true,
 		State:      straitv1.StateStable,
-		Reason:     "ClusterPrimary",
+		Reason:     "PrimaryCluster",
 		ObservedAt: at,
 		Endpoint:   observe.Endpoint{Service: "pg-a-rw", Addresses: []string{"10.110.1.5"}, Port: 5432},
 	}})
-	l.SetExport("app", "pg-pg-a", 30901, true)
+	l.SetExport("app", "pg-pg-a", 30901, true, at)
 	return l
 }
 
@@ -65,7 +54,7 @@ func TestDocumentShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	var want, have map[string]any
-	if err := json.Unmarshal([]byte(rfcExample), &want); err != nil {
+	if err := json.Unmarshal([]byte(rfcExample(t)), &want); err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Unmarshal(got, &have); err != nil {
@@ -79,7 +68,7 @@ func TestDocumentShape(t *testing.T) {
 func TestDocumentEmptyFields(t *testing.T) {
 	l := &Local{}
 	l.SetService("app", "pg", "", []observe.Observation{observe.Unknown("pg-a", "a", "NotObserved", at)})
-	l.SetExport("app", "pg-pg-a", 30901, false)
+	l.SetExport("app", "pg-pg-a", 30901, false, at)
 	got, err := json.Marshal(l.Document("a", at, 0))
 	if err != nil {
 		t.Fatal(err)

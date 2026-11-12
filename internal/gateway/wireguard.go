@@ -166,6 +166,12 @@ type Kernel interface {
 	AddRoute(name string, dst netip.Prefix) error
 	DeleteRoute(name string, dst netip.Prefix) error
 	Up(name string) error
+	// Filter returns the addresses that the filter of the WireGuard interfaces admits, sorted, and false when no filter
+	// is in place.
+	Filter() ([]netip.Addr, bool, error)
+	// SetFilter puts the filter in place, or replaces it: a packet that arrives on an interface whose name starts with
+	// Prefix is dropped, unless it is addressed to one of addrs. One that the namespace would forward is dropped too.
+	SetFilter(addrs []netip.Addr) error
 }
 
 // Device is the state of one interface.
@@ -182,6 +188,9 @@ type Device struct {
 
 // Apply makes the kernel hold exactly the wanted interfaces, and changes only what differs.
 // Failed holds the error of each link whose interface could not be brought to its desired state.
+// Before it creates or changes an interface, the filter must admit the wanted tunnel addresses only, so that a peer
+// reaches nothing on the pod's own address through its tunnel (RFC0007 requirement 12). While the filter cannot be
+// put in place, every wanted link fails, and Apply creates and changes no interface.
 func Apply(k Kernel, want []Interface) (failed map[string]error, err error) {
 	have, err := k.Devices()
 	if err != nil {
@@ -204,6 +213,14 @@ func Apply(k Kernel, want []Interface) (failed map[string]error, err error) {
 		}
 	}
 	failed = map[string]error{}
+	if len(want) > 0 {
+		if err := filter(k, want); err != nil {
+			for _, w := range want {
+				failed[w.Link] = err
+			}
+			return failed, errors.Join(errs...)
+		}
+	}
 	for _, w := range want {
 		d, ok := byName[w.Name]
 		if !ok {
@@ -218,6 +235,23 @@ func Apply(k Kernel, want []Interface) (failed map[string]error, err error) {
 		}
 	}
 	return failed, errors.Join(errs...)
+}
+
+// filter puts in place the filter that admits the wanted tunnel addresses only, unless it is already.
+func filter(k Kernel, want []Interface) error {
+	var addrs []netip.Addr
+	for _, w := range want {
+		addrs = append(addrs, w.Address.Addr())
+	}
+	slices.SortFunc(addrs, netip.Addr.Compare)
+	addrs = slices.Compact(addrs)
+	if have, ok, err := k.Filter(); err == nil && ok && slices.Equal(have, addrs) {
+		return nil
+	}
+	if err := k.SetFilter(addrs); err != nil {
+		return fmt.Errorf("filter the WireGuard interfaces' traffic: %w", err)
+	}
+	return nil
 }
 
 func apply(k Kernel, w Interface, d Device) error {

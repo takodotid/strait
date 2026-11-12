@@ -35,8 +35,14 @@ spec:
 {{- end }}
 {{- if .Values.networkPolicy.gateway.enabled }}
 ---
-# The gateway pods admit the pods of this cluster, which reach imports and poll peers through the gateway, and the peer
-# gateways. The probe port admits every source, as the controller's does: some CNIs enforce policies on host traffic.
+# The gateway pods admit the pods of this cluster to the import and export ports, the controller to the peer port,
+# through which it polls peers, and the peer gateways to the control and export ports and the WireGuard listen ports.
+# The probe port admits every source, as the controller's does: some CNIs enforce policies on host traffic.
+{{- $ports := include "strait.gatewayPorts" . | fromJson }}
+{{- $gw := .Values.networkPolicy.gateway }}
+{{- if and $gw.peerCIDRs (not (hasKey $gw "wireGuardPorts")) }}
+{{- fail "networkPolicy.gateway.wireGuardPorts is required with networkPolicy.gateway.peerCIDRs: list the listen ports of the site's wireguard SiteLinks, or set [] when it has none" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -61,13 +67,34 @@ spec:
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    # Clients of imports and exports.
     - from:
         - namespaceSelector: {}
-    {{- with .Values.networkPolicy.gateway.peerCIDRs }}
+      ports:
+        - {{ include "strait.policyPorts" $ports.importPorts }}
+        - {{ include "strait.policyPorts" $ports.exportPorts }}
+    # The controller, which polls peers through the peer port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: strait
+              app.kubernetes.io/component: controller
+      ports:
+        - {port: {{ int $ports.peerPort }}}
+    {{- with $gw.peerCIDRs }}
+    # The peer gateways: the control and export ports over direct links, and the WireGuard listen ports.
     - from:
         {{- range . }}
         - ipBlock:
             cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - {port: {{ int $ports.controlPort }}}
+        - {{ include "strait.policyPorts" $ports.exportPorts }}
+        {{- range $gw.wireGuardPorts }}
+        {{- if . }}
+        - {protocol: UDP, port: {{ int . }}}
+        {{- end }}
         {{- end }}
     {{- end }}
 {{- end }}

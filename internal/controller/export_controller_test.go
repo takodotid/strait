@@ -802,3 +802,66 @@ func TestImportSyncErrorLoggedWhenItChanges(t *testing.T) {
 		}
 	}
 }
+
+// listRecorder is a client that records the options of each List.
+type listRecorder struct {
+	client.Client
+	lists [][]client.ListOption
+}
+
+func (l *listRecorder) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	l.lists = append(l.lists, opts)
+	return l.Client.List(ctx, list, opts...)
+}
+
+// A change of an EndpointSlice requeues the Exports of its namespace that forward to its Service, read through
+// IndexExportService, not a list of every Export of the namespace. A slice with no Service label requeues none
+// (RFC0005 requirement 53; issue #64).
+func TestExportSliceRequeuesItsExports(t *testing.T) {
+	export := func(namespace, name, service string) *straitv1.Export {
+		return &straitv1.Export{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+			Spec:       straitv1.ExportSpec{Service: straitv1.ServicePortRef{Name: service, Port: 5432}},
+		}
+	}
+	rec := &listRecorder{Client: fakeClient(t,
+		export("app", "pg-a", "pg-a-rw"), export("app", "pg-a-2", "pg-a-rw"), export("app", "web", "web"), export("other", "pg-a", "pg-a-rw"))}
+	r := &ExportReconciler{Client: rec}
+	slice := func(namespace, service string) *discoveryv1.EndpointSlice {
+		es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: service + "-x"}}
+		if service != "" {
+			es.Labels = map[string]string{discoveryv1.LabelServiceName: service}
+		}
+		return es
+	}
+	for _, tc := range []struct {
+		name  string
+		slice *discoveryv1.EndpointSlice
+		want  []string
+	}{
+		{"a Service that two Exports forward to", slice("app", "pg-a-rw"), []string{"app/pg-a", "app/pg-a-2"}},
+		{"a Service that one Export forwards to", slice("app", "web"), []string{"app/web"}},
+		{"another Service", slice("app", "cache"), nil},
+		{"another namespace", slice("other", "pg-a-rw"), []string{"other/pg-a"}},
+		{"no Service label", slice("app", ""), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec.lists = nil
+			var got []string
+			for _, req := range r.exportsOfSlice(context.Background(), tc.slice) {
+				got = append(got, req.String())
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("requeued %v, want %v", got, tc.want)
+			}
+			for _, opts := range rec.lists {
+				lo := &client.ListOptions{}
+				lo.ApplyOptions(opts)
+				if lo.FieldSelector == nil || lo.FieldSelector.String() != IndexExportService+"="+tc.slice.Labels[discoveryv1.LabelServiceName] {
+					t.Errorf("listed Exports with %+v, want through %s", lo, IndexExportService)
+				}
+			}
+		})
+	}
+}

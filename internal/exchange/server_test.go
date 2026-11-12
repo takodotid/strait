@@ -74,7 +74,7 @@ func TestHandlerBodies(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&have); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(rfcExample), &want); err != nil {
+	if err := json.Unmarshal([]byte(rfcExample(t)), &want); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(have, want) {

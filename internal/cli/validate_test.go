@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/takodotid/strait/internal/validate"
 )
 
 func validateJSON(t *testing.T, stdin string, args ...string) (validateView, result) {
@@ -240,5 +242,79 @@ spec:
 		if !found {
 			t.Errorf("document %d: no deprecation warning in %+v", doc, v.Problems)
 		}
+	}
+}
+
+// A List document, as kubectl get -o yaml writes, counts as each of its items, a List in it too. Each problem names
+// its item. A list kind of Strait's API group is read the same way (issue #64).
+func TestValidateList(t *testing.T) {
+	list := `apiVersion: v1
+kind: List
+items:
+- apiVersion: strait.tako.id/v1
+  kind: Site
+  metadata: {name: a}
+- apiVersion: v1
+  kind: ConfigMap
+  metadata: {name: other, namespace: app}
+- apiVersion: v1
+  kind: List
+  items:
+  - apiVersion: strait.tako.id/v1
+    kind: SitePeer
+    metadata: {name: b}
+    spec: {controlPort: 70000}
+---
+apiVersion: strait.tako.id/v1
+kind: SitePeerList
+items:
+- apiVersion: strait.tako.id/v1
+  kind: SitePeer
+  metadata: {name: c}
+  spec: {controlPort: 0}
+`
+	v, r := validateJSON(t, list, "-f", "-")
+	if r.code != 1 || v.Objects != 3 || v.Skipped != 1 || v.Errors != 2 {
+		t.Fatalf("exit %d, got %+v", r.code, v)
+	}
+	want := []problemView{
+		{File: "-", Document: 1, Item: "items[2].items[0]", Object: validate.Ref{Kind: "SitePeer", Name: "b"}, Severity: validate.SeverityError,
+			Field: "spec.controlPort", Message: "Invalid value: 70000: must be between 1 and 65535"},
+		{File: "-", Document: 2, Item: "items[0]", Object: validate.Ref{Kind: "SitePeer", Name: "c"}, Severity: validate.SeverityError,
+			Field: "spec.controlPort", Message: "Invalid value: 0: must be between 1 and 65535"},
+	}
+	for i := range v.Problems {
+		v.Problems[i].order = 0
+	}
+	if !slices.Equal(v.Problems, want) {
+		t.Errorf("problems:\n%+v\nwant\n%+v", v.Problems, want)
+	}
+	r = cli(t, fakeReader(), list, "validate", "-f", "-")
+	if !strings.Contains(r.stdout, "1 items[2].items[0]") || !strings.Contains(r.stdout, "2 items[0]") {
+		t.Errorf("table does not name the items:\n%s", r.stdout)
+	}
+}
+
+// A field that a document sets keeps its value, also 0 or 0s: the API server sets a default only where a field is
+// left out, and refuses a lease duration of 0s (issue #64).
+func TestValidateExplicitZero(t *testing.T) {
+	v, r := validateJSON(t, `apiVersion: strait.tako.id/v1
+kind: Site
+metadata: {name: a}
+spec:
+  gateway:
+    lease: {duration: 0s}
+`, "-f", "-")
+	var got []string
+	for _, p := range v.Problems {
+		got = append(got, p.Field+": "+p.Message)
+	}
+	want := []string{
+		`spec.gateway.lease: Invalid value: "object": duration must be from 2s to 5m`,
+		`spec.gateway.lease: Invalid value: "object": renewDeadline must be at least 1s shorter than duration`,
+	}
+	slices.Sort(got)
+	if r.code != 1 || !slices.Equal(got, want) {
+		t.Errorf("exit %d, problems %q; want %q", r.code, got, want)
 	}
 }

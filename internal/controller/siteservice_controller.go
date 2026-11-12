@@ -806,12 +806,21 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 	setFlag(&st.Conditions, straitv1.ConditionMultiple, result.Multiple, straitv1.ReasonMultipleWritable, svc.Generation)
 	setFlag(&st.Conditions, straitv1.ConditionDeclarationsDisagree, result.Disagree, straitv1.ReasonDeclarationsDisagree, svc.Generation)
 	setFlag(&st.Conditions, straitv1.ConditionHeld, len(result.Held) > 0, straitv1.ReasonHeldUnknown, svc.Generation)
+	unmatched := unmatchedMessage(svc, result.Unmatched)
+	declared := metav1.Condition{Type: straitv1.ConditionDeclarationUnmatched, Status: metav1.ConditionFalse, Reason: "No" + straitv1.ConditionDeclarationUnmatched, ObservedGeneration: svc.Generation}
+	if unmatched != "" {
+		declared.Status, declared.Reason, declared.Message = metav1.ConditionTrue, straitv1.ConditionDeclarationUnmatched, unmatched
+	}
+	meta.SetStatusCondition(&st.Conditions, declared)
 
 	if result.Multiple && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionMultiple) {
 		event(corev1.EventTypeWarning, straitv1.ReasonMultipleWritable, "Decide", "%s", result.Message)
 	}
 	if result.Disagree && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionDeclarationsDisagree) {
 		event(corev1.EventTypeWarning, straitv1.ReasonDeclarationsDisagree, "Decide", "%s", result.Message)
+	}
+	if unmatched != "" && !meta.IsStatusConditionTrue(old.Conditions, straitv1.ConditionDeclarationUnmatched) {
+		event(corev1.EventTypeWarning, straitv1.ConditionDeclarationUnmatched, "Decide", "%s", unmatched)
 	}
 	if result.Reason == straitv1.ReasonUnknownTimeout && old.Route.Reason != straitv1.ReasonUnknownTimeout {
 		event(corev1.EventTypeWarning, straitv1.ReasonUnknownTimeout, "Decide", "%s", result.Message)
@@ -828,6 +837,19 @@ func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.S
 		e()
 	}
 	return nil
+}
+
+// unmatchedMessage says which declarations are no member's name, and, for the cnpg plugin, what a Cluster must set
+// (RFC#0003, requirement 7). Empty when every declaration names a member.
+func unmatchedMessage(svc *straitv1.SiteService, unmatched []string) string {
+	if len(unmatched) == 0 {
+		return ""
+	}
+	msg := strings.Join(unmatched, "; ") + ": no member has that name"
+	if svc.Spec.Plugin.CNPG != nil {
+		msg += "; each CloudNativePG Cluster must leave .spec.replica.self unset or set it to its own name, and .spec.replica.primary must name the Cluster of a member"
+	}
+	return msg
 }
 
 // droppedNote names the addresses that endpoint-direct dropped, at most 5 per member.

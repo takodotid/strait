@@ -254,6 +254,9 @@ const (
 	ConditionHeld                 = "Held"
 	// ConditionApplied is True when every write of the last decision succeeded.
 	ConditionApplied = "Applied"
+	// ConditionDeclarationUnmatched is True when a known site declares a primary that is no member's name. Single
+	// mode only. Its reason is its type while True, and NoDeclarationUnmatched otherwise.
+	ConditionDeclarationUnmatched = "DeclarationUnmatched"
 )
 
 // SiteServiceStatus shows the route and every input of the decision.

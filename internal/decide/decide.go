@@ -55,6 +55,9 @@ type Result struct {
 	Disagree bool
 	// Held are the routed members kept while Unknown.
 	Held []string
+	// Unmatched holds each declaration of a known site that is no member's name, such as "site a declares pg-east",
+	// in site order. It changes nothing else of the result. Single mode only.
+	Unmatched []string
 }
 
 // Decide returns the route for the input.
@@ -112,6 +115,30 @@ func (in Input) declarations() []string {
 		out = append(out, d)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// unmatched returns each declaration of a known site, or of its workloads, that is no member's name, in site order.
+func (in Input) unmatched() []string {
+	names := map[string]bool{}
+	for _, m := range in.Spec.Members {
+		names[m.Name] = true
+	}
+	var out []string
+	for _, site := range slices.Sorted(maps.Keys(in.Sites)) {
+		s := in.Sites[site]
+		if !s.Known {
+			continue
+		}
+		if s.Declared != "" && !names[s.Declared] {
+			out = append(out, fmt.Sprintf("site %s declares %s", site, s.Declared))
+		}
+		for _, d := range s.Conflicting {
+			if !names[d] {
+				out = append(out, fmt.Sprintf("the workloads of site %s declare %s", site, d))
+			}
+		}
+	}
 	return out
 }
 
@@ -194,7 +221,7 @@ func singleTable(in Input) Result {
 		}
 	}
 	decl := in.declarations()
-	r := Result{Multiple: len(writable) >= 2, Disagree: len(decl) >= 2}
+	r := Result{Multiple: len(writable) >= 2, Disagree: len(decl) >= 2, Unmatched: in.unmatched()}
 
 	// Row 1.
 	if r.Disagree {

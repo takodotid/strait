@@ -62,7 +62,7 @@ func (s *site) set(doc Document, serve func(http.ResponseWriter, *http.Request))
 func siteDocument(name string, members ...observe.Observation) Document {
 	l := &Local{}
 	l.SetService("app", "pg", "pg-a", members)
-	l.SetExport("app", "pg-"+name, 30901, true)
+	l.SetExport("app", "pg-"+name, 30901, true, at)
 	return l.Document(name, at, 0)
 }
 
@@ -362,7 +362,7 @@ func TestNoChangeFromAPublisherAtRest(t *testing.T) {
 		o := obs("pg-b", "b")
 		o.ObservedAt = now
 		publisher.SetService("app", "pg", "pg-b", []observe.Observation{o})
-		publisher.SetExport("app", "pg-pg-b", 30901, true)
+		publisher.SetExport("app", "pg-pg-b", 30901, true, now)
 		return publisher.Document("b", now, 6*time.Second)
 	}
 	s, srv := newSite(t, "b", publish(at))
@@ -531,9 +531,9 @@ func TestPolledWhilePollingIsOff(t *testing.T) {
 // A document as a site on 1.2 publishes it, byte for byte, is read by this release, and so is an aged member as this
 // release publishes it: a reader counts it Unknown, as a 1.2 reader does (RFC0004, requirement 15).
 func TestReadDocumentOfOtherReleases(t *testing.T) {
-	v12 := strings.Replace(rfcExample, `"site": "a"`, `"site": "b"`, 1)
+	v12 := strings.Replace(rfcExample(t), `"site": "a"`, `"site": "b"`, 1)
 	aged := strings.NewReplacer(`"state": "Stable"`, `"state": "Unknown"`, `"role": "primary"`, `"role": "unknown"`,
-		`"eligible": true`, `"eligible": false`, `"reason": "ClusterPrimary"`, `"reason": "ObservationStale"`).Replace(v12)
+		`"eligible": true`, `"eligible": false`, `"reason": "PrimaryCluster"`, `"reason": "ObservationStale"`).Replace(v12)
 	for _, tc := range []struct {
 		name, body string
 		want       straitv1.State
@@ -565,7 +565,7 @@ func TestReadDocumentWithUnknownFields(t *testing.T) {
 		`"declaredPrimary": "pg-a",`, `"declaredPrimary": "pg-a", "added": [1, 2],`,
 		`"port": 5432`, `"port": 5432, "added": "x"`,
 		`"ready": true }`, `"ready": true, "added": null }`,
-	).Replace(rfcExample)
+	).Replace(rfcExample(t))
 	if n := strings.Count(doc, `"added"`); n != 4 {
 		t.Fatalf("the document has %d added fields, want 4: %s", n, doc)
 	}

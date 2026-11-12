@@ -481,3 +481,19 @@ spec:
     - {name: a, site: a, service: {name: web, port: 80}}
   policy:
     startupHold: 30s
+---
+# An explicit empty policy is a value, not a missing field (issue #64).
+# want: spec.policy.multiple: Unsupported value: "": supported values: "RouteNowhere", "PreferDeclaredIfConsistent"
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: multiple-empty
+  namespace: app
+spec:
+  mode: Single
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: a}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    multiple: ""

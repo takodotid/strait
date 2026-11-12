@@ -1,12 +1,14 @@
-// Command distcheck checks the CLI archives of a release against RFC0006 requirements 10, 13, 15, 16 and 17, or the
-// files of one platform of its image against requirements 10 and 13. The release workflow runs it before it publishes
-// anything.
+// Command distcheck checks the CLI archives of a release against RFC0006 requirements 10, 13, 15, 16 and 17, the files
+// of one platform of its image against requirements 10 and 13, or the image's index against RFC0007 requirement 30.
+// The release workflow runs it before it publishes anything.
 //
 //	SOURCE_DATE_EPOCH=<seconds> go run ./hack/distcheck -version vX.Y.Z -commit SHA -man DIR archives DIST
 //	go run ./hack/distcheck -version vX.Y.Z -commit SHA -man DIR image ARCH FILE.tar
+//	go run ./hack/distcheck -version vX.Y.Z -commit SHA index DIGEST FILE.json
 //
 // DIR holds the man pages that hack/gendocs writes. DIST holds the archives that make dist writes, with
 // SOURCE_DATE_EPOCH as the time of every entry. FILE.tar is the image's file system, as docker export writes it.
+// FILE.json is the image's index, as the registry serves it for DIGEST.
 package main
 
 import (
@@ -14,7 +16,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"debug/buildinfo"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -37,6 +41,9 @@ var platforms = []string{"linux/amd64", "linux/arm64", "darwin/amd64", "darwin/a
 
 // imageBinaries are the binaries of the image, in /usr/local/bin.
 var imageBinaries = []string{"strait", "strait-controller", "strait-gateway"}
+
+// imagePlatforms are the platforms of the image: its index lists their images and nothing else.
+var imagePlatforms = []string{"linux/amd64", "linux/arm64"}
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -64,8 +71,19 @@ func run(args []string, stdout io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *version == "" || *commit == "" || *man == "" {
-		return errors.New("-version, -commit and -man are required")
+	if *version == "" || *commit == "" {
+		return errors.New("-version and -commit are required")
+	}
+	if rest := fs.Args(); len(rest) == 3 && rest[0] == "index" {
+		c := check{version: *version, commit: *commit}
+		if err := errors.Join(c.index(rest[1], rest[2])...); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "distcheck: %s %s: every check passed\n", strings.Join(rest, " "), *version)
+		return nil
+	}
+	if *man == "" {
+		return errors.New("-man is required for archives and image")
 	}
 	pages, err := os.ReadDir(*man)
 	if err != nil {
@@ -98,7 +116,7 @@ func run(args []string, stdout io.Writer) error {
 	case len(rest) == 3 && rest[0] == "image":
 		errs = c.image(rest[1], rest[2])
 	default:
-		return errors.New("usage: distcheck -version V -commit C -man DIR archives DIST | image ARCH FILE.tar")
+		return errors.New("usage: distcheck -version V -commit C [-man DIR] archives DIST | image ARCH FILE.tar | index DIGEST FILE.json")
 	}
 	if err := errors.Join(errs...); err != nil {
 		return err
@@ -336,9 +354,70 @@ func (c check) image(goarch, file string) []error {
 	return errs
 }
 
+// index checks the image's index (RFC0007 requirement 30): FILE hashes to the digest, as the chart names it, and the
+// index lists one OCI image manifest per platform of imagePlatforms and nothing else, so no attestation. Its
+// annotations name the release's version and commit.
+func (c check) index(digest, file string) []error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return []error{err}
+	}
+	if got := fmt.Sprintf("sha256:%x", sha256.Sum256(data)); got != digest {
+		return []error{fmt.Errorf("index: %s hashes to %s, want %s", file, got, digest)}
+	}
+	var idx struct {
+		MediaType string `json:"mediaType"`
+		Manifests []struct {
+			MediaType string `json:"mediaType"`
+			Digest    string `json:"digest"`
+			Platform  struct {
+				OS           string `json:"os"`
+				Architecture string `json:"architecture"`
+				Variant      string `json:"variant"`
+			} `json:"platform"`
+			Annotations map[string]string `json:"annotations"`
+		} `json:"manifests"`
+		Annotations map[string]string `json:"annotations"`
+	}
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return []error{fmt.Errorf("index: %s: %w", file, err)}
+	}
+	var errs []error
+	if want := "application/vnd.oci.image.index.v1+json"; idx.MediaType != want {
+		errs = append(errs, fmt.Errorf("index: media type %q, want %q", idx.MediaType, want))
+	}
+	var listed []string
+	for _, m := range idx.Manifests {
+		p := path.Join(m.Platform.OS, m.Platform.Architecture, m.Platform.Variant)
+		if t := m.Annotations["vnd.docker.reference.type"]; t != "" {
+			errs = append(errs, fmt.Errorf("index: lists %s, platform %s, an %s: the provenance and the SBOM are attested apart from the index", m.Digest, p, t))
+			continue
+		}
+		if want := "application/vnd.oci.image.manifest.v1+json"; m.MediaType != want {
+			errs = append(errs, fmt.Errorf("index: %s is %q, want %q", p, m.MediaType, want))
+		}
+		listed = append(listed, p)
+	}
+	slices.Sort(listed)
+	if !slices.Equal(listed, imagePlatforms) {
+		errs = append(errs, fmt.Errorf("index: lists the platforms %v, want %v", listed, imagePlatforms))
+	}
+	for _, a := range [][2]string{
+		{"org.opencontainers.image.version", strings.TrimPrefix(c.version, "v")},
+		{"org.opencontainers.image.revision", c.commit},
+	} {
+		if got := idx.Annotations[a[0]]; got != a[1] {
+			errs = append(errs, fmt.Errorf("index: annotation %s is %q, want %q", a[0], got, a[1]))
+		}
+	}
+	return errs
+}
+
 // binary checks that a binary was built for its platform, and that it carries the version and the commit. The binary
 // of the host's platform is also run: `strait version` must print them (requirement 13). The others are searched for
-// both strings, which only the build's -X flags put there when it ran with no .git, as the image's build does.
+// both strings, which only the build's -X flags put there when it ran with no .git, as the image's build does. It
+// must be built with -trimpath, and a VCS stamp, which a build in a git checkout adds, must name the commit with no
+// change (requirement 21). The image's build has no .git, so its binaries carry no VCS stamp.
 func (c check) binary(name, goos, goarch string, data []byte) error {
 	p, err := os.CreateTemp(c.tmp, name+"-")
 	if err != nil {
@@ -357,6 +436,13 @@ func (c check) binary(name, goos, goarch string, data []byte) error {
 	}
 	if settings["GOOS"] != goos || settings["GOARCH"] != goarch {
 		return fmt.Errorf("%s: built for %s/%s, want %s/%s", name, settings["GOOS"], settings["GOARCH"], goos, goarch)
+	}
+	if settings["-trimpath"] != "true" {
+		return fmt.Errorf("%s: built without -trimpath, so it holds the build machine's paths (RFC0006 requirement 21)", name)
+	}
+	if rev, ok := settings["vcs.revision"]; ok && (rev != c.commit || settings["vcs.modified"] != "false") {
+		return fmt.Errorf("%s: stamped with commit %s, modified %s; want commit %s, not modified (RFC0006 requirement 21)",
+			name, rev, settings["vcs.modified"], c.commit)
 	}
 	if !bytes.Contains(data, []byte(c.version)) || !bytes.Contains(data, []byte(c.commit)) {
 		return fmt.Errorf("%s: does not carry version %s and commit %s (RFC0006 requirement 13)", name, c.version, c.commit)

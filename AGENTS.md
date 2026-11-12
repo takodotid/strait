@@ -133,6 +133,7 @@ Commit and push only when the operator asks.
 | `make build` | Builds every binary into `bin/`. |
 | `make test` | Runs unit tests, with envtest's API server for the CRDs' rules. Downloads it into `bin/envtest` on first use. |
 | `make test-envoy` | Runs the xDS configuration in a real Envoy, the chart's image, in docker. |
+| `make test-netns` | Runs the gateway's WireGuard interfaces and their filter in network namespaces, in docker. Needs the `wireguard` module. |
 | `make docs` | Writes the man pages and the skill document into `bin/`. |
 | `make images` | Builds the container image. |
 | `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |

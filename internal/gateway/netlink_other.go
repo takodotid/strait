@@ -46,3 +46,9 @@ func (*Netlink) DeleteRoute(string, netip.Prefix) error { return errLinux }
 
 // Up implements Kernel.
 func (*Netlink) Up(string) error { return errLinux }
+
+// Filter implements Kernel.
+func (*Netlink) Filter() ([]netip.Addr, bool, error) { return nil, false, errLinux }
+
+// SetFilter implements Kernel.
+func (*Netlink) SetFilter([]netip.Addr) error { return errLinux }

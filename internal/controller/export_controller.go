@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/plugin"
 )
 
@@ -100,13 +101,13 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	exp.Status.ReadyEndpoints = int32(len(ep.Addresses))
 	meta.SetStatusCondition(&exp.Status.Conditions, ready)
 
-	r.Local.SetExport(exp.Namespace, exp.Name, exp.Status.GatewayPort, exp.Status.ReadyEndpoints > 0)
+	r.Local.SetExport(exp.Namespace, exp.Name, exp.Status.GatewayPort, exp.Status.ReadyEndpoints > 0, time.Now())
 	if !equalStatus(old, &exp.Status) {
 		if _, err := r.written.updateStatus(ctx, r.Client, &exp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: exchange.ExportRefresh}, nil
 }
 
 // portHolder is another Export, or another Import, and the gateway port it holds.
@@ -245,25 +246,33 @@ func (r *ExportReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &straitv1.Export{}, IndexGatewayPort, gatewayPortIndex); err != nil {
 		return err
 	}
-	inNamespace := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o client.Object) []reconcile.Request {
-		var list straitv1.ExportList
-		if err := r.List(ctx, &list, client.InNamespace(o.GetNamespace())); err != nil {
-			return nil
-		}
-		var out []reconcile.Request
-		for _, e := range list.Items {
-			if e.Spec.Service.Name == o.GetLabels()[discoveryv1.LabelServiceName] {
-				out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: e.Namespace, Name: e.Name}})
-			}
-		}
-		return out
-	})
+	if err := indexExportService(mgr); err != nil {
+		return err
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("export").
 		For(&straitv1.Export{}).
-		Watches(&discoveryv1.EndpointSlice{}, inNamespace).
+		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.exportsOfSlice)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
+}
+
+// exportsOfSlice returns the Exports of the EndpointSlice's namespace that forward to its Service, read through
+// IndexExportService. A slice that names no Service requeues none.
+func (r *ExportReconciler) exportsOfSlice(ctx context.Context, o client.Object) []reconcile.Request {
+	name := o.GetLabels()[discoveryv1.LabelServiceName]
+	if name == "" {
+		return nil
+	}
+	var list straitv1.ExportList
+	if err := r.List(ctx, &list, client.InNamespace(o.GetNamespace()), client.MatchingFields{IndexExportService: name}); err != nil {
+		return nil
+	}
+	out := make([]reconcile.Request, 0, len(list.Items))
+	for _, e := range list.Items {
+		out = append(out, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: e.Namespace, Name: e.Name}})
+	}
+	return out
 }
 
 // ImportReconciler allocates each Import's gateway port, reads the peer's export port,

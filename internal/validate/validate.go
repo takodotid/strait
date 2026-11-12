@@ -97,20 +97,23 @@ func newProblem(i int, obj runtime.Object, s Severity, e *field.Error) Problem {
 
 // Object checks one object with the rules of its CRD schema, on a defaulted copy, as the API server does.
 // It does not change obj and does not check status.
-func Object(obj runtime.Object) field.ErrorList {
+func Object(obj runtime.Object) field.ErrorList { return ObjectWith(obj, nil) }
+
+// ObjectWith is Object for an object whose source sets the fields f: the defaults leave them as written.
+func ObjectWith(obj runtime.Object, f Fields) field.ErrorList {
 	switch o := obj.(type) {
 	case *straitv1.Site:
-		return Site(o)
+		return site(o, f)
 	case *straitv1.SitePeer:
-		return SitePeer(o)
+		return sitePeer(o, f)
 	case *straitv1.SiteLink:
-		return SiteLink(o)
+		return siteLink(o, f)
 	case *straitv1.Export:
 		return Export(o)
 	case *straitv1.Import:
 		return Import(o)
 	case *straitv1.SiteService:
-		return SiteService(o)
+		return siteService(o, f)
 	}
 	return field.ErrorList{field.NotSupported(field.NewPath("kind"), Kind(obj), kinds)}
 }
@@ -125,15 +128,23 @@ var kinds = []string{"Site", "SitePeer", "SiteLink", "Export", "Import", "SiteSe
 //   - a direct SiteLink with endpointDirect sets endpointCIDRs, a warning (RFC#0006, requirement 18).
 //
 // Problems are ordered by object.
-func Set(objs []runtime.Object) []Problem {
+func Set(objs []runtime.Object) []Problem { return SetWith(objs, nil) }
+
+// SetWith is Set for objects whose sources set the fields given, by position. fields may be shorter than objs, or
+// nil.
+func SetWith(objs []runtime.Object, fields []Fields) []Problem {
 	var out []Problem
 	defaulted := make([]runtime.Object, len(objs))
 	for i, obj := range objs {
-		for _, e := range Object(obj) {
+		var f Fields
+		if i < len(fields) {
+			f = fields[i]
+		}
+		for _, e := range ObjectWith(obj, f) {
 			out = append(out, newProblem(i, obj, SeverityError, e))
 		}
 		defaulted[i] = obj.DeepCopyObject()
-		Default(defaulted[i])
+		defaults(defaulted[i], f)
 	}
 	out = append(out, spanning(defaulted)...)
 	sort.SliceStable(out, func(a, b int) bool { return out[a].Index < out[b].Index })

@@ -350,8 +350,9 @@ func TestStepDownWhenEnvoyNotReady(t *testing.T) {
 		t.Fatal("stepped down while Envoy is ready")
 	}
 
-	up.Store(false)
+	// The time is read before Envoy stops being ready: the agent may see it at once, and its 6s count from then.
 	start := time.Now()
+	up.Store(false)
 	select {
 	case <-done:
 	case <-time.After(EnvoyNotReady + 5*time.Second):

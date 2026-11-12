@@ -4,6 +4,8 @@ runs:
   using: composite
   steps:
     - shell: bash
+      # Renovate updates VERSION only. SHA256 is the content of https://get.helm.sh/helm-<VERSION>-linux-amd64.tar.gz.sha256sum
+      # (RFC0007, Limitations).
       env:
         VERSION: v4.3.1
         SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b

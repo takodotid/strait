@@ -100,7 +100,7 @@ func pg() *straitv1.SiteService {
 			Route: straitv1.Route{Members: []string{"pg-a"}, Reason: straitv1.ReasonActive, Message: "pg-a is the only writable member",
 				LastChangeTime: ago(5 * time.Minute), Endpoints: 1},
 			Members: []straitv1.MemberStatus{
-				{Name: "pg-a", Site: "a", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, Reason: "ClusterPrimary",
+				{Name: "pg-a", Site: "a", Role: straitv1.RolePrimary, Eligible: true, State: straitv1.StateStable, Reason: "PrimaryCluster",
 					ObservedTime: ago(time.Second), LastConfirmedTime: ago(time.Second), Path: straitv1.PathLocal},
 				{Name: "pg-b", Site: "b", Role: straitv1.RoleReplica, Eligible: true, State: straitv1.StateStable, Reason: "ClusterReplica",
 					ObservedTime: ago(3 * time.Second), LastConfirmedTime: ago(3 * time.Second)},
@@ -214,7 +214,7 @@ Endpoints:    1
 
 Members:
 NAME  SITE  ROUTED  PATH   ROLE     ELIGIBLE  STATE   REASON          OBSERVED  CONFIRMED
-pg-a  a     true    Local  primary  true      Stable  ClusterPrimary  1s        1s
+pg-a  a     true    Local  primary  true      Stable  PrimaryCluster  1s        1s
 pg-b  b     false   -      replica  true      Stable  ClusterReplica  3s        3s
 pg-c  c     false   -      -        -         -       -               -         -
 
