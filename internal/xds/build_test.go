@@ -350,7 +350,7 @@ func TestBuildClusters(t *testing.T) {
 		}
 		if hc.GetInterval().AsDuration().Seconds() != 1 || hc.GetTimeout().AsDuration() != 500*time.Millisecond ||
 			hc.GetNoTrafficInterval().AsDuration().Seconds() != 1 ||
-			hc.GetUnhealthyThreshold().GetValue() != 2 || hc.GetHealthyThreshold().GetValue() != 2 {
+			hc.GetUnhealthyThreshold().GetValue() != 5 || hc.GetHealthyThreshold().GetValue() != 2 {
 			t.Errorf("%s health check = %v", name, hc)
 		}
 		// An import's check opens a new connection each time, so it reads the peer's current control listener.
