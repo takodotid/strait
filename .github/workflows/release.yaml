@@ -80,8 +80,10 @@ jobs:
             dist/strait-crds.yaml
           if-no-files-found: error
   # The image, pushed by its digest with no tag, and signed keyless with this workflow's identity (RFC0007,
-  # requirements 22 and 23). publish moves the tags last. The build runs Go in BuildKit's build containers, which get
-  # neither this job's environment nor its credentials.
+  # requirements 22 and 23). Its index holds the platform images only, so that a rebuild from the tag gives its digest
+  # (requirement 30). Each platform image carries BuildKit's provenance and SBOM as cosign attestations, apart from the
+  # index. publish moves the tags last. The builds run Go in BuildKit's build containers, which get neither this job's
+  # environment nor its credentials.
   image:
     runs-on: ubuntu-26.04
     needs: test
@@ -129,8 +131,8 @@ jobs:
           outputs: type=image,name=ghcr.io/takodotid/strait,push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp=true
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          provenance: mode=max
-          sbom: true
+          provenance: false
+          sbom: false
           # No build cache: every layer of a release comes from this build.
           no-cache: true
       - uses: ./.github/actions/setup-cosign
@@ -138,8 +140,35 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "ghcr.io/takodotid/strait@$DIGEST"
+      # A second build of the commit, from scratch, with BuildKit's provenance and SBOM, into an OCI layout on the
+      # runner. It pushes nothing.
+      - name: Build the attestations
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          outputs: type=oci,dest=${{ runner.temp }}/attested.tar,rewrite-timestamp=true
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max,version=v1
+          sbom: true
+          no-cache: true
+      # attest.sh attests nothing unless the second build gave each pushed platform image, by the same digest.
+      - name: Attest the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir "$RUNNER_TEMP/attested"
+          tar -xf "$RUNNER_TEMP/attested.tar" -C "$RUNNER_TEMP/attested"
+          docker buildx imagetools inspect --raw "ghcr.io/takodotid/strait@$DIGEST" >"$RUNNER_TEMP/index.json"
+          hack/release/attest.sh "ghcr.io/takodotid/strait@$DIGEST" "$RUNNER_TEMP/index.json" "$RUNNER_TEMP/attested"
   # The image's binaries, of each platform and with the version and the commit, and its man pages (RFC0006,
-  # requirements 10 and 13). It runs the image's strait on the runner, so it can write nothing (RFC0007, requirement
+  # requirements 10 and 13). Its index, with the platform images only, and its signature and attestations (RFC0007,
+  # requirements 23 and 30). It runs the image's strait on the runner, so it can write nothing (RFC0007, requirement
   # 19). The image is public, so the pull needs no credential. publish needs it.
   image-check:
     runs-on: ubuntu-26.04
@@ -164,6 +193,19 @@ jobs:
             docker export "$id" > "$RUNNER_TEMP/image-$arch.tar"
             docker rm "$id"
             go run ./hack/distcheck -version "$GITHUB_REF_NAME" -commit "$GITHUB_SHA" -man "$RUNNER_TEMP/man" image "$arch" "$RUNNER_TEMP/image-$arch.tar"
+          done
+      - uses: ./.github/actions/setup-cosign
+      - name: Check the index, its signature and the attestations
+        run: |
+          docker buildx imagetools inspect --raw "ghcr.io/takodotid/strait@$DIGEST" >"$RUNNER_TEMP/index.json"
+          go run ./hack/distcheck -version "$GITHUB_REF_NAME" -commit "$GITHUB_SHA" index "$DIGEST" "$RUNNER_TEMP/index.json"
+          id="https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yaml@$GITHUB_REF"
+          issuer=https://token.actions.githubusercontent.com
+          cosign verify "ghcr.io/takodotid/strait@$DIGEST" --certificate-identity "$id" --certificate-oidc-issuer "$issuer" >/dev/null
+          for image in $(jq -r '.manifests[].digest' "$RUNNER_TEMP/index.json"); do
+            for type in slsaprovenance1 spdxjson; do
+              cosign verify-attestation "ghcr.io/takodotid/strait@$image" --type "$type" --certificate-identity "$id" --certificate-oidc-issuer "$issuer" >/dev/null
+            done
           done
   # The chart, which names the image by its digest, the attestations, the GitHub release, and the image's tags last.
   # Everything that can fail without a push runs first. Each push checks again, right before it, that its version is

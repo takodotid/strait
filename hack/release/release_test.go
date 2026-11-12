@@ -734,6 +734,37 @@ func TestReleaseWorkflow(t *testing.T) {
 	if w.Jobs["image"].step("cosign sign") < 0 {
 		t.Error("image: the image is not signed")
 	}
+	// Requirement 30: the pushed index holds no attestation. A second build, of the same inputs, writes them on the
+	// runner, and attest.sh attaches them apart from the index, after the push. image-check checks the index, its
+	// signature and the attestations, before publish.
+	img, push, second := w.Jobs["image"], -1, -1
+	for i, s := range img.Steps {
+		switch {
+		case !strings.HasPrefix(s.Uses, "docker/build-push-action@"):
+		case strings.Contains(s.With["outputs"], "push=true"):
+			push = i
+			if s.With["provenance"] != "false" || s.With["sbom"] != "false" {
+				t.Errorf("image: the pushed build has provenance %q and sbom %q, want false and false", s.With["provenance"], s.With["sbom"])
+			}
+		case strings.HasPrefix(s.With["outputs"], "type=oci,"):
+			second = i
+			if s.With["provenance"] != "mode=max,version=v1" || s.With["sbom"] != "true" || s.With["no-cache"] != "true" {
+				t.Errorf("image: the second build has provenance %q, sbom %q, no-cache %q", s.With["provenance"], s.With["sbom"], s.With["no-cache"])
+			}
+		}
+	}
+	attested := img.step("hack/release/attest.sh")
+	if push < 0 || second < push || attested < second {
+		t.Fatalf("image: the push at step %d, the second build at %d, attest.sh at %d, want this order", push, second, attested)
+	}
+	for _, k := range []string{"context", "platforms", "build-args", "labels", "annotations"} {
+		if a, b := img.Steps[push].With[k], img.Steps[second].With[k]; a != b {
+			t.Errorf("image: the two builds differ in %s: %q and %q", k, a, b)
+		}
+	}
+	if image.step("hack/distcheck", " index ", "cosign verify ", "cosign verify-attestation", "slsaprovenance1", "spdxjson") < 0 {
+		t.Error("image-check does not check the index, its signature and both attestations of each platform")
+	}
 	// Requirement 23: every asset of the GitHub release is attested before the first push.
 	attest := -1
 	for i, s := range publish.Steps {
