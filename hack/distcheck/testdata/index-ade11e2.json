@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "manifests": [
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:3046e5d07b3d5990fdb21844fa3e9edab048370739fa7b2876257fa15f5430b7",
+      "size": 3509,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    },
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:20d73cb7f3d7fb2fc84ab1b12c46148c7d07c293d115ffc977aa00236915bbcf",
+      "size": 3509,
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      }
+    }
+  ],
+  "annotations": {
+    "org.opencontainers.image.created": "2026-11-12T00:00:00Z",
+    "org.opencontainers.image.licenses": "Apache-2.0",
+    "org.opencontainers.image.revision": "ade11e2367ea8ff76e89830e38830adfb6fbdf87",
+    "org.opencontainers.image.source": "https://github.com/takodotid/strait",
+    "org.opencontainers.image.title": "strait",
+    "org.opencontainers.image.version": "1.5.0"
+  }
+}

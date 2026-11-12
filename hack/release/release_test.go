@@ -3,7 +3,9 @@
 package release
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"os"
 	"os/exec"
@@ -72,6 +74,24 @@ inspect) printf '{"digest":"%s"}' "$FAKE_DIGEST" ;;
 esac
 `
 
+// fakeCosign records each cosign attest in $FAKE_GH/cosign: the type, the predicate, compacted, and the image.
+const fakeCosign = `#!/usr/bin/env bash
+[[ $1 == attest ]] || { echo "fake cosign: $*" >&2; exit 2; }
+shift
+yes=0
+while [[ $# -gt 0 ]]; do
+	case $1 in
+	--yes) yes=1 ;;
+	--type) type=$2; shift ;;
+	--predicate) predicate=$2; shift ;;
+	*) ref=$1 ;;
+	esac
+	shift
+done
+[[ $yes == 1 ]] || { echo "fake cosign: attest without --yes waits for a prompt" >&2; exit 2; }
+printf '%s %s %s\n' "$type" "$(jq -c . "$predicate")" "$ref" >>"$FAKE_GH/cosign"
+`
+
 // fixtureName is the file name that fakeGH reads for an API path.
 func fixtureName(path string) string {
 	return strings.Map(func(r rune) rune {
@@ -93,7 +113,7 @@ func run(t *testing.T, fixtures map[string]string, env []string, script string, 
 		t.Skip("jq is not installed")
 	}
 	bin, data := t.TempDir(), t.TempDir()
-	for name, body := range map[string]string{"gh": fakeGH, "curl": fakeCurl, "docker": fakeDocker} {
+	for name, body := range map[string]string{"gh": fakeGH, "curl": fakeCurl, "docker": fakeDocker, "cosign": fakeCosign} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -116,6 +136,9 @@ func run(t *testing.T, fixtures map[string]string, env []string, script string, 
 	}
 	if b, err := os.ReadFile(filepath.Join(data, "create")); err == nil {
 		out = append(out, "\ncreate: "+strings.Join(strings.Fields(string(b)), " ")...)
+	}
+	if b, err := os.ReadFile(filepath.Join(data, "cosign")); err == nil {
+		out = append(out, "\ncosign:\n"+string(b)...)
 	}
 	return string(out), err == nil
 }
@@ -371,6 +394,159 @@ func TestTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+// attestFixture is what TestAttest writes: the pushed index, and the OCI layout of the second build.
+type attestFixture struct {
+	// pushed lists the pushed index's images, and built the second build's, by platform.
+	pushed, built []string
+	// attested lists the platforms with an attestation manifest, and layers its layers' predicate types.
+	attested []string
+	layers   []string
+	// statementType is the predicate type in each statement, the layer's own when empty.
+	statementType string
+	// pushedAttestation adds an attestation manifest to the pushed index.
+	pushedAttestation bool
+}
+
+// write writes the fixture, and returns the pushed index's digest and file, and the layout's directory. Each image's
+// manifest is {"image":"<platform>"}, so the two builds give one digest for one platform.
+func (f attestFixture) write(t *testing.T) (string, string, string) {
+	t.Helper()
+	layout := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(layout, "blobs", "sha256"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	put := func(v any) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := fmt.Sprintf("%x", sha256.Sum256(b))
+		if err := os.WriteFile(filepath.Join(layout, "blobs", "sha256", d), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return "sha256:" + d
+	}
+	entry := func(platform string) map[string]any {
+		os, arch, _ := strings.Cut(platform, "/")
+		return map[string]any{"digest": put(map[string]string{"image": platform}), "platform": map[string]string{"os": os, "architecture": arch}}
+	}
+	var built []any
+	for _, p := range f.built {
+		built = append(built, entry(p))
+	}
+	for _, p := range f.attested {
+		var layers []any
+		for _, pt := range f.layers {
+			st := pt
+			if f.statementType != "" {
+				st = f.statementType
+			}
+			statement := put(map[string]any{"_type": "https://in-toto.io/Statement/v0.1", "predicateType": st, "predicate": map[string]string{"of": p, "type": pt}})
+			layers = append(layers, map[string]any{"digest": statement, "annotations": map[string]string{"in-toto.io/predicate-type": pt}})
+		}
+		built = append(built, map[string]any{
+			"digest":      put(map[string]any{"layers": layers}),
+			"platform":    map[string]string{"os": "unknown", "architecture": "unknown"},
+			"annotations": map[string]string{"vnd.docker.reference.type": "attestation-manifest", "vnd.docker.reference.digest": entry(p)["digest"].(string)},
+		})
+	}
+	idx := put(map[string]any{"manifests": built})
+	b, _ := json.Marshal(map[string]any{"manifests": []any{map[string]string{"digest": idx}}})
+	if err := os.WriteFile(filepath.Join(layout, "index.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var pushed []any
+	for _, p := range f.pushed {
+		pushed = append(pushed, entry(p))
+	}
+	if f.pushedAttestation {
+		pushed = append(pushed, map[string]any{"digest": put("a"), "annotations": map[string]string{"vnd.docker.reference.type": "attestation-manifest"}})
+	}
+	b, _ = json.Marshal(map[string]any{"manifests": pushed})
+	index := filepath.Join(t.TempDir(), "index.json")
+	if err := os.WriteFile(index, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(b)), index, layout
+}
+
+// attest.sh attests each platform image of the pushed index with the provenance and the SBOM of the second build,
+// and nothing unless every platform has both (RFC0007, requirements 23 and 30).
+func TestAttest(t *testing.T) {
+	const (
+		prov = "https://slsa.dev/provenance/v1"
+		sbom = "https://spdx.dev/Document"
+	)
+	both := []string{"linux/amd64", "linux/arm64"}
+	good := attestFixture{pushed: both, built: both, attested: both, layers: []string{prov, sbom}}
+	for _, tt := range []struct {
+		name   string
+		change func(*attestFixture)
+		digest string
+		ok     bool
+		want   []string
+	}{
+		{name: "both platforms", change: func(*attestFixture) {}, ok: true, want: []string{
+			`slsaprovenance1 {"of":"linux/amd64","type":"https://slsa.dev/provenance/v1"} ghcr.io/o/strait@sha256:`,
+			`spdxjson {"of":"linux/amd64","type":"https://spdx.dev/Document"} ghcr.io/o/strait@sha256:`,
+			`slsaprovenance1 {"of":"linux/arm64","type":"https://slsa.dev/provenance/v1"} ghcr.io/o/strait@sha256:`,
+			`spdxjson {"of":"linux/arm64","type":"https://spdx.dev/Document"} ghcr.io/o/strait@sha256:`,
+			"linux/arm64: provenance and SBOM attested",
+		}},
+		{name: "another digest", change: func(*attestFixture) {}, digest: "sha256:" + strings.Repeat("e", 64),
+			want: []string{"does not hash to sha256:eee"}},
+		{name: "the builds differ", change: func(f *attestFixture) { f.built = []string{"linux/amd64", "linux/arm64/v8"} },
+			want: []string{"the second build has no image", "for linux/arm64: the two builds differ"}},
+		{name: "no attestation of arm64", change: func(f *attestFixture) { f.attested = []string{"linux/amd64"} },
+			want: []string{"no attestation manifest for linux/arm64"}},
+		{name: "no SBOM", change: func(f *attestFixture) { f.layers = []string{prov} },
+			want: []string{"hold no https://spdx.dev/Document"}},
+		{name: "provenance v0.2", change: func(f *attestFixture) { f.layers = []string{"https://slsa.dev/provenance/v0.2", sbom} },
+			want: []string{"hold no https://slsa.dev/provenance/v1"}},
+		{name: "a statement of another type", change: func(f *attestFixture) { f.statementType = "https://example.com/other" },
+			want: []string{"statement of linux/", "has another predicate type"}},
+		{name: "the pushed index holds attestations", change: func(f *attestFixture) { f.pushedAttestation = true },
+			want: []string{"holds attestations: it must list the platform images only"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := good
+			tt.change(&f)
+			digest, index, layout := f.write(t)
+			if tt.digest != "" {
+				digest = tt.digest
+			}
+			out, ok := run(t, nil, nil, "attest.sh", "ghcr.io/o/strait@"+digest, index, layout)
+			if ok != tt.ok {
+				t.Fatalf("exit 0: %v, want %v: %s", ok, tt.ok, out)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("output lacks %q: %s", w, out)
+				}
+			}
+			if !ok && strings.Contains(out, "cosign:") {
+				t.Errorf("attested though a check failed: %s", out)
+			}
+		})
+	}
+	t.Run("a changed blob", func(t *testing.T) {
+		_, index, layout := good.write(t)
+		blobs, _ := filepath.Glob(filepath.Join(layout, "blobs", "sha256", "*"))
+		for _, b := range blobs {
+			if data, _ := os.ReadFile(b); strings.Contains(string(data), `"predicateType"`) {
+				if err := os.WriteFile(b, append(data, ' '), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		data, _ := os.ReadFile(index)
+		out, ok := run(t, nil, nil, "attest.sh", fmt.Sprintf("ghcr.io/o/strait@sha256:%x", sha256.Sum256(data)), index, layout)
+		if ok || !strings.Contains(out, "the layout lacks the blob") || strings.Contains(out, "cosign:") {
+			t.Errorf("exit 0: %v: %s", ok, out)
+		}
+	})
 }
 
 // needs is a job's needs, one job or a list.

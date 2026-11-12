@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.index.v1+json",
+  "manifests": [
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:4370959b72d2bc48336392236ebe23c8786544694f277d559cb7942fbf0916b4",
+      "size": 3700,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    },
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:6221df0c4ef94a98db8ae6256e18407bad59ea72e4f224f2286fd62971f5d06a",
+      "size": 3700,
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux"
+      }
+    },
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:047ddf8ffb2349df195de2d8b957d15f3f79c9aa488f717f100df545daad9e4b",
+      "size": 1111,
+      "annotations": {
+        "vnd.docker.reference.digest": "sha256:4370959b72d2bc48336392236ebe23c8786544694f277d559cb7942fbf0916b4",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      }
+    },
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:b0b50a48896b7942cba930731f0b20afa56d1d111be61c7327f7657fec97dfe8",
+      "size": 1111,
+      "annotations": {
+        "vnd.docker.reference.digest": "sha256:6221df0c4ef94a98db8ae6256e18407bad59ea72e4f224f2286fd62971f5d06a",
+        "vnd.docker.reference.type": "attestation-manifest"
+      },
+      "platform": {
+        "architecture": "unknown",
+        "os": "unknown"
+      }
+    }
+  ],
+  "annotations": {
+    "org.opencontainers.image.created": "2026-11-12T08:14:29.452Z",
+    "org.opencontainers.image.description": "A virtual service between Kubernetes clusters at different sites",
+    "org.opencontainers.image.licenses": "Apache-2.0",
+    "org.opencontainers.image.revision": "8dea4ffa3c5339e583e0d3e5a44593fb8a5e1429",
+    "org.opencontainers.image.source": "https://github.com/takodotid/strait",
+    "org.opencontainers.image.title": "strait",
+    "org.opencontainers.image.url": "https://github.com/takodotid/strait",
+    "org.opencontainers.image.version": "1.4.0"
+  }
+}

@@ -5,6 +5,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -439,6 +441,83 @@ func TestImage(t *testing.T) {
 				t.Fatal(err)
 			}
 			err := run([]string{"-version", version, "-commit", commit, "-man", manDir(t), "image", tt.goarch, file}, &bytes.Buffer{})
+			wantErr(t, err, tt.want)
+		})
+	}
+}
+
+// The index of v1.4.0, as published, holds BuildKit's attestation manifests. The index of a build of ade11e2 with the
+// release's settings holds the platform images only.
+func TestIndex(t *testing.T) {
+	const (
+		v140, c140 = "v1.4.0", "8dea4ffa3c5339e583e0d3e5a44593fb8a5e1429"
+		v150, c150 = "v1.5.0", "ade11e2367ea8ff76e89830e38830adfb6fbdf87"
+	)
+	good, err := os.ReadFile("testdata/index-ade11e2.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// changed writes the good index with a change, and returns its file and its digest.
+	changed := func(t *testing.T, change func(map[string]any)) (string, string) {
+		var idx map[string]any
+		if err := json.Unmarshal(good, &idx); err != nil {
+			t.Fatal(err)
+		}
+		change(idx)
+		b, err := json.Marshal(idx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file := filepath.Join(t.TempDir(), "index.json")
+		if err := os.WriteFile(file, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return file, fmt.Sprintf("sha256:%x", sha256.Sum256(b))
+	}
+	manifests := func(idx map[string]any) []any { return idx["manifests"].([]any) }
+	for _, tt := range []struct {
+		name            string
+		version, commit string
+		change          func(map[string]any)
+		file, digest    string
+		want            string
+	}{
+		{name: "ade11e2", version: v150, commit: c150, file: "testdata/index-ade11e2.json",
+			digest: "sha256:397740dc8bfd114ee8d03e9b0eb5a24641bb9021f05c4ea72f9e9c5727dd0a78"},
+		{name: "v1.4.0", version: v140, commit: c140, file: "testdata/index-v1.4.0.json",
+			digest: "sha256:2f779679cb81a6a3f66ae5c2d12f4be06edfd683139b957bea7a82caeb2c5afd",
+			want:   "platform unknown/unknown, an attestation-manifest"},
+		{name: "another digest", version: v150, commit: c150, file: "testdata/index-ade11e2.json",
+			digest: "sha256:2f779679cb81a6a3f66ae5c2d12f4be06edfd683139b957bea7a82caeb2c5afd",
+			want:   "hashes to sha256:397740dc"},
+		{name: "unchanged", version: v150, commit: c150, change: func(map[string]any) {}},
+		{name: "another version", version: "v1.5.1", commit: c150, change: func(map[string]any) {},
+			want: `annotation org.opencontainers.image.version is "1.5.0", want "1.5.1"`},
+		{name: "another commit", version: v150, commit: c140, change: func(map[string]any) {},
+			want: `annotation org.opencontainers.image.revision is "` + c150},
+		{name: "no arm64", version: v150, commit: c150, change: func(idx map[string]any) {
+			idx["manifests"] = manifests(idx)[:1]
+		}, want: "lists the platforms [linux/amd64], want [linux/amd64 linux/arm64]"},
+		{name: "a third platform", version: v150, commit: c150, change: func(idx map[string]any) {
+			idx["manifests"] = append(manifests(idx), map[string]any{
+				"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": "sha256:00",
+				"platform": map[string]any{"os": "linux", "architecture": "arm", "variant": "v7"},
+			})
+		}, want: "lists the platforms [linux/amd64 linux/arm/v7 linux/arm64]"},
+		{name: "a Docker manifest", version: v150, commit: c150, change: func(idx map[string]any) {
+			manifests(idx)[1].(map[string]any)["mediaType"] = "application/vnd.docker.distribution.manifest.v2+json"
+		}, want: "linux/arm64 is \"application/vnd.docker.distribution.manifest.v2+json\""},
+		{name: "a Docker manifest list", version: v150, commit: c150, change: func(idx map[string]any) {
+			idx["mediaType"] = "application/vnd.docker.distribution.manifest.list.v2+json"
+		}, want: "index: media type"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			file, digest := tt.file, tt.digest
+			if tt.change != nil {
+				file, digest = changed(t, tt.change)
+			}
+			// The index needs no man pages.
+			err := run([]string{"-version", tt.version, "-commit", tt.commit, "index", digest, file}, &bytes.Buffer{})
 			wantErr(t, err, tt.want)
 		})
 	}
