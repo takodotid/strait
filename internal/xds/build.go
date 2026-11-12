@@ -46,7 +46,7 @@ const (
 	connectTimeout       = 2 * time.Second
 	checkInterval        = time.Second
 	checkTimeout         = 500 * time.Millisecond
-	unhealthyThreshold   = 5
+	unhealthyThreshold   = 2
 	healthyThreshold     = 2
 	keepaliveTime        = 30
 	keepaliveInterval    = 5
