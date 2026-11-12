@@ -159,7 +159,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		return fmt.Errorf("import controller: %w", err)
 	}
 	if err := (&controller.GatewayReconciler{
-		Client: writer, Reader: reader, Namespace: gatewayNamespace, Version: version.Version,
+		Client: writer, Reader: reader, APIReader: mgr.GetAPIReader(), Namespace: gatewayNamespace, Version: version.Version,
 		ConfigRejections: xdsServer.Rejections, Recorder: mgr.GetEventRecorder("strait-controller"),
 	}).SetupWithManager(mgr, gwChanges); err != nil {
 		return fmt.Errorf("gateway controller: %w", err)

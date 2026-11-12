@@ -58,6 +58,10 @@ const (
 type GatewayReconciler struct {
 	client.Client
 	Reader client.Reader
+	// APIReader reads from the API server, with no cache. A write of a gateway EndpointSlice that finds the cache
+	// behind the controller's own last write of it, as right after an address family change, reads the slice through
+	// APIReader, and writes again. Nil writes once.
+	APIReader client.Reader
 	// Namespace is the gateway's namespace.
 	Namespace string
 	// Version is the controller's version, written into the Site's status.
@@ -353,26 +357,36 @@ func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp st
 	}); err != nil {
 		return err
 	}
-	// An EndpointSlice's address type cannot change. A slice of the other family than the active pod's address is
-	// deleted, and written again (RFC#0005, requirement 24). The precondition keeps a delete from reaching a slice
-	// already written again, while the cache still shows the one before.
+	err := r.syncSlice(ctx, r.Client, name, ports, addr, node)
+	if r.APIReader != nil && (apierrors.IsConflict(err) || apierrors.IsAlreadyExists(err) || apierrors.IsNotFound(err)) {
+		err = r.syncSlice(ctx, liveReads{Client: r.Client, live: r.APIReader}, name, ports, addr, node)
+	}
+	return err
+}
+
+// syncSlice writes a gateway Service's EndpointSlice, with the slice that c reads as its base. An EndpointSlice's
+// address type cannot change. A slice of the other family than the active pod's address is deleted, and written again
+// (RFC#0005, requirement 24). The precondition keeps a delete from reaching a slice already written again, while the
+// cache still shows the one before: the delete then fails with a conflict, and syncService reads the slice live.
+func (r *GatewayReconciler) syncSlice(ctx context.Context, c client.Client, name string, ports []corev1.ServicePort, addr, node string) error {
+	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	at := addressType([]string{addr})
 	if addr != "" {
 		var cur discoveryv1.EndpointSlice
-		err := r.Get(ctx, client.ObjectKeyFromObject(es), &cur)
+		err := c.Get(ctx, client.ObjectKeyFromObject(es), &cur)
 		switch {
 		case err == nil && cur.AddressType != at:
-			if err := r.Delete(ctx, &cur, client.Preconditions{UID: &cur.UID}); client.IgnoreNotFound(err) != nil {
+			if err := c.Delete(ctx, &cur, client.Preconditions{UID: &cur.UID}); client.IgnoreNotFound(err) != nil {
 				return fmt.Errorf("replace the %s EndpointSlice of %s: %w", cur.AddressType, name, err)
 			}
 			replaced := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}, AddressType: at}
 			setGatewaySlice(replaced, name, ports, addr, node)
-			return r.Create(ctx, replaced)
+			return c.Create(ctx, replaced)
 		case err != nil && !apierrors.IsNotFound(err):
 			return err
 		}
 	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, es, func() error {
+	_, err := controllerutil.CreateOrUpdate(ctx, c, es, func() error {
 		if es.AddressType == "" {
 			es.AddressType = at
 		}

@@ -12,13 +12,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 )
@@ -567,5 +573,84 @@ func TestGatewayHandoverEvents(t *testing.T) {
 	}
 	if got := siteStatus(t, c).Gateway.ActivePod; got != "gateway-1" {
 		t.Errorf("activePod = %q", got)
+	}
+}
+
+// After the active pod's address changes family, the controller deletes the gateway slice and writes it again. While
+// its cache still shows the slice before, the next reconcile's delete fails its UID precondition. The controller then
+// reads the slice from the API server and keeps the one it wrote: GatewayServices stays True, and the slice is not
+// replaced a second time (RFC#0005 requirement 24; issue #64).
+func TestGatewaySliceUnderCacheLag(t *testing.T) {
+	objs := activeGatewayPod()
+	pod := objs[1].(*corev1.Pod)
+	pod.Status.PodIP = "10.0.9.9"
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := straitv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	uid := 0
+	// The fake client checks no UID precondition, and gives no UID: the API server does both.
+	api := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(objs, gatewaySite(straitv1.ServiceExposure{}))...).
+		WithStatusSubresource(&straitv1.Site{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				uid++
+				obj.SetUID(types.UID(fmt.Sprintf("uid-%d", uid)))
+				return c.Create(ctx, obj, opts...)
+			},
+			Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+				o := &client.DeleteOptions{}
+				o.ApplyOptions(opts)
+				if o.Preconditions != nil && o.Preconditions.UID != nil {
+					cur := obj.DeepCopyObject().(client.Object)
+					if err := c.Get(ctx, client.ObjectKeyFromObject(obj), cur); err == nil && cur.GetUID() != *o.Preconditions.UID {
+						return apierrors.NewConflict(schema.GroupResource{Group: "discovery.k8s.io", Resource: "endpointslices"}, obj.GetName(),
+							fmt.Errorf("Precondition failed: UID in precondition: %s, UID in object meta: %s", *o.Preconditions.UID, cur.GetUID()))
+					}
+				}
+				return c.Delete(ctx, obj, opts...)
+			},
+		}).Build()
+	cache := &laggingCache{Client: api}
+	r := &GatewayReconciler{Client: cache, Reader: cache, APIReader: api, Namespace: gatewayNamespace}
+	slice := func() discoveryv1.EndpointSlice {
+		t.Helper()
+		var es discoveryv1.EndpointSlice
+		if err := api.Get(context.Background(), types.NamespacedName{Namespace: gatewayNamespace, Name: GatewayDirectService}, &es); err != nil {
+			t.Fatal(err)
+		}
+		return es
+	}
+	reconcileGateway(t, r)
+	before := slice()
+
+	// The address changes family. The cache keeps the IPv4 slice from here on.
+	cache.freeze(t, &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: gatewayNamespace, Name: GatewayDirectService}})
+	if err := api.Get(context.Background(), client.ObjectKeyFromObject(pod), pod); err != nil {
+		t.Fatal(err)
+	}
+	pod.Status.PodIP = "fd00::9"
+	if err := api.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	reconcileGateway(t, r)
+	written := slice()
+	if written.AddressType != discoveryv1.AddressTypeIPv6 || written.UID == before.UID {
+		t.Fatalf("after the change: %s slice %s, want a new IPv6 slice", written.AddressType, written.UID)
+	}
+
+	for i := range 2 {
+		if _, err := r.Reconcile(context.Background(), ctrl.Request{}); err != nil {
+			t.Fatalf("reconcile %d under cache lag: %v", i, err)
+		}
+		if cond := meta.FindStatusCondition(siteStatus(t, api).Conditions, "GatewayServices"); cond == nil || cond.Status != metav1.ConditionTrue {
+			t.Fatalf("reconcile %d under cache lag: GatewayServices = %+v", i, cond)
+		}
+		if es := slice(); es.UID != written.UID || es.AddressType != discoveryv1.AddressTypeIPv6 || len(es.Endpoints) != 1 || es.Endpoints[0].Addresses[0] != "fd00::9" {
+			t.Fatalf("reconcile %d under cache lag: %s slice %s with %+v, want %s as written", i, es.AddressType, es.UID, es.Endpoints, written.UID)
+		}
 	}
 }
