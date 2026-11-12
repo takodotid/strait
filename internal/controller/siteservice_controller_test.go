@@ -116,6 +116,7 @@ func fakeClient(t *testing.T, objs ...client.Object) client.Client {
 		WithIndex(&straitv1.Export{}, IndexExportService, exportService).
 		WithIndex(&straitv1.Export{}, IndexGatewayPort, gatewayPortIndex).
 		WithIndex(&straitv1.Import{}, IndexGatewayPort, gatewayPortIndex).
+		WithIndex(&straitv1.SiteService{}, IndexMemberService, memberServices).
 		Build()
 }
 
@@ -1111,5 +1112,62 @@ func TestDeclarationUnmatchedCondition(t *testing.T) {
 	cond = meta.FindStatusCondition(st.Conditions, straitv1.ConditionDeclarationUnmatched)
 	if st.Route.Reason != straitv1.ReasonActive || cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "No"+straitv1.ConditionDeclarationUnmatched || cond.Message != "" {
 		t.Fatalf("route %+v, DeclarationUnmatched %+v; want Active and False", st.Route, cond)
+	}
+}
+
+// A change of an EndpointSlice requeues only the SiteServices whose members' plugin reads its Service: a declared
+// member's Service, each Service of a cnpg member's Cluster, and its Pooler. A slice of another Service, one with no
+// Service label, Strait's own slice of an application name, and a slice of another namespace requeue none
+// (RFC#0002 requirement 43; issue #64).
+func TestSliceRequeuesItsUsers(t *testing.T) {
+	web := webService("web-a")
+	pg := &straitv1.SiteService{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "pg"},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Plugin: straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: straitv1.CNPGRolePrimary}},
+			Members: []straitv1.Member{
+				{Name: "pg-a", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "pg-a", Pooler: "pg-a-pooler"}},
+				{Name: "pg-b", Site: "b", CNPG: &straitv1.CNPGMember{Cluster: "pg-b"}},
+			},
+		},
+	}
+	elsewhere := webService("web-a")
+	elsewhere.Namespace = "other"
+	r, _ := reconciler(t, readB, web, pg, elsewhere)
+
+	slice := func(namespace, service string) *discoveryv1.EndpointSlice {
+		es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: service + "-x"}}
+		if service != "" {
+			es.Labels = map[string]string{discoveryv1.LabelServiceName: service}
+		}
+		return es
+	}
+	for _, tc := range []struct {
+		name  string
+		slice *discoveryv1.EndpointSlice
+		want  []string
+	}{
+		{"a declared member's Service", slice("app", "web-a"), []string{"app/web"}},
+		{"a remote declared member's Service", slice("app", "web-b"), []string{"app/web"}},
+		{"a Cluster's rw Service", slice("app", "pg-a-rw"), []string{"app/pg"}},
+		{"a Cluster's ro Service", slice("app", "pg-a-ro"), []string{"app/pg"}},
+		{"a Cluster's r Service", slice("app", "pg-a-r"), []string{"app/pg"}},
+		{"a Pooler's Service", slice("app", "pg-a-pooler"), []string{"app/pg"}},
+		{"another Service", slice("app", "cache"), nil},
+		{"Strait's own slice of an application name", slice("app", "web"), nil},
+		{"no Service label", slice("app", ""), nil},
+		{"another namespace", slice("other", "web-a"), []string{"other/web"}},
+		{"a Service that only another namespace's members use", slice("other", "pg-a-rw"), nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, req := range r.usersOfSlice(context.Background(), tc.slice) {
+				got = append(got, req.String())
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("requeued %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
