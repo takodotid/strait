@@ -78,16 +78,24 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	}
 	// With externalTrafficPolicy Local, kube-proxy serves the direct Service only from an endpoint that names its node.
 	// The peer dials the one node of the site, which hosts the gateway.
+	// The gateway's policy admits the peer's node, on both networks, to the control and export ports and the
+	// WireGuard listen port. kindnet enforces it. The metrics admit a namespace that holds no pod, so no pod of the
+	// cluster reaches them (RFC0007 requirement 28).
+	p := e.peer(s)
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
 envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}}
 controller: {logLevel: debug, namespaces: [%s, %s]}
+networkPolicy:
+  metricsFrom: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]
+  gateway: {enabled: true, peerCIDRs: [%s/32, %s/32], wireGuardPorts: [%d]}
 site:
   name: %s
   spec:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
     gateway: {directService: {type: NodePort, externalTrafficPolicy: Local}}
-`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, dbNamespace, webNamespace, s.name, wireGuardSecret, pollInterval, peerTimeout)
+`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, dbNamespace, webNamespace, p.directIP, p.wanIP, wireGuardPort,
+		s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {
 		return err

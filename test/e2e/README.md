@@ -42,6 +42,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | SiteLinks | `b-direct` (cost 10), `b-wan` (wireguard, cost 100, waits) | `a-direct` (cost 10), `a-wan` (wireguard, cost 100, dials) |
 | `directService` | `NodePort`, `externalTrafficPolicy: Local` | same |
 | `controller.namespaces` | `db`, `web`: the controller writes Services and EndpointSlices there and in `strait-system` only | same |
+| `networkPolicy.gateway` | On. `peerCIDRs`: site b's node on both networks. `wireGuardPorts`: `32100`. `metricsFrom`: namespace `monitoring`, which holds no pod. kindnet enforces it. | The same, with site a's node |
 
 | Docker network | Subnet | Carries |
 |---|---|---|
@@ -59,7 +60,7 @@ They run in this order on one fixture and stop at the first failure.
 | # | Scenario | Checks |
 |---|---|---|
 | 1 | Baseline | Both sites route `pg` to `pg-a`. A write from each site lands on `cluster-a`. |
-| import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Without `port`, site b deletes the Service. |
+| import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Under the gateway's policy, a pod of site b reaches the active gateway pod's import port on the pod's address, and times out on 8091. Without `port`, site b deletes the Service. |
 | switch | A route change through nowhere | At site a, the `declared` SiteService `local` has two members on `web-a`, and its route moves from `one` to `two` in one decision. A watch of its EndpointSlices never sees both members at once. |
 | conflict | A Service-name conflict | Strait's Service `local` at site a loses its owner. Strait deletes `local`'s EndpointSlices, and `Routed` is False with `ServiceConflict`. Once that Service is deleted, Strait writes its own and the slice of `two` again. Then `local` is deleted. |
 | ports | Ports of objects created together | 8 `Export`s at site a and 8 `Import`s at site b, created in parallel, each get a gateway port. No two hold one port at any read, every 100ms. The race needs a reconcile before the cache shows the last port, so a build without the fix can pass. |

@@ -5,8 +5,10 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +71,7 @@ func (e *env) importService(ctx context.Context, t *testing.T) {
 	}
 	d := eventually(ctx, t, time.Minute, time.Second, "a request from site b to "+name+" reaches "+name, requestReaches(b, name, name))
 	e.times.record(t, "import/first-request", d)
+	gatewayPolicy(ctx, t, b, name)
 
 	base := imp.DeepCopy()
 	imp.Spec.Port = nil
@@ -85,6 +88,36 @@ func (e *env) importService(ctx context.Context, t *testing.T) {
 	if err := a.c.Delete(ctx, exp); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// gatewayPolicy: under the gateway's policy, a pod of the site reaches the active gateway pod's import port, on the
+// pod's address, and not the gateway agent's metrics, 8091, whose sources networkPolicy.metricsFrom names (RFC0007
+// requirement 28). The agent listens on 8091, so a timeout, not a refusal, is the policy.
+func gatewayPolicy(ctx context.Context, t *testing.T, s *site, importName string) {
+	t.Helper()
+	var st straitv1.Site
+	if err := s.c.Get(ctx, types.NamespacedName{Name: s.name}, &st); err != nil {
+		t.Fatal(err)
+	}
+	var imp straitv1.Import
+	if err := s.c.Get(ctx, types.NamespacedName{Namespace: webNamespace, Name: importName}, &imp); err != nil {
+		t.Fatal(err)
+	}
+	addr, port := st.Status.Gateway.Address, imp.Status.GatewayPort
+	if addr == "" || port == 0 {
+		t.Fatalf("site %s: gateway address %q, import port %d", s.name, addr, port)
+	}
+	curl := func(p int) (string, error) {
+		return s.kubectl(ctx, 15*time.Second, "-n", webNamespace, "exec", "deploy/"+webOf(s), "--",
+			"curl", "-sS", "--max-time", "3", "http://"+net.JoinHostPort(addr, strconv.Itoa(p))+"/hostname")
+	}
+	if out, err := curl(int(port)); err != nil || !strings.HasPrefix(strings.TrimSpace(out), importName+"-") {
+		t.Errorf("site %s: a pod to the gateway's import port %s:%d: %q, %v; want an answer from %s", s.name, addr, port, out, err, importName)
+	}
+	if out, err := curl(8091); err == nil || !strings.Contains(err.Error(), "(28)") {
+		t.Errorf("site %s: a pod to the gateway's metrics %s:8091: %q, %v; want a timeout, curl's exit 28", s.name, addr, out, err)
+	}
+	t.Logf("site %s: a pod reaches the gateway's import port %d, and not its metrics port 8091", s.name, port)
 }
 
 // portsTogether: Exports created at the same moment at site a, and Imports at site b, each get a gateway port that no
