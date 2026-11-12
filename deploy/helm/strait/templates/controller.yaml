@@ -63,6 +63,9 @@ spec:
             # Follows the read Roles of controller-rbac.yaml.
             - --namespaced-reads
             {{- end }}
+            {{- if .Values.cnpg.confirmRole.secretName }}
+            - --cnpg-role-credentials=/etc/strait/cnpg-role
+            {{- end }}
           env:
             - name: POD_NAMESPACE
               valueFrom:
@@ -85,6 +88,18 @@ spec:
             {{- include "strait.restricted" . | nindent 12 }}
           resources:
             {{- toYaml .Values.controller.resources | nindent 12 }}
+          {{- with .Values.cnpg.confirmRole.secretName }}
+          volumeMounts:
+            - {name: cnpg-role, mountPath: /etc/strait/cnpg-role, readOnly: true}
+      volumes:
+        # The user name and password of a PostgreSQL role with LOGIN and nothing else (RFC0003, requirement 14).
+        - name: cnpg-role
+          secret:
+            secretName: {{ . }}
+            items:
+              - {key: username, path: username}
+              - {key: password, path: password}
+          {{- end }}
 ---
 apiVersion: v1
 kind: Service

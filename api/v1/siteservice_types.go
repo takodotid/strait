@@ -141,9 +141,15 @@ type PluginSpec struct {
 }
 
 // CNPGPlugin sets the role the cnpg plugin routes to.
+// +kubebuilder:validation:XValidation:rule="!has(self.confirmRole) || !self.confirmRole || self.role == 'primary'",message="confirmRole applies to role primary only"
 type CNPGPlugin struct {
 	// Role is primary, replica or any.
 	Role CNPGRole `json:"role"`
+	// ConfirmRole asks each local member's database whether it is in recovery, and counts a member whose answer
+	// differs from its Cluster's role, or that does not answer, as Unknown. It needs the controller's role check
+	// credentials: a PostgreSQL role with LOGIN and nothing else. Role primary only. Off unless true.
+	// +optional
+	ConfirmRole bool `json:"confirmRole,omitempty"`
 }
 
 // DeclaredPlugin names the active member.

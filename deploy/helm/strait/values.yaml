@@ -96,6 +96,11 @@ site:
 # reason PluginDisabled (docs/getting-started.md).
 cnpg:
   enabled: true
+  confirmRole:
+    # A Secret in the release namespace with the keys username and password of a PostgreSQL role with LOGIN and
+    # nothing else. The controller reads it at each check of a SiteService with spec.plugin.cnpg.confirmRole.
+    # Empty: such members are Unknown (RFC0003).
+    secretName: ""
 
 # Objects of the Prometheus Operator (docs/metrics.md). Off by default: their CRDs must exist.
 metrics:

@@ -100,3 +100,17 @@ spec:
       cnpg:
         cluster: pg-a
         pooler: pg-a-ro
+---
+# The role confirmed with the database (RFC#0003, requirement 14).
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: pg-confirmed
+  namespace: app
+spec:
+  mode: Single
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: primary, confirmRole: true}}
+  members:
+    - {name: pg-a, site: a, cnpg: {cluster: pg-a}}
+    - {name: pg-b, site: b, cnpg: {cluster: pg-b}}

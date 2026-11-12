@@ -228,6 +228,7 @@ spec:
 | `metadata.name`, `metadata.namespace` | The application name: Service `pg` in namespace `app`. Strait creates and owns it. |
 | `spec.mode: Single` | Route to the one writable member. |
 | `spec.plugin.cnpg.role: primary` | Observe CloudNativePG `Cluster`s, and route to the primary. |
+| `spec.plugin.cnpg.confirmRole` | Optional, off unless `true`. Also ask each local database `pg_is_in_recovery()`, and count a member as `Unknown` when the answer disagrees with the `Cluster`, or there is none. Needs a role with `LOGIN` and nothing else, and its Secret named in the chart value `cnpg.confirmRole.secretName`. [RFC0003, Confirming the role](../rfcs/RFC0003.md#cnpg-confirming-the-role). |
 | `spec.members` | One member per `Cluster`, with the site that hosts it. Each site observes only its own members. |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
 | `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. A site that comes back still primary after being lost then does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |

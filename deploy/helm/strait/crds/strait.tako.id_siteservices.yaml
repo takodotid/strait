@@ -137,6 +137,12 @@ spec:
                   cnpg:
                     description: CNPG observes CloudNativePG clusters.
                     properties:
+                      confirmRole:
+                        description: |-
+                          ConfirmRole asks each local member's database whether it is in recovery, and counts a member whose answer
+                          differs from its Cluster's role, or that does not answer, as Unknown. It needs the controller's role check
+                          credentials: a PostgreSQL role with LOGIN and nothing else. Role primary only. Off unless true.
+                        type: boolean
                       role:
                         description: Role is primary, replica or any.
                         enum:
@@ -147,6 +153,10 @@ spec:
                     required:
                     - role
                     type: object
+                    x-kubernetes-validations:
+                    - message: confirmRole applies to role primary only
+                      rule: '!has(self.confirmRole) || !self.confirmRole || self.role
+                        == ''primary'''
                   declared:
                     description: Declared takes the active member from this spec.
                     properties:
@@ -547,6 +557,12 @@ spec:
                   cnpg:
                     description: CNPG observes CloudNativePG clusters.
                     properties:
+                      confirmRole:
+                        description: |-
+                          ConfirmRole asks each local member's database whether it is in recovery, and counts a member whose answer
+                          differs from its Cluster's role, or that does not answer, as Unknown. It needs the controller's role check
+                          credentials: a PostgreSQL role with LOGIN and nothing else. Role primary only. Off unless true.
+                        type: boolean
                       role:
                         description: Role is primary, replica or any.
                         enum:
@@ -557,6 +573,10 @@ spec:
                     required:
                     - role
                     type: object
+                    x-kubernetes-validations:
+                    - message: confirmRole applies to role primary only
+                      rule: '!has(self.confirmRole) || !self.confirmRole || self.role
+                        == ''primary'''
                   declared:
                     description: Declared takes the active member from this spec.
                     properties:

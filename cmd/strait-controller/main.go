@@ -53,6 +53,7 @@ func main() {
 	var (
 		metricsAddr, probeAddr, observationsAddr, xdsAddr string
 		gatewayNamespace, observationsService, namespaces string
+		roleCredentials                                   string
 		leaderElect, cnpg, namespacedReads                bool
 	)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Address of the metrics endpoint.")
@@ -65,6 +66,7 @@ func main() {
 	flag.StringVar(&namespaces, "namespaces", "", "Comma-separated namespaces where the controller writes Services and EndpointSlices, besides --gateway-namespace. Empty writes in every namespace. The chart sets it from controller.namespaces, which grants the writes.")
 	flag.BoolVar(&namespacedReads, "namespaced-reads", false, "Read Services, EndpointSlices and CloudNativePG's objects only in --namespaces and --gateway-namespace, so that the controller's cache holds only theirs. Needs --namespaces. The chart sets it from controller.namespacedReads, which grants those reads there only.")
 	flag.BoolVar(&cnpg, "cnpg", true, "Watch and read CloudNativePG's kinds, when their CRDs exist. False reports every member of the cnpg plugin Unknown. The chart sets it from cnpg.enabled, which grants the read.")
+	flag.StringVar(&roleCredentials, "cnpg-role-credentials", "", "Directory with the files username and password of a PostgreSQL role with LOGIN and nothing else, for spec.plugin.cnpg.confirmRole. Empty: such members are Unknown. The chart sets it from cnpg.confirmRole.secretName.")
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -87,7 +89,7 @@ func main() {
 		debug.SetMemoryLimit(limit)
 		log.Info("Go memory limit", "bytes", limit)
 	}
-	if err := run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, leaderElect, cnpg, writes, reads); err != nil {
+	if err := run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, roleCredentials, leaderElect, cnpg, writes, reads); err != nil {
 		log.Error(err, "controller stopped")
 		os.Exit(1)
 	}
@@ -95,7 +97,7 @@ func main() {
 
 // run runs the controller. It writes Services and EndpointSlices in namespaces only, and reads them, and
 // CloudNativePG's objects, in reads only. Either empty means every namespace.
-func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService string, leaderElect, cnpg bool, namespaces, reads []string) error {
+func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, observationsService, roleCredentials string, leaderElect, cnpg bool, namespaces, reads []string) error {
 	log := ctrl.Log.WithName("setup")
 	log.Info("starting", "version", version.Version)
 	scheme := runtime.NewScheme()
@@ -147,7 +149,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		Peers:     poller,
 		Local:     local,
 		Now:       time.Now,
-		Plugins:   plugin.Options{CNPGOff: !cnpg},
+		Plugins:   plugin.Options{CNPGOff: !cnpg, Roles: roleChecker(roleCredentials)},
 	}
 	if err := siteServices.SetupWithManager(mgr, ssChanges, watchCNPG); err != nil {
 		return fmt.Errorf("siteservice controller: %w", err)
@@ -508,3 +510,12 @@ type leader struct{ manager.Runnable }
 func (leader) NeedLeaderElection() bool { return true }
 
 func leaderOnly(r manager.Runnable) manager.Runnable { return leader{r} }
+
+// roleChecker returns the checker of spec.plugin.cnpg.confirmRole: nil with no credentials, so that such members are
+// Unknown.
+func roleChecker(dir string) plugin.RoleChecker {
+	if dir == "" {
+		return nil
+	}
+	return plugin.PGRoleChecker{Dir: dir}
+}

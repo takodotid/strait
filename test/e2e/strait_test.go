@@ -71,6 +71,15 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 		return fmt.Errorf("secret %s: %w", wireGuardSecret, err)
 	}
 	s.wgPublicKey = key.PublicKey().String()
+	// The controller's credentials for spec.plugin.cnpg.confirmRole. Step role-check creates the role.
+	role := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: roleSecret, Namespace: straitNamespace},
+		Type:       corev1.SecretTypeBasicAuth,
+		StringData: map[string]string{"username": roleUser, "password": e.rolePassword},
+	}
+	if err := s.c.Create(ctx, role); err != nil {
+		return fmt.Errorf("secret %s: %w", roleSecret, err)
+	}
 
 	i := strings.LastIndex(e.image, ":")
 	if i < 0 || strings.Contains(e.image[i:], "/") {
@@ -85,6 +94,7 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
 envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}, drainTimeSeconds: %d}
 controller: {logLevel: debug, namespaces: [%s, %s]}
+cnpg: {confirmRole: {secretName: %s}}
 networkPolicy:
   metricsFrom: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]
   gateway: {enabled: true, peerCIDRs: [%s/32, %s/32], wireGuardPorts: [%d]}
@@ -94,7 +104,7 @@ site:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
     gateway: {directService: {type: NodePort, externalTrafficPolicy: Local}}
-`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, envoyDrainSeconds, dbNamespace, webNamespace, p.directIP, p.wanIP, wireGuardPort,
+`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, envoyDrainSeconds, dbNamespace, webNamespace, roleSecret, p.directIP, p.wanIP, wireGuardPort,
 		s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {

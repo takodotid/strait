@@ -384,3 +384,83 @@ func TestCNPGOff(t *testing.T) {
 		t.Errorf("declared %q, conflicting %v; want none", rep.Declared, rep.Conflicting)
 	}
 }
+
+// roles is a fake database: whether each address is in recovery, or an error.
+type roles struct {
+	inRecovery map[string]bool
+	err        error
+	asked      []string
+}
+
+func (f *roles) InRecovery(_ context.Context, address string, port int32) (bool, error) {
+	f.asked = append(f.asked, address)
+	if f.err != nil {
+		return false, f.err
+	}
+	if port != 5432 {
+		return false, errors.New("wrong port")
+	}
+	r, ok := f.inRecovery[address]
+	if !ok {
+		return false, errors.New("no such address")
+	}
+	return r, nil
+}
+
+// With confirmRole, a Stable member counts only while each ready address of its Cluster's -rw Service answers
+// pg_is_in_recovery() as its role says. A disagreement, a failed check or missing credentials make it Unknown. A
+// member that is moving is not checked (RFC0003, requirement 14).
+func TestCNPGConfirmRole(t *testing.T) {
+	now := time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
+	primary := clusterObject("cluster-a", map[string]any{"replica": map[string]any{"primary": "cluster-a", "source": "cluster-b"}}, reported("cluster-a-1", true))
+	replica := clusterObject("cluster-a", map[string]any{"replica": map[string]any{"primary": "cluster-b", "source": "cluster-b"}}, reported("cluster-a-1", false))
+	moving := clusterObject("cluster-a", map[string]any{"replica": map[string]any{"primary": "cluster-a", "source": "cluster-b"}}, func() map[string]any {
+		s := reported("cluster-a-1", true)
+		s["phase"] = "Switchover in progress"
+		return s
+	}())
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		cluster *unstructured.Unstructured
+		roles   RoleChecker
+		confirm bool
+		state   straitv1.State
+		reason  string
+		asked   bool
+	}{
+		{"off: not checked", primary, &roles{err: errors.New("must not be asked")}, false, straitv1.StateStable, "PrimaryCluster", false},
+		{"primary confirmed", primary, &roles{inRecovery: map[string]bool{"10.0.0.1": false}}, true, straitv1.StateStable, "PrimaryCluster", true},
+		{"primary in recovery", primary, &roles{inRecovery: map[string]bool{"10.0.0.1": true}}, true, straitv1.StateUnknown, "RoleMismatch: ", true},
+		{"replica confirmed", replica, &roles{inRecovery: map[string]bool{"10.0.0.1": true}}, true, straitv1.StateStable, "ReplicaCluster", true},
+		{"replica out of recovery", replica, &roles{inRecovery: map[string]bool{"10.0.0.1": false}}, true, straitv1.StateUnknown, "RoleMismatch: ", true},
+		{"no answer", primary, &roles{err: errors.New("timeout")}, true, straitv1.StateUnknown, "RoleNotConfirmed: ", true},
+		{"no credentials", primary, nil, true, straitv1.StateUnknown, "RoleNotConfirmed: ", false},
+		{"moving: not checked", moving, &roles{err: errors.New("must not be asked")}, true, straitv1.StateTransitioning, "Phase: ", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := append(service("cluster-a-rw", "10.0.0.1"), tt.cluster.DeepCopy())
+			r := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+			svc := siteService(straitv1.CNPGRolePrimary)
+			svc.Spec.Plugin.CNPG.ConfirmRole = tt.confirm
+			p := CNPG{}
+			if tt.roles != nil {
+				p.Roles = tt.roles
+			}
+			o := p.Observe(context.Background(), r, svc, "a", now).Members["pg-a"]
+			if o.State != tt.state || !strings.HasPrefix(o.Reason, tt.reason) {
+				t.Fatalf("state=%s reason=%q, want %s %q", o.State, o.Reason, tt.state, tt.reason)
+			}
+			if o.State == straitv1.StateUnknown && (o.Role != straitv1.RoleUnknown || o.Eligible) {
+				t.Errorf("an Unknown member has role %s, eligible %v", o.Role, o.Eligible)
+			}
+			if f, ok := tt.roles.(*roles); ok && (len(f.asked) > 0) != tt.asked {
+				t.Errorf("asked %v, want asked %v", f.asked, tt.asked)
+			}
+		})
+	}
+}

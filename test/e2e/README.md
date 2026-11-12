@@ -42,6 +42,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | SiteLinks | `b-direct` (cost 10), `b-wan` (wireguard, cost 100, waits) | `a-direct` (cost 10), `a-wan` (wireguard, cost 100, dials) |
 | `directService` | `NodePort`, `externalTrafficPolicy: Local` | same |
 | `controller.namespaces` | `db`, `web`: the controller writes Services and EndpointSlices there and in `strait-system` only | same |
+| `cnpg.confirmRole.secretName` | `strait-cnpg-role`: the user name and a random password of `strait_role_check` | same |
 | `envoy.drainTimeSeconds` | `2`: a closed `Import` ends its sessions after 2s | same |
 | `networkPolicy.gateway` | On. `peerCIDRs`: site b's node on both networks. `wireGuardPorts`: `32100`. `metricsFrom`: namespace `monitoring`, which holds no pod. kindnet enforces it. | The same, with site a's node |
 
@@ -61,6 +62,7 @@ They run in this order on one fixture and stop at the first failure.
 | # | Scenario | Checks |
 |---|---|---|
 | 1 | Baseline | Both sites route `pg` to `pg-a`. A write from each site lands on `cluster-a`. |
+| role-check | Role confirmed with the database | `confirmRole` on `pg` at site a, with the role `strait_role_check` (`LOGIN` only) created on `cluster-a`. `pg-a` stays routed. With the role's password changed, `pg-a` is `Unknown` with `RoleNotConfirmed`, and site a routes nowhere once `unknownHold` has passed. With the password back, both sites route `pg-a`. `confirmRole` is off afterwards. |
 | import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Under the gateway's policy, a pod of site b reaches the active gateway pod's import port on the pod's address, and times out on 8091. Without `port`, site b deletes the Service. |
 | switch | A route change through nowhere | At site a, the `declared` SiteService `local` has two members on `web-a`, and its route moves from `one` to `two` in one decision. A watch of its EndpointSlices never sees both members at once. |
 | conflict | A Service-name conflict | Strait's Service `local` at site a loses its owner. Strait deletes `local`'s EndpointSlices, and `Routed` is False with `ServiceConflict`. Once that Service is deleted, Strait writes its own and the slice of `two` again. Then `local` is deleted. |

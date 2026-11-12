@@ -614,6 +614,34 @@ func TestNamespacesFlagFollowsValue(t *testing.T) {
 	}
 }
 
+// The controller gets confirmRole's credentials as files from the Secret that cnpg.confirmRole.secretName names, and
+// no Secret without it (RFC0003, requirement 14).
+func TestRoleCredentialsFollowValue(t *testing.T) {
+	for _, tt := range []struct {
+		set    []string
+		secret string
+	}{
+		{nil, ""},
+		{[]string{"cnpg.confirmRole.secretName=pg-role"}, "pg-role"},
+	} {
+		pod := render(t, tt.set...).pods["strait-controller"]
+		c := pod.Spec.Containers[0]
+		flag := slices.Contains(c.Args, "--cnpg-role-credentials=/etc/strait/cnpg-role")
+		var secret string
+		for _, v := range pod.Spec.Volumes {
+			if v.Secret != nil {
+				secret = v.Secret.SecretName
+			}
+		}
+		mounted := slices.ContainsFunc(c.VolumeMounts, func(m corev1.VolumeMount) bool {
+			return m.MountPath == "/etc/strait/cnpg-role" && m.ReadOnly
+		})
+		if want := tt.secret != ""; flag != want || mounted != want || secret != tt.secret {
+			t.Errorf("%v: flag %v, mounted %v, secret %q; want %v, %v, %q", tt.set, flag, mounted, secret, want, want, tt.secret)
+		}
+	}
+}
+
 // Envoy's drain time is its default unless envoy.drainTimeSeconds sets it (RFC0005).
 func TestDrainTimeFollowsValue(t *testing.T) {
 	for _, tt := range []struct {

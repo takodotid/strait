@@ -542,3 +542,16 @@ spec:
     - {name: a, site: a, service: {name: web, port: 80}}
   policy:
     connections: Close
+---
+# want: spec.plugin.cnpg: Invalid value: "object": confirmRole applies to role primary only
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: confirm-role-replica
+  namespace: app
+spec:
+  mode: Set
+  port: {name: postgres, port: 5432}
+  plugin: {cnpg: {role: replica, confirmRole: true}}
+  members:
+    - {name: a, site: a, cnpg: {cluster: pg-a}}
