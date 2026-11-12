@@ -144,7 +144,7 @@ Each release publishes:
 | CLI archives for Linux, macOS and Windows, amd64 and arm64, with `SHA256SUMS` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 | The CRDs, in one file: `strait-crds.yaml` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 
-Each site needs Kubernetes 1.31 or later. The CRDs' validation rules use the CEL functions `isIP` and `isCIDR`, and the API server of 1.30 or earlier refuses the CRDs. `make test` runs the CRDs' rules on Kubernetes 1.31.0 and 1.37.0.
+Each site needs Kubernetes 1.31 or later. The CRDs' validation rules use the CEL functions `isIP` and `isCIDR`, and the API server of 1.30 or earlier refuses the CRDs. `make test` runs the CRDs' rules on the oldest and the latest version, as the `Makefile`'s `ENVTEST_K8S_VERSIONS` names them.
 
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
