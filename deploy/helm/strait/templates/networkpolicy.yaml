@@ -35,8 +35,10 @@ spec:
 {{- end }}
 {{- if .Values.networkPolicy.gateway.enabled }}
 ---
-# The gateway pods admit the pods of this cluster, which reach imports and poll peers through the gateway, and the peer
-# gateways. The probe port admits every source, as the controller's does: some CNIs enforce policies on host traffic.
+# The gateway pods admit the pods of this cluster to the import and export ports, the controller to the peer port,
+# through which it polls peers, and the peer gateways. The probe port admits every source, as the controller's does:
+# some CNIs enforce policies on host traffic.
+{{- $ports := include "strait.gatewayPorts" . | fromJson }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -61,8 +63,20 @@ spec:
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    # Clients of imports and exports.
     - from:
         - namespaceSelector: {}
+      ports:
+        - {{ include "strait.policyPorts" $ports.importPorts }}
+        - {{ include "strait.policyPorts" $ports.exportPorts }}
+    # The controller, which polls peers through the peer port.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: strait
+              app.kubernetes.io/component: controller
+      ports:
+        - {port: {{ int $ports.peerPort }}}
     {{- with .Values.networkPolicy.gateway.peerCIDRs }}
     - from:
         {{- range . }}

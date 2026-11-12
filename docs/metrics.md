@@ -46,7 +46,7 @@ scrape_configs:
         target_label: pod
 ```
 
-The metrics are plain HTTP. `networkPolicy.metricsFrom` limits the sources that reach the controller's port 8080 and, with `networkPolicy.gateway.enabled`, the gateway's port 8091. The gateway's policy also admits every pod of the cluster to each of its ports ([RFC0007](../rfcs/RFC0007.md#network-policies)).
+The metrics are plain HTTP. `networkPolicy.metricsFrom` limits the sources that reach the controller's port 8080 and, with `networkPolicy.gateway.enabled`, the gateway's port 8091 ([RFC0007](../rfcs/RFC0007.md#network-policies)).
 
 ## Controller
 
