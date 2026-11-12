@@ -105,6 +105,7 @@ Multiple              False   NoMultipleWritable      12m    -
 DeclarationsDisagree  False   NoDeclarationsDisagree  12m    -
 Held                  False   NoHeldUnknown           12m    -
 Applied               True    Synced                  12m    -
+DeclarationUnmatched  False   NoDeclarationUnmatched  12m    -
 ```
 
 ## Status

@@ -885,3 +885,42 @@ func TestLocalWorkloadsDisagree(t *testing.T) {
 		t.Errorf("message = %q, want %q", got.Message, want)
 	}
 }
+
+// Each declaration of a known site, or of its workloads, that is no member's name shows in Unmatched, in site order.
+// A stale peer's does not, and Set mode has none. The route is the one the table gives (RFC#0002 requirement 42;
+// issue #64).
+func TestUnmatchedDeclarations(t *testing.T) {
+	single := pgSpec(straitv1.RouteNowhere, hold, "a", "b")
+	pg := observations(writable("pg-a", "a"), replica("pg-b", "b"))
+	for _, tc := range []struct {
+		name      string
+		spec      straitv1.SiteServiceSpec
+		obs       map[string]observe.Observation
+		sites     map[string]decide.SiteView
+		reason    string
+		unmatched []string
+	}{
+		{"every declaration names a member", single, pg,
+			map[string]decide.SiteView{"a": declares("pg-a"), "b": declares("pg-a")}, straitv1.ReasonActive, nil},
+		{"the local site declares a self name", single, pg,
+			map[string]decide.SiteView{"a": declares("site-a"), "b": {Known: true}}, straitv1.ReasonNotDeclared, []string{"site a declares site-a"}},
+		{"two sites declare names that are no member's", single, pg,
+			map[string]decide.SiteView{"a": declares("x"), "b": declares("y")}, straitv1.ReasonDeclarationsDisagree,
+			[]string{"site a declares x", "site b declares y"}},
+		{"the local workloads declare two names", single, pg,
+			map[string]decide.SiteView{"a": {Known: true, Conflicting: []string{"pg-a", "z"}}, "b": {Known: true}},
+			straitv1.ReasonDeclarationsDisagree, []string{"the workloads of site a declare z"}},
+		{"a stale peer", single, pg,
+			map[string]decide.SiteView{"a": declares("pg-a"), "b": stale("y")}, straitv1.ReasonActive, nil},
+		{"Set mode", setSpec(straitv1.Any, straitv1.RouteNowhere),
+			observations(replica("r-a1", "a"), replica("r-a2", "a"), replica("r-b1", "b")),
+			map[string]decide.SiteView{"a": declares("x"), "b": {Known: true}}, straitv1.ReasonEligible, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := decide.Decide(decide.Input{Spec: tc.spec, LocalSite: "a", Sites: tc.sites, Observations: tc.obs, Now: now})
+			if got.Reason != tc.reason || !slices.Equal(got.Unmatched, tc.unmatched) {
+				t.Fatalf("reason %s (%s), unmatched %q; want %s, %q", got.Reason, got.Message, got.Unmatched, tc.reason, tc.unmatched)
+			}
+		})
+	}
+}

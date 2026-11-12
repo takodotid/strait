@@ -1049,3 +1049,67 @@ func TestDecisionsRecordTheirTime(t *testing.T) {
 		t.Fatalf("after the delete: %v", got)
 	}
 }
+
+// A CloudNativePG Cluster whose .spec.replica.self is not its own name declares a primary that is no member's name.
+// The route stays as the decision gives it, nowhere with NotDeclared. The condition DeclarationUnmatched is True,
+// says which site declares what, and what the Cluster must set, and a Warning event fires once. Once the Cluster
+// leaves self unset, the condition is False (RFC#0002 requirement 42, RFC#0003 requirement 7; issue #64).
+func TestDeclarationUnmatchedCondition(t *testing.T) {
+	svc := &straitv1.SiteService{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web", UID: "uid-web"},
+		Spec: straitv1.SiteServiceSpec{
+			Mode:   straitv1.ModeSingle,
+			Port:   straitv1.ServicePort{Name: "postgres", Port: 5432},
+			Plugin: straitv1.PluginSpec{CNPG: &straitv1.CNPGPlugin{Role: straitv1.CNPGRolePrimary}},
+			Members: []straitv1.Member{
+				{Name: "pg-a", Site: "a", CNPG: &straitv1.CNPGMember{Cluster: "pg-a"}},
+				{Name: "pg-b", Site: "b", CNPG: &straitv1.CNPGMember{Cluster: "pg-b"}},
+			},
+			Policy: straitv1.Policy{Multiple: straitv1.RouteNowhere, UnknownHold: metav1.Duration{Duration: 10 * time.Second}},
+		},
+	}
+	rw := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "pg-a-rw"}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "postgres", Port: 5432}}}}
+	rwSlice := &discoveryv1.EndpointSlice{
+		ObjectMeta:  metav1.ObjectMeta{Namespace: "app", Name: "pg-a-rw-x", Labels: map[string]string{discoveryv1.LabelServiceName: "pg-a-rw"}},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Ports:       []discoveryv1.EndpointPort{{Name: ptr.To("postgres"), Port: ptr.To[int32](5432)}},
+		Endpoints:   []discoveryv1.Endpoint{{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)}}},
+	}
+	cluster := cnpgCluster("pg-a", "site-a", true)
+	if err := unstructured.SetNestedField(cluster.Object, "site-a", "spec", "replica", "self"); err != nil {
+		t.Fatal(err)
+	}
+	r, c := reconciler(t, readB, site("a", "10.0.9.9"), svc, rw, rwSlice, cluster)
+	run(t, r)
+
+	st := status(t, c)
+	if st.Route.Reason != straitv1.ReasonNotDeclared || len(st.Route.Members) != 0 || st.Route.Message != "pg-a is writable but sites declare site-a" {
+		t.Fatalf("route = %+v, want nowhere with NotDeclared, as without the condition", st.Route)
+	}
+	cond := meta.FindStatusCondition(st.Conditions, straitv1.ConditionDeclarationUnmatched)
+	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != straitv1.ConditionDeclarationUnmatched ||
+		!strings.HasPrefix(cond.Message, "site a declares site-a: no member has that name") ||
+		!strings.Contains(cond.Message, ".spec.replica.self unset or set it to its own name") {
+		t.Fatalf("DeclarationUnmatched = %+v", cond)
+	}
+	if w := warnings(r); !slices.ContainsFunc(w, func(e string) bool {
+		return strings.HasPrefix(e, "Warning "+straitv1.ConditionDeclarationUnmatched+" ")
+	}) {
+		t.Fatalf("Warning events %v, want one with reason %s", w, straitv1.ConditionDeclarationUnmatched)
+	}
+
+	// self unset: the Cluster declares its own name, which is a member's.
+	unstructured.RemoveNestedField(cluster.Object, "spec", "replica", "self")
+	if err := unstructured.SetNestedField(cluster.Object, "pg-a", "spec", "replica", "primary"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Update(context.Background(), cluster); err != nil {
+		t.Fatal(err)
+	}
+	run(t, r)
+	st = status(t, c)
+	cond = meta.FindStatusCondition(st.Conditions, straitv1.ConditionDeclarationUnmatched)
+	if st.Route.Reason != straitv1.ReasonActive || cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "No"+straitv1.ConditionDeclarationUnmatched || cond.Message != "" {
+		t.Fatalf("route %+v, DeclarationUnmatched %+v; want Active and False", st.Route, cond)
+	}
+}
