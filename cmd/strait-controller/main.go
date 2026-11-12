@@ -144,7 +144,7 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 		Reader:    reader,
 		APIReader: mgr.GetAPIReader(),
 		Recorder:  mgr.GetEventRecorder("strait-controller"),
-		Peers:     startedAtLastSpecChange{Peers: poller, live: mgr.GetAPIReader()},
+		Peers:     poller,
 		Local:     local,
 		Now:       time.Now,
 		Plugins:   plugin.Options{CNPGOff: !cnpg},
@@ -313,33 +313,6 @@ func cnpgWatched(on bool, mapper meta.RESTMapper) bool {
 	}
 	_, err := mapper.RESTMapping(controller.CNPGCluster.GroupKind(), controller.CNPGCluster.Version)
 	return err == nil
-}
-
-// startedAtLastSpecChange is TEMPORARY (issue #64): it removes the guard of RFC0002 requirement 32, so that the
-// end-to-end step 7-two-writable can be seen to fail. The time polling began is no longer the controller's own, in
-// memory: it is the last change of any SiteService's spec, which outlives a restart.
-type startedAtLastSpecChange struct {
-	controller.Peers
-	live client.Reader
-}
-
-func (s startedAtLastSpecChange) Started() time.Time {
-	var list straitv1.SiteServiceList
-	if err := s.live.List(context.Background(), &list); err != nil {
-		return s.Peers.Started()
-	}
-	var last time.Time
-	for _, ss := range list.Items {
-		for _, mf := range ss.ManagedFields {
-			if mf.Subresource == "" && mf.Time != nil && mf.Time.After(last) {
-				last = mf.Time.Time
-			}
-		}
-	}
-	if last.IsZero() {
-		return s.Peers.Started()
-	}
-	return last
 }
 
 // localDocument returns the site's document as now gives it. A member observed longer ago than the site's peerTimeout

@@ -27,6 +27,7 @@ The test prints each site's kubeconfig path and context at start. It never reads
 | kubectl, helm | recent |
 | Go | as in `go.mod` |
 | `wireguard` kernel module | loaded on the host (`sudo modprobe wireguard`) |
+| `nf_tables` | in the host's kernel: the gateway agent filters its WireGuard interfaces' traffic with it ([RFC0005](../../rfcs/RFC0005.md#wireguard)) |
 
 The host needs network access to pull the images and the CloudNativePG manifest. CloudNativePG's operator Deployment pulls with `imagePullPolicy: Always`, so its node checks the registry even though the image is loaded.
 
