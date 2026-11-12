@@ -62,7 +62,7 @@ func (s *site) set(doc Document, serve func(http.ResponseWriter, *http.Request))
 func siteDocument(name string, members ...observe.Observation) Document {
 	l := &Local{}
 	l.SetService("app", "pg", "pg-a", members)
-	l.SetExport("app", "pg-"+name, 30901, true)
+	l.SetExport("app", "pg-"+name, 30901, true, at)
 	return l.Document(name, at, 0)
 }
 
@@ -362,7 +362,7 @@ func TestNoChangeFromAPublisherAtRest(t *testing.T) {
 		o := obs("pg-b", "b")
 		o.ObservedAt = now
 		publisher.SetService("app", "pg", "pg-b", []observe.Observation{o})
-		publisher.SetExport("app", "pg-pg-b", 30901, true)
+		publisher.SetExport("app", "pg-pg-b", 30901, true, now)
 		return publisher.Document("b", now, 6*time.Second)
 	}
 	s, srv := newSite(t, "b", publish(at))

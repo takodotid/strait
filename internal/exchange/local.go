@@ -19,11 +19,17 @@ type localService struct {
 	members  []observe.Observation
 }
 
+// localExport is an Export's entry and when its readiness was last read.
+type localExport struct {
+	Export
+	at time.Time
+}
+
 // Local holds what this site publishes. It is safe for concurrent use.
 type Local struct {
 	mu       sync.Mutex
 	services map[key]localService
-	exports  map[key]Export
+	exports  map[key]localExport
 }
 
 // SetService sets a SiteService's declaration and its local members' observations.
@@ -49,14 +55,14 @@ func (l *Local) DeleteService(namespace, name string) {
 	delete(l.services, key{namespace, name})
 }
 
-// SetExport sets an Export's gateway port and readiness.
-func (l *Local) SetExport(namespace, name string, port int32, ready bool) {
+// SetExport sets an Export's gateway port, and its readiness as read at the time given.
+func (l *Local) SetExport(namespace, name string, port int32, ready bool, at time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.exports == nil {
-		l.exports = map[key]Export{}
+		l.exports = map[key]localExport{}
 	}
-	l.exports[key{namespace, name}] = Export{Namespace: namespace, Name: name, Port: port, Ready: ready}
+	l.exports[key{namespace, name}] = localExport{Export{Namespace: namespace, Name: name, Port: port, Ready: ready}, at}
 }
 
 // DeleteExport removes an Export.
@@ -74,12 +80,17 @@ const ReasonObservationStale = "ObservationStale"
 // 2s, and the decisions of every SiteService share one worker. A shorter limit would age the members of a healthy site.
 const MinAgeLimit = 6 * time.Second
 
+// ExportRefresh is the longest time between two reads of an Export's readiness while nothing changes. The reconcile
+// of an Export also comes at each change of its Service's EndpointSlices.
+const ExportRefresh = 30 * time.Second
+
 // Document returns the document of the site, sorted by namespace and name.
 // A SiteService with no member at the site is left out.
 // A member whose last observation is older than maxAge at now, or than MinAgeLimit if that is more, is published as
 // Unknown, with no address, so that a reconcile that hangs does not keep an old observation fresh at the peers
-// (RFC#0004). Its declaration stays as last observed. A maxAge of 0 ages nothing. now must come from time.Now, and so
-// must the observation times, so that the age is measured on the monotonic clock.
+// (RFC#0004). Its declaration stays as last observed. An Export whose readiness was last read longer ago than
+// ExportRefresh and that limit is published not ready, with its port. A maxAge of 0 ages nothing. now must come from
+// time.Now, and so must the observation times, so that the age is measured on the monotonic clock.
 func (l *Local) Document(site string, now time.Time, maxAge time.Duration) Document {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -112,7 +123,10 @@ func (l *Local) Document(site string, now time.Time, maxAge time.Duration) Docum
 		d.Services = append(d.Services, svc)
 	}
 	for _, e := range l.exports {
-		d.Exports = append(d.Exports, e)
+		if maxAge > 0 && now.Sub(e.at) > ExportRefresh+maxAge {
+			e.Ready = false
+		}
+		d.Exports = append(d.Exports, e.Export)
 	}
 	slices.SortFunc(d.Services, func(a, b Service) int {
 		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))

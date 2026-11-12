@@ -51,6 +51,6 @@ type Peers interface {
 type Local interface {
 	SetService(namespace, name, declared string, members []observe.Observation)
 	DeleteService(namespace, name string)
-	SetExport(namespace, name string, port int32, ready bool)
+	SetExport(namespace, name string, port int32, ready bool, at time.Time)
 	DeleteExport(namespace, name string)
 }

@@ -20,9 +20,9 @@ func TestLocalDocument(t *testing.T) {
 	l.SetService("app", "remote", "", []observe.Observation{obs("remote-b", "b")})
 	l.SetService("app", "gone", "", []observe.Observation{obs("gone-a", "a")})
 	l.DeleteService("app", "gone")
-	l.SetExport("web", "z", 30903, true)
-	l.SetExport("app", "y", 30902, false)
-	l.SetExport("app", "x", 30901, true)
+	l.SetExport("web", "z", 30903, true, at)
+	l.SetExport("app", "y", 30902, false, at)
+	l.SetExport("app", "x", 30901, true, at)
 	l.DeleteExport("app", "x")
 
 	d := l.Document("a", at, 0)
@@ -122,5 +122,37 @@ func TestDocumentAgesObservations(t *testing.T) {
 	}
 	if m := member(l.Document("a", at.Add(MinAgeLimit+time.Millisecond), 2*time.Second), "pg-a"); m.State != straitv1.StateUnknown {
 		t.Errorf("peerTimeout 2s, past 6s after the observation: %+v, want Unknown", m)
+	}
+}
+
+// An Export whose readiness was last read longer ago than ExportRefresh and the age limit is published not ready, with
+// its port, so that a reconcile that hangs does not keep it ready at the peers. The limit is that of the members,
+// past the Export's own refresh. A peerTimeout of 0s ages nothing (RFC#0004 requirement 15; issue #64).
+func TestDocumentAgesExports(t *testing.T) {
+	l := &Local{}
+	l.SetExport("app", "old", 30901, true, at)
+	l.SetExport("app", "fresh", 30902, true, at.Add(time.Second))
+	l.SetExport("app", "down", 30903, false, at)
+	exports := func(now time.Time, maxAge time.Duration) []Export { return l.Document("a", now, maxAge).Exports }
+
+	limit := ExportRefresh + MinAgeLimit
+	want := []Export{
+		{Namespace: "app", Name: "down", Port: 30903},
+		{Namespace: "app", Name: "fresh", Port: 30902, Ready: true},
+		{Namespace: "app", Name: "old", Port: 30901, Ready: true},
+	}
+	if got := exports(at.Add(limit), 3*time.Second); !reflect.DeepEqual(got, want) {
+		t.Errorf("at the limit: %+v, want %+v", got, want)
+	}
+	want[2].Ready = false
+	if got := exports(at.Add(limit+time.Millisecond), 3*time.Second); !reflect.DeepEqual(got, want) {
+		t.Errorf("past the limit: %+v, want %+v", got, want)
+	}
+	// A peerTimeout above MinAgeLimit sets the limit.
+	if got := exports(at.Add(ExportRefresh+10*time.Second), 10*time.Second); !got[2].Ready {
+		t.Errorf("within ExportRefresh and a peerTimeout of 10s: %+v, want ready", got[2])
+	}
+	if got := exports(at.Add(time.Hour), 0); !got[2].Ready {
+		t.Errorf("peerTimeout 0s: %+v, want ready", got[2])
 	}
 }

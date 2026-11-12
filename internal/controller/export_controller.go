@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
+	"github.com/takodotid/strait/internal/exchange"
 	"github.com/takodotid/strait/internal/plugin"
 )
 
@@ -100,13 +101,13 @@ func (r *ExportReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	exp.Status.ReadyEndpoints = int32(len(ep.Addresses))
 	meta.SetStatusCondition(&exp.Status.Conditions, ready)
 
-	r.Local.SetExport(exp.Namespace, exp.Name, exp.Status.GatewayPort, exp.Status.ReadyEndpoints > 0)
+	r.Local.SetExport(exp.Namespace, exp.Name, exp.Status.GatewayPort, exp.Status.ReadyEndpoints > 0, time.Now())
 	if !equalStatus(old, &exp.Status) {
 		if _, err := r.written.updateStatus(ctx, r.Client, &exp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: exchange.ExportRefresh}, nil
 }
 
 // portHolder is another Export, or another Import, and the gateway port it holds.

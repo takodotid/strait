@@ -55,7 +55,7 @@ func exampleLocal() *Local {
 		ObservedAt: at,
 		Endpoint:   observe.Endpoint{Service: "pg-a-rw", Addresses: []string{"10.110.1.5"}, Port: 5432},
 	}})
-	l.SetExport("app", "pg-pg-a", 30901, true)
+	l.SetExport("app", "pg-pg-a", 30901, true, at)
 	return l
 }
 
@@ -79,7 +79,7 @@ func TestDocumentShape(t *testing.T) {
 func TestDocumentEmptyFields(t *testing.T) {
 	l := &Local{}
 	l.SetService("app", "pg", "", []observe.Observation{observe.Unknown("pg-a", "a", "NotObserved", at)})
-	l.SetExport("app", "pg-pg-a", 30901, false)
+	l.SetExport("app", "pg-pg-a", 30901, false, at)
 	got, err := json.Marshal(l.Document("a", at, 0))
 	if err != nil {
 		t.Fatal(err)
