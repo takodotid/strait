@@ -282,6 +282,19 @@ func TestWireGuardPeerReachesOnlyControlAndExportPorts(t *testing.T) {
 				serve(t, netip.AddrPortFrom(f.pod.Addr(), uint16(p)))
 			}
 		}
+
+		// The gateway reaches the neighbour, so that the neighbour's link is ready, IPv6 neighbour discovery
+		// included, and a peer that cannot reach it is stopped by the filter.
+		for _, f := range families {
+			tg := target{f.neighbour.Addr(), neighbourPort}
+			deadline := time.Now().Add(10 * time.Second)
+			for ok, _ := reached(tg); !ok; ok, _ = reached(tg) {
+				if time.Now().After(deadline) {
+					t.Fatalf("%s: the gateway never reached the neighbour at %s", f.name, tg)
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
 	})
 
 	// The peer: its own end of each link, with every address allowed, and the gateway's pod address and the neighbour's
