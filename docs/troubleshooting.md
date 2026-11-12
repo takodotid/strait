@@ -92,6 +92,8 @@ The `Healthy` condition of a `SiteLink`:
 | `EndpointUnhealthy` | Envoy marks the endpoint unhealthy. | The controller's and the gateway agent's logs. |
 | `EnvoyUnreachable` | The gateway agent cannot read Envoy's admin interface. | The `envoy` container of the active gateway pod. |
 
+A `direct` `SiteLink` with `endpointDirect` also has the condition `EndpointsLimited`. False, with `NoEndpointCIDRs`: endpoint-direct writes any member address from the peer's document that is not unspecified, loopback, link-local or multicast. Set `endpointCIDRs` to the peer's pod CIDRs ([RFC0005, Endpoint-direct](../rfcs/RFC0005.md#endpoint-direct)).
+
 The conditions of the `Site`:
 
 | Condition | Means | Next step |
@@ -107,7 +109,7 @@ The conditions of the `Site`:
 |---|---|
 | Versions | `strait version` for the CLI. `VERSION` in `strait status` for the site's controller. |
 | Events | `kubectl --context site-a -n app get events --field-selector involvedObject.name=pg`. Each route change is a `RouteChanged` event. `MultipleWritable`, `DeclarationsDisagree` and `UnknownTimeout` are Warning events. |
-| Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller` |
+| Controller logs | `kubectl --context site-a -n strait-system logs deployment/strait-controller`. An `Import` whose Service is not written logs `Import Service not synced` when its error is new. `controller.logLevel: debug` logs each retry, every 2s. |
 | CloudNativePG watch | The controller logs `cloudnative-pg` at start. `enabled` follows `cnpg.enabled`. `watched` false with `enabled` true means CloudNativePG's CRDs were missing then: restart the controller. [Getting started, Prerequisites](getting-started.md#prerequisites). |
 | Gateway agent logs | `kubectl --context site-a -n strait-system logs POD -c agent`, where `POD` is the active gateway pod that `strait status` shows. Each link that fails, comes back, or starts or stops carrying traffic logs `SiteLink status`. `gateway.logLevel: debug` logs every write of a link's status. |
 | Gateway handovers | `kubectl --context site-a get events -A --field-selector reason=GatewayHandover`. Each one resets every connection across the site's gateway. |
@@ -120,6 +122,7 @@ The conditions of the `Site`:
 | A site is lost, and a member at another site must become primary. | [Site loss](runbooks/site-loss.md) |
 | A lost site comes back, or a partition heals, maybe with two primaries. `startupHold` for production. | [Site return](runbooks/site-return.md) |
 | A site joins the others, or leaves them. | [Add or remove a site](runbooks/peers.md) |
+| A site goes into production: socket load balancing, clients that write, gateway node ports, `endpointCIDRs`. | [Before production](runbooks/before-production.md) |
 | A site's WireGuard private key must change. | [WireGuard key rotation](runbooks/wireguard-key-rotation.md) |
 | The controller or a gateway pod does not become ready, or restarts. | [Not ready](runbooks/not-ready.md) |
 | The active gateway moves to another replica, or must move off a node. | [Gateway handover](runbooks/gateway-handover.md) |

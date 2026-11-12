@@ -2,13 +2,17 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,10 +25,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
 	"github.com/takodotid/strait/internal/exchange"
@@ -608,5 +617,188 @@ func TestPortKeptSeesTheLastWrite(t *testing.T) {
 	reconcileNamed(t, r, "b-second")
 	if got := exportPorts(t, c, "a-first", "b-second"); !slices.Equal(got, []int32{16000, 16001}) {
 		t.Fatalf("ports = %v, want [16000 16001]", got)
+	}
+}
+
+// failingImport is an Import reconciler whose writes of the Import's Service fail. Tries records the time of each.
+func failingImport(t *testing.T) (r *ImportReconciler, c client.Client, tries func() []time.Time) {
+	t.Helper()
+	r, c = importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
+	var mu sync.Mutex
+	var at []time.Time
+	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if _, ok := obj.(*corev1.Service); ok {
+				mu.Lock()
+				at = append(at, time.Now())
+				mu.Unlock()
+				return errors.New("injected: the API server refuses the Service")
+			}
+			return c.Create(ctx, obj, opts...)
+		},
+	})
+	return r, c, func() []time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(at)
+	}
+}
+
+// A failed sync of an Import's Service writes SyncFailed, and asks for the next try after a fixed delay, with no error:
+// an error would retry with the controller's backoff, which grows to about 16 minutes (RFC0005, requirement 51;
+// issue #62).
+func TestImportSyncFailureRequeuesAfterAFixedDelay(t *testing.T) {
+	r, c, tries := failingImport(t)
+	for i := range 5 {
+		res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
+		if err != nil || res.RequeueAfter != resync {
+			t.Fatalf("try %d: %+v, %v; want a retry after %s and no error", i+1, res, err, resync)
+		}
+		if n := len(tries()); n != i+1 {
+			t.Fatalf("try %d: %d writes of the Service, want %d", i+1, n, i+1)
+		}
+	}
+	cond := meta.FindStatusCondition(importStatus(t, c).Conditions, ConditionService)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "SyncFailed" || !strings.Contains(cond.Message, "injected") {
+		t.Errorf("service condition = %+v", cond)
+	}
+}
+
+// The controller tries a failed sync again after the same delay, however often it fails. The test runs the reconciler
+// in a controller with controller-runtime's default queue, as the manager builds it, with the delay shortened from 2s
+// to 50ms. Its backoff starts at 5ms and doubles, so a count of tries would not tell: the test checks the longest wait
+// between two tries, and since the last one.
+func TestImportSyncRetriesWithNoBackoff(t *testing.T) {
+	r, _, tries := failingImport(t)
+	r.Retry = 50 * time.Millisecond
+	ctl, err := controller.NewUnmanaged("import-retry", controller.Options{Reconciler: r, SkipNameValidation: ptr.To(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := make(chan event.GenericEvent, 1)
+	ch <- event.GenericEvent{Object: webImport(webPort)}
+	if err := ctl.Watch(source.Channel(ch, &handler.EnqueueRequestForObject{})); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- ctl.Start(ctx) }()
+	time.Sleep(2 * time.Second)
+	end := time.Now()
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	at := append(tries(), end)
+	var longest time.Duration
+	for i := 1; i < len(at); i++ {
+		longest = max(longest, at[i].Sub(at[i-1]))
+	}
+	if len(at) < 11 || longest > r.Retry+250*time.Millisecond {
+		t.Fatalf("%d tries in 2s, longest wait %s; want a try every %s", len(at)-1, longest.Round(time.Millisecond), r.Retry)
+	}
+	t.Logf("%d tries in 2s, longest wait %s", len(at)-1, longest.Round(time.Millisecond))
+}
+
+// logLines is a logr.LogSink that records each line: "error <msg> <values> <err>", or "V<level> <msg> <values>".
+type logLines struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (l *logLines) Init(logr.RuntimeInfo)          {}
+func (l *logLines) Enabled(int) bool               { return true }
+func (l *logLines) WithValues(...any) logr.LogSink { return l }
+func (l *logLines) WithName(string) logr.LogSink   { return l }
+func (l *logLines) Info(level int, msg string, kv ...any) {
+	l.add(fmt.Sprintf("V%d %s %v", level, msg, kv))
+}
+func (l *logLines) Error(err error, msg string, kv ...any) {
+	l.add(fmt.Sprintf("error %s %v %v", msg, kv, err))
+}
+func (l *logLines) add(line string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, line)
+}
+
+// take returns the lines that hold msg, and forgets every line.
+func (l *logLines) take(msg string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []string
+	for _, line := range l.lines {
+		if strings.Contains(line, msg) {
+			out = append(out, line)
+		}
+	}
+	l.lines = nil
+	return out
+}
+
+// A failed sync of an Import logs at error level only when its error is new: the first failure after a success, a
+// change of the error, and the first failure of an Import created again. Every other try logs at V(1), with the error.
+// The Import's SyncFailed condition holds the message. A permanent error, such as a namespace outside
+// controller.namespaces, would otherwise log an error every 2s: about 43,000 a day per Import (RFC0005,
+// requirement 51; issue #62).
+func TestImportSyncErrorLoggedWhenItChanges(t *testing.T) {
+	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
+	// fail is the error of the next read of the Import's Service; nil reads it.
+	var fail error
+	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Service); ok && fail != nil {
+				return fail
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	rec := &logLines{}
+	ctx := ctrllog.IntoContext(context.Background(), logr.New(rec))
+	req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}}
+	refused := errors.New("injected: the API server refuses the read")
+	outside := errors.New("injected: app is not one where the controller writes")
+	for _, step := range []struct {
+		name    string
+		do      func()
+		fail    error
+		want    string
+		requeue time.Duration
+	}{
+		{name: "first failure", fail: refused, want: "error", requeue: resync},
+		{name: "same error", fail: refused, want: "V1", requeue: resync},
+		{name: "same error again", fail: refused, want: "V1", requeue: resync},
+		{name: "another error", fail: outside, want: "error", requeue: resync},
+		{name: "that error again", fail: outside, want: "V1", requeue: resync},
+		{name: "success", requeue: 30 * time.Second},
+		{name: "failure after a success", fail: outside, want: "error", requeue: resync},
+		{name: "that error again, before the Import is deleted", fail: outside, want: "V1", requeue: resync},
+		{name: "the Import deleted", do: func() {
+			if err := c.Delete(context.Background(), webImport(webPort)); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "the Import created again, same error", do: func() {
+			if err := c.Create(context.Background(), webImport(webPort)); err != nil {
+				t.Fatal(err)
+			}
+		}, fail: outside, want: "error", requeue: resync},
+	} {
+		if step.do != nil {
+			step.do()
+		}
+		fail = step.fail
+		res, err := r.Reconcile(ctx, req)
+		if err != nil || res.RequeueAfter != step.requeue {
+			t.Fatalf("%s: %+v, %v; want a retry after %s and no error", step.name, res, err, step.requeue)
+		}
+		lines := rec.take("Import Service not synced")
+		switch {
+		case step.want == "" && len(lines) != 0:
+			t.Fatalf("%s: logged %q, want no line", step.name, lines)
+		case step.want == "":
+		case len(lines) != 1 || !strings.HasPrefix(lines[0], step.want+" ") || !strings.Contains(lines[0], step.fail.Error()):
+			t.Fatalf("%s: logged %q, want one %s line with %q", step.name, lines, step.want, step.fail)
+		}
 	}
 }

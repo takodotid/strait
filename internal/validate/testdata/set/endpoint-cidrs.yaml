@@ -1,0 +1,43 @@
+# want: Warning SiteLink/b-direct: spec.direct.endpointCIDRs: not set: endpoint-direct accepts any member address from the peer's document that is not unspecified, loopback, link-local or multicast. In production, set the peer's pod CIDRs
+apiVersion: strait.tako.id/v1
+kind: SiteLink
+metadata:
+  name: b-direct
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: 192.0.2.10
+    endpointDirect: true
+---
+# No warning for the next two. With endpointCIDRs, endpoint-direct writes only addresses in the peer's ranges. Without
+# endpointDirect, it writes no address from the peer's document.
+apiVersion: strait.tako.id/v1
+kind: SiteLink
+metadata:
+  name: b-direct-limited
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: 192.0.2.11
+    endpointDirect: true
+    endpointCIDRs: [10.120.0.0/16]
+---
+apiVersion: strait.tako.id/v1
+kind: SiteLink
+metadata:
+  name: b-direct-gateway
+spec:
+  peer: b
+  transport: direct
+  encryption: None
+  direct:
+    address: 192.0.2.12
+---
+apiVersion: strait.tako.id/v1
+kind: SitePeer
+metadata:
+  name: b

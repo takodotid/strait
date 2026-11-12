@@ -730,3 +730,63 @@ func TestLinkChangesLogAtInfo(t *testing.T) {
 		t.Fatalf("link b-wg turned healthy and active, logged at info: %q", got)
 	}
 }
+
+// Each request of the agent to the API server ends within APITimeout, so one that the API server never answers does not
+// hold its loop: the WireGuard sync's read of the Secret and its write of the Site's status, and the health report's
+// write of each SiteLink's status. The test shortens APITimeout from 5s to 200ms (RFC0005, requirement 49; issue #61).
+func TestAgentRequestsEnd(t *testing.T) {
+	APITimeout = 200 * time.Millisecond
+	t.Cleanup(func() { APITimeout = 5 * time.Second })
+	// hangs is a request that the API server never answers: it ends when the client gives up.
+	hangs := func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	for _, tc := range []struct {
+		name string
+		hang interceptor.Funcs
+		run  func(*Agent, context.Context)
+		// requests is the number of requests that hang in one run.
+		requests int
+	}{
+		{"Secret read", interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Secret); ok {
+				return hangs(ctx)
+			}
+			return c.Get(ctx, key, obj, opts...)
+		}}, (*Agent).syncWireGuard, 1},
+		{"Site status", interceptor.Funcs{SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, p client.Patch, opts ...client.SubResourcePatchOption) error {
+			return hangs(ctx)
+		}}, (*Agent).syncWireGuard, 1},
+		{"SiteLink status", interceptor.Funcs{SubResourcePatch: func(ctx context.Context, c client.Client, sub string, obj client.Object, p client.Patch, opts ...client.SubResourcePatchOption) error {
+			return hangs(ctx)
+		}}, (*Agent).reportHealth, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := newKey(t)
+			l1 := wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")
+			l2 := directLink("to-b-direct", "b", 10, "192.0.2.1")
+			p := peer("b", newKey(t).PublicKey().String())
+			a, _, _ := newAgent(t, testSite(), keySecret(key.String()), &l1, &l2, &p)
+			a.Client = interceptor.NewClient(a.Client.(client.WithWatch), tc.hang)
+			a.EnvoyAdmin = "http://127.0.0.1:1"
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			start := time.Now()
+			go func() {
+				defer close(done)
+				tc.run(a, ctx)
+			}()
+			want := time.Duration(tc.requests) * APITimeout
+			select {
+			case <-done:
+			case <-time.After(want + 2*time.Second):
+				t.Fatalf("still waiting %s after the start, want done within %s", time.Since(start).Round(time.Millisecond), want)
+			}
+			if d := time.Since(start); d < want {
+				t.Errorf("done after %s: no request hung", d)
+			}
+		})
+	}
+}

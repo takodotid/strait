@@ -223,3 +223,43 @@ spec:
   gateway:
     lease:
       retryPeriod: 3500ms
+---
+# want: spec.gateway.controlPort: Invalid value: 8090: must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: control-port-of-the-agent
+spec:
+  gateway:
+    controlPort: 8090
+---
+# want: spec.gateway.peerPort: Invalid value: 9901: must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: peer-port-of-envoy-admin
+spec:
+  gateway:
+    peerPort: 9901
+---
+# want: spec.gateway.exportPorts: Invalid value: "object": must not include 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: export-ports-of-envoy-admin
+spec:
+  gateway:
+    exportPorts:
+      first: 9000
+      last: 9999
+---
+# want: spec.gateway.importPorts: Invalid value: "object": must not include 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: import-ports-of-the-agent
+spec:
+  gateway:
+    importPorts:
+      first: 8091
+      last: 8091

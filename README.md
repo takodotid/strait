@@ -67,7 +67,7 @@ Each site has one `Site`, one `SitePeer` per peer and one `SiteLink` per path. E
 | Modes `Single` and `Set` | `Single` routes to the one writable member, such as a database primary. `Set` routes to every eligible member, such as read replicas, filtered by locality: `LocalFirst`, `LocalOnly` or `Any`. | [RFC0002](rfcs/RFC0002.md) |
 | Plugins `cnpg` and `declared` | `cnpg` reads CloudNativePG `Cluster`s, and a `Pooler` when named. `declared` takes the active member from the spec, for a workload that no plugin observes. | [RFC0003](rfcs/RFC0003.md) |
 | Transports `direct` and `wireguard` | `direct` is a private path with no tunnel, declared `encryption: None`. `wireguard` is a kernel WireGuard tunnel between the gateways. When the active link fails, new connections move to the next one within 5 seconds. | [RFC0005](rfcs/RFC0005.md) |
-| Endpoint-direct | On a `direct` link where pod addresses are routable between sites, the name points straight at the remote pods, with no gateway hop. | [RFC0005](rfcs/RFC0005.md), [benchmark](docs/benchmark.md) |
+| Endpoint-direct | On a `direct` link where pod addresses are routable between sites, the name points straight at the remote pods, with no gateway hop. In production, set the link's `endpointCIDRs` to the peer's pod CIDRs, so that a peer's document cannot point the name at another address. | [RFC0005](rfcs/RFC0005.md), [benchmark](docs/benchmark.md) |
 | Envoy over xDS | The controller configures Envoy with no reload. A route change never closes an established connection. | [RFC0005](rfcs/RFC0005.md) |
 | Read-only CLI with an AI agent skill | `strait` explains why a name points where it does. `strait --skill` prints a skill document for AI agents. | [RFC0006](rfcs/RFC0006.md) |
 
@@ -150,7 +150,7 @@ helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait 
   --namespace strait-system --values values-a.yaml --wait
 ```
 
-Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two clusters step by step, from the WireGuard key to a routed name: [Getting started](docs/getting-started.md). The controller's memory grows with the Services of the cluster: [Sizing](docs/sizing.md).
+Before a site serves production traffic, go through [Before production](docs/runbooks/before-production.md). Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two clusters step by step, from the WireGuard key to a routed name: [Getting started](docs/getting-started.md). The controller's memory grows with the Services of the cluster: [Sizing](docs/sizing.md).
 
 Install the CLI, here for Linux on amd64:
 
@@ -228,7 +228,7 @@ Upgrade one site at a time. Sites on different 1.x releases still read each othe
 | Step | What to do |
 |---|---|
 | 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. From 1.3.0, the chart's pre-pull Job also runs the release's image on the controller's node before the upgrade changes anything (`controller.prePull`), but the new controller pod can start on another node. |
-| 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until then. From a release before 1.3.0, they add `Site.spec.gateway.lease`. |
+| 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until then. From a release before 1.3.0, they add `Site.spec.gateway.lease`. From a release before 1.4.0, they refuse a `Site` whose gateway ports include 8090, 8091 or 9901, where the gateway agent and Envoy's admin interface listen. |
 | 3. Wait | Run `strait --context SITE status -A` at every site. Go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. |
 | 4. Next site | Back to step 1. |
 
@@ -356,7 +356,7 @@ For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skil
 | [Troubleshooting](docs/troubleshooting.md) | A name routed nowhere, Unknown members, unreachable peers, unhealthy links. |
 | [Metrics and alerts](docs/metrics.md) | Every metric, how to scrape it, the alert rules, and what the probes check. |
 | [Sizing](docs/sizing.md) | The controller's memory per Service of the cluster, its limit, and how to cache fewer objects. |
-| [Runbooks](docs/troubleshooting.md#runbooks) | Site loss and return, a partition that heals, adding or removing a site, WireGuard key rotation, a controller or a gateway that is not ready, a gateway handover, rollback, a release. |
+| [Runbooks](docs/troubleshooting.md#runbooks) | The checks before production, site loss and return, a partition that heals, adding or removing a site, WireGuard key rotation, a controller or a gateway that is not ready, a gateway handover, rollback, a release. |
 | [Gateway benchmark](docs/benchmark.md) | What the gateway adds per round trip and per connection, and what endpoint-direct saves. |
 | [End-to-end tests](test/e2e/README.md) | The kind fixture and its scenarios. |
 | [RFC0001](rfcs/RFC0001.md) | Scope, glossary, resources and components. |

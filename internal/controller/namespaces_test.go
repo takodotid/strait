@@ -128,9 +128,9 @@ func TestImportOutsideNamespaces(t *testing.T) {
 	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
 	var requests int
 	r.Client = NamespacedWrites(counting(t, c, &requests), []string{"db", "strait-system"})
-	_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
-	if err == nil || !strings.Contains(err.Error(), `namespace "app" is not one`) {
-		t.Errorf("reconcile: %v, want the refusal, so that it is retried", err)
+	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
+	if err != nil || res.RequeueAfter != resync {
+		t.Errorf("reconcile: %+v, %v; want a retry after %s", res, err, resync)
 	}
 	cond := meta.FindStatusCondition(importStatus(t, c).Conditions, ConditionService)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "SyncFailed" || !strings.Contains(cond.Message, `namespace "app" is not one`) {
@@ -242,7 +242,7 @@ func TestImportOutsideNamespacedReads(t *testing.T) {
 		r, c := importReconciler(t, importSite("10.0.9.9"), webImport(port))
 		ns := []string{"db", "strait-system"}
 		r.Client = NamespacedWrites(NamespacedReads(c, ns), ns)
-		_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
+		res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "app", Name: "web-b"}})
 		cond := meta.FindStatusCondition(importStatus(t, c).Conditions, ConditionService)
 		if port == nil {
 			if err != nil || cond != nil {
@@ -250,8 +250,8 @@ func TestImportOutsideNamespacedReads(t *testing.T) {
 			}
 			continue
 		}
-		if !errors.Is(err, ErrNotRead) {
-			t.Errorf("port: reconcile %v, want the refusal, so that it is retried", err)
+		if err != nil || res.RequeueAfter != resync {
+			t.Errorf("port: reconcile %+v, %v; want a retry after %s", res, err, resync)
 		}
 		if cond == nil || cond.Reason != "SyncFailed" || !strings.Contains(cond.Message, `namespace "app" is not one where the controller reads`) {
 			t.Errorf("port: service condition %+v", cond)

@@ -78,6 +78,10 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                    x-kubernetes-validations:
+                    - message: 'must not be 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '!(self in [8090, 8091, 9901])'
                   directService:
                     default:
                       type: ClusterIP
@@ -159,6 +163,9 @@ spec:
                     x-kubernetes-validations:
                     - message: first must not exceed last
                       rule: self.first <= self.last
+                    - message: 'must not include 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '[8090, 8091, 9901].all(p, p < self.first || p > self.last)'
                   importPorts:
                     default:
                       first: 15000
@@ -183,6 +190,9 @@ spec:
                     x-kubernetes-validations:
                     - message: first must not exceed last
                       rule: self.first <= self.last
+                    - message: 'must not include 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '[8090, 8091, 9901].all(p, p < self.first || p > self.last)'
                   lease:
                     default: {}
                     description: Lease sets the timing of the gateway Lease, which
@@ -235,6 +245,10 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                    x-kubernetes-validations:
+                    - message: 'must not be 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '!(self in [8090, 8091, 9901])'
                   wireGuardService:
                     default:
                       type: NodePort
@@ -475,6 +489,10 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                    x-kubernetes-validations:
+                    - message: 'must not be 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '!(self in [8090, 8091, 9901])'
                   directService:
                     default:
                       type: ClusterIP
@@ -556,6 +574,9 @@ spec:
                     x-kubernetes-validations:
                     - message: first must not exceed last
                       rule: self.first <= self.last
+                    - message: 'must not include 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '[8090, 8091, 9901].all(p, p < self.first || p > self.last)'
                   importPorts:
                     default:
                       first: 15000
@@ -580,6 +601,9 @@ spec:
                     x-kubernetes-validations:
                     - message: first must not exceed last
                       rule: self.first <= self.last
+                    - message: 'must not include 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '[8090, 8091, 9901].all(p, p < self.first || p > self.last)'
                   lease:
                     default: {}
                     description: Lease sets the timing of the gateway Lease, which
@@ -632,6 +656,10 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                    x-kubernetes-validations:
+                    - message: 'must not be 8090, 8091 or 9901: the gateway agent
+                        and Envoy''s admin interface listen there'
+                      rule: '!(self in [8090, 8091, 9901])'
                   wireGuardService:
                     default:
                       type: NodePort

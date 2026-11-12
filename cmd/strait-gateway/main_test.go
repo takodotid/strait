@@ -3,7 +3,25 @@ package main
 import (
 	"log/slog"
 	"testing"
+	"time"
+
+	"k8s.io/client-go/rest"
+
+	"github.com/takodotid/strait/internal/gateway"
 )
+
+// The agent's requests to the API server end within gateway.APITimeout, 5s. Its cache's config keeps no timeout,
+// which would end its watches (RFC0005, requirement 49; issue #61).
+func TestAPIConfig(t *testing.T) {
+	cfg := &rest.Config{Host: "https://192.0.2.1:6443"}
+	api := apiConfig(cfg)
+	if api.Timeout != gateway.APITimeout || gateway.APITimeout != 5*time.Second {
+		t.Errorf("timeout = %s, want %s", api.Timeout, 5*time.Second)
+	}
+	if cfg.Timeout != 0 {
+		t.Errorf("the cache's config has the timeout %s, want none", cfg.Timeout)
+	}
+}
 
 // The probe server binds to the address that --probe-ip gives, the pod's own in the chart, so that a peer cannot reach
 // it through a WireGuard interface (RFC0007, requirement 12).

@@ -33,10 +33,10 @@ func Site(s *straitv1.Site) field.ErrorList {
 
 	g := s.Spec.Gateway
 	gp := spec.Child("gateway")
-	errs = append(errs, port(gp.Child("controlPort"), g.ControlPort)...)
+	errs = append(errs, gatewayPort(gp.Child("controlPort"), g.ControlPort)...)
 	errs = append(errs, portRange(gp.Child("exportPorts"), g.ExportPorts)...)
 	errs = append(errs, portRange(gp.Child("importPorts"), g.ImportPorts)...)
-	errs = append(errs, port(gp.Child("peerPort"), g.PeerPort)...)
+	errs = append(errs, gatewayPort(gp.Child("peerPort"), g.PeerPort)...)
 	hasExport, hasImport := g.ExportPorts != straitv1.PortRange{}, g.ImportPorts != straitv1.PortRange{}
 	errs = append(errs, rule(gp,
 		!hasExport || g.ControlPort == 0 || g.ExportPorts.First > g.ControlPort || g.ExportPorts.Last < g.ControlPort,
@@ -335,10 +335,26 @@ func port(p *field.Path, v int32) field.ErrorList {
 	return between(p, v, 1, 65535)
 }
 
+// agentPorts are the ports of the gateway pod where the gateway agent's probes and metrics, and Envoy's admin
+// interface, listen. No gateway port may be one of them (RFC#0005, requirement 52).
+var agentPorts = []int32{8090, 8091, 9901}
+
+// gatewayPort checks a required port of the gateway, which must not be one of agentPorts.
+func gatewayPort(p *field.Path, v int32) field.ErrorList {
+	errs := port(p, v)
+	if slices.Contains(agentPorts, v) {
+		errs = append(errs, field.Invalid(p, v, "must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"))
+	}
+	return errs
+}
+
+// portRange checks a range of the gateway's ports, which must not include one of agentPorts.
 func portRange(p *field.Path, r straitv1.PortRange) field.ErrorList {
 	errs := port(p.Child("first"), r.First)
 	errs = append(errs, port(p.Child("last"), r.Last)...)
-	return append(errs, rule(p, r.First <= r.Last, "first must not exceed last")...)
+	errs = append(errs, rule(p, r.First <= r.Last, "first must not exceed last")...)
+	reserved := slices.ContainsFunc(agentPorts, func(a int32) bool { return a >= r.First && a <= r.Last })
+	return append(errs, rule(p, !reserved, "must not include 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there")...)
 }
 
 // required checks a required string of at least one character and, when max is not 0, at most max characters.

@@ -131,11 +131,12 @@ func run(ctx context.Context, o options, log logr.Logger) error {
 	if !c.WaitForCacheSync(ctx) {
 		return errors.New("cache did not sync")
 	}
-	cl, err := client.New(cfg, client.Options{Scheme: scheme, Cache: &client.CacheOptions{Reader: c, DisableFor: []client.Object{&corev1.Secret{}}}})
+	api := apiConfig(cfg)
+	cl, err := client.New(api, client.Options{Scheme: scheme, Cache: &client.CacheOptions{Reader: c, DisableFor: []client.Object{&corev1.Secret{}}}})
 	if err != nil {
 		return err
 	}
-	leases, err := coordinationv1client.NewForConfig(rest.CopyConfig(cfg))
+	leases, err := coordinationv1client.NewForConfig(rest.CopyConfig(api))
 	if err != nil {
 		return err
 	}
@@ -203,6 +204,15 @@ func probeListenAddr(addr, ip string) (string, error) {
 		return "", fmt.Errorf("%q: %w", addr, err)
 	}
 	return net.JoinHostPort(ip, port), nil
+}
+
+// apiConfig is the config of the agent's requests to the API server, apart from its cache's: each one ends within
+// gateway.APITimeout (RFC0005, requirement 49). The cache keeps cfg, with no timeout: an HTTP client's timeout would
+// also end its watches, which last minutes.
+func apiConfig(cfg *rest.Config) *rest.Config {
+	api := rest.CopyConfig(cfg)
+	api.Timeout = gateway.APITimeout
+	return api
 }
 
 func restConfig(kubeconfig, kubeContext string) (*rest.Config, error) {

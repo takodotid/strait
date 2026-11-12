@@ -289,12 +289,13 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 | `direct.address` | The peer gateway's IP address on the private path. |
 | `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that admit only them: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
 
-With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)). Set `endpointCIDRs` on that link to the peer's pod CIDRs, so a peer's document cannot point the name anywhere else.
+With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)). In production, set `endpointCIDRs` on that link to the peer's pod CIDRs, so a peer's document cannot point the name anywhere else. Without it, `strait validate` warns, and the link's condition `EndpointsLimited` is `False`.
 
 ## Next
 
 | Topic | Where |
 |---|---|
+| The checks before production | [Before production](runbooks/before-production.md) |
 | A name routed nowhere, Unknown members, unhealthy links | [Troubleshooting](troubleshooting.md) |
 | Every command and flag | `strait --help`, the man pages |
 | Design and rules | [`rfcs/`](../rfcs/) |
