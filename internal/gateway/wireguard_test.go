@@ -148,6 +148,30 @@ type fakeKernel struct {
 	mu    sync.Mutex
 	devs  map[string]*Device
 	calls []string
+	// filter is the filter's addresses, nil while none is in place. filterErr fails SetFilter.
+	filter    []netip.Addr
+	filterErr error
+}
+
+func (k *fakeKernel) Filter() ([]netip.Addr, bool, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return slices.Clone(k.filter), k.filter != nil, nil
+}
+
+func (k *fakeKernel) SetFilter(addrs []netip.Addr) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.filterErr != nil {
+		return k.filterErr
+	}
+	var s []string
+	for _, a := range addrs {
+		s = append(s, a.String())
+	}
+	k.call("filter %s", strings.Join(s, ","))
+	k.filter = append([]netip.Addr{}, addrs...)
+	return nil
 }
 
 func newFakeKernel() *fakeKernel { return &fakeKernel{devs: map[string]*Device{}} }
@@ -339,6 +363,7 @@ func TestApply(t *testing.T) {
 	}
 	wantCalls := []string{
 		"delete st00000000",
+		"filter 100.64.0.1,100.64.1.1",
 		"create " + ifB,
 		"configure " + ifB + " key port=51820 add-peer allowed-ips endpoint=192.0.2.10:51820 keepalive=25s",
 		"add-address " + ifB + " 100.64.0.1/32",
@@ -381,6 +406,7 @@ func TestApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCalls = []string{
+		"filter 100.64.0.1,100.64.1.5",
 		"configure " + ifB + " keepalive=0s",
 		"configure " + ifC + " remove-peer add-peer allowed-ips keepalive=0s",
 		"delete-address " + ifC + " 100.64.1.1/30",
@@ -402,5 +428,47 @@ func TestApply(t *testing.T) {
 	}
 	if len(k.devs) != 0 {
 		t.Fatalf("left %d interfaces", len(k.devs))
+	}
+}
+
+// While the filter of the WireGuard interfaces cannot be put in place, Apply creates and changes no interface, and
+// every wanted link fails with the error. It still deletes the interfaces that are not wanted, which needs no filter
+// (RFC0007 requirement 12).
+func TestApplyNeedsTheFilter(t *testing.T) {
+	site := newKey(t)
+	pubB := newKey(t).PublicKey()
+	in := Inputs{
+		Key:   &site,
+		Peers: []straitv1.SitePeer{peer("b", pubB.String())},
+		Links: []straitv1.SiteLink{wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")},
+	}
+	want, _ := Desired(in)
+	k := newFakeKernel()
+	k.devs["st00000000"] = &Device{Name: "st00000000", Up: true}
+	k.filterErr = errors.New("Operation not supported")
+	failed, err := Apply(k, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := failed["to-b"]; e == nil || !strings.Contains(e.Error(), "filter the WireGuard interfaces' traffic: Operation not supported") {
+		t.Errorf("failed %v, want to-b with the filter's error", failed)
+	}
+	if got := k.takeCalls(); !slices.Equal(got, []string{"delete st00000000"}) {
+		t.Errorf("calls %v, want the delete only", got)
+	}
+
+	// Once the filter goes in, the interface follows.
+	k.filterErr = nil
+	if failed, err := Apply(k, want); err != nil || len(failed) != 0 {
+		t.Fatalf("Apply: %v, failed %v", err, failed)
+	}
+	if got := k.takeCalls(); len(got) < 2 || got[0] != "filter 100.64.0.1" || got[1] != "create "+links.Interface("to-b") {
+		t.Errorf("calls %v, want the filter, then the interface", got)
+	}
+
+	// A step-down removes every interface without the filter.
+	k.filterErr = errors.New("Operation not supported")
+	if failed, err := Apply(k, nil); err != nil || len(failed) != 0 || len(k.devs) != 0 {
+		t.Errorf("Apply(nil): %v, failed %v, %d interfaces left", err, failed, len(k.devs))
 	}
 }
