@@ -48,6 +48,22 @@ func helmTemplate(t *testing.T, set ...string) (string, error) {
 // helmTemplateChart runs helm template on the chart in the directory given.
 func helmTemplateChart(t *testing.T, chart string, set ...string) (string, error) {
 	t.Helper()
+	var args []string
+	for _, s := range set {
+		args = append(args, "--set", s)
+	}
+	return helmTemplateRaw(t, chart, args...)
+}
+
+// helmTemplateArgs runs helm template on the chart with more arguments, such as --values FILE.
+func helmTemplateArgs(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	return helmTemplateRaw(t, "strait", args...)
+}
+
+// helmTemplateRaw runs helm template on the chart in the directory given, with the arguments given.
+func helmTemplateRaw(t *testing.T, chart string, extra ...string) (string, error) {
+	t.Helper()
 	if _, err := exec.LookPath("helm"); err != nil {
 		if os.Getenv("CI") != "" {
 			t.Fatal("helm is not installed; CI must run this test")
@@ -64,10 +80,7 @@ func helmTemplateChart(t *testing.T, chart string, set ...string) (string, error
 	}); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"template", "strait", chart, "--namespace", namespace, "--set", "site.name=a"}
-	for _, s := range set {
-		args = append(args, "--set", s)
-	}
+	args := append([]string{"template", "strait", chart, "--namespace", namespace, "--set", "site.name=a"}, extra...)
 	cmd := exec.Command("helm", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

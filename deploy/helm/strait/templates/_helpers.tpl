@@ -26,12 +26,13 @@ annotation strait.tako.id/image-digest, which counts while image.tag and image.d
 {{- end -}}
 
 {{/*
-The gateway's exportPorts, importPorts and peerPort, as JSON, for the gateway's network policy (RFC0007). With
-site.create true, from site.spec.gateway, and the Site CRD's defaults where it sets none: the chart reads them from its
-own crds/, so they are stated once. With site.create false, from networkPolicy.gateway.ports, which must hold all three.
+The gateway's controlPort, exportPorts, importPorts and peerPort, as JSON, for the gateway's network policy (RFC0007).
+With site.create true, from site.spec.gateway, and the Site CRD's defaults where it sets none: the chart reads them from
+its own crds/, so they are stated once. With site.create false, from networkPolicy.gateway.ports, which must hold all
+four.
 */}}
 {{- define "strait.gatewayPorts" -}}
-{{- $fields := list "exportPorts" "importPorts" "peerPort" -}}
+{{- $fields := list "controlPort" "exportPorts" "importPorts" "peerPort" -}}
 {{- $set := .Values.networkPolicy.gateway.ports | default dict -}}
 {{- $out := dict -}}
 {{- if .Values.site.create -}}

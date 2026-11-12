@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -74,7 +75,8 @@ func TestNetworkPolicies(t *testing.T) {
 		t.Errorf("probes with metricsFrom: %+v, want every source", rule)
 	}
 
-	r = render(t, "networkPolicy.gateway.enabled=true", "networkPolicy.gateway.peerCIDRs={192.0.2.21/32,2001:db8::/64}")
+	r = render(t, "networkPolicy.gateway.enabled=true", "networkPolicy.gateway.peerCIDRs={192.0.2.21/32,2001:db8::/64}",
+		"networkPolicy.gateway.wireGuardPorts={31820}")
 	g, ok := r.networkPolicies["strait-gateway"]
 	if !ok {
 		t.Fatal("networkPolicy.gateway.enabled: no policy on the gateway pods")
@@ -83,7 +85,8 @@ func TestNetworkPolicies(t *testing.T) {
 		t.Errorf("gateway policy selects %v, types %v", g.Spec.PodSelector.MatchLabels, g.Spec.PolicyTypes)
 	}
 	probes, metrics := intstr.FromInt32(8090), intstr.FromInt32(8091)
-	imports, exports, peer := intstr.FromInt32(15000), intstr.FromInt32(30901), intstr.FromInt32(14999)
+	imports, exports, peer, control, listen := intstr.FromInt32(15000), intstr.FromInt32(30901), intstr.FromInt32(14999), intstr.FromInt32(30900), intstr.FromInt32(31820)
+	udp := corev1.ProtocolUDP
 	importsLast, exportsLast := int32(15999), int32(31899)
 	controller := map[string]string{"app.kubernetes.io/name": "strait", "app.kubernetes.io/component": "controller"}
 	wantRules := []networkingv1.NetworkPolicyIngressRule{
@@ -97,7 +100,10 @@ func TestNetworkPolicies(t *testing.T) {
 			From:  []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: controller}}},
 			Ports: []networkingv1.NetworkPolicyPort{{Port: &peer}},
 		},
-		{From: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.21/32"}}, {IPBlock: &networkingv1.IPBlock{CIDR: "2001:db8::/64"}}}},
+		{
+			From:  []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.21/32"}}, {IPBlock: &networkingv1.IPBlock{CIDR: "2001:db8::/64"}}},
+			Ports: []networkingv1.NetworkPolicyPort{{Port: &control}, {Port: &exports, EndPort: &exportsLast}, {Protocol: &udp, Port: &listen}},
+		},
 	}
 	if !reflect.DeepEqual(g.Spec.Ingress, wantRules) {
 		t.Errorf("gateway policy rules:\n%+v\nwant\n%+v", g.Spec.Ingress, wantRules)
@@ -197,7 +203,7 @@ func TestGatewayPolicyPorts(t *testing.T) {
 	set := []string{
 		"networkPolicy.gateway.ports.exportPorts.first=40000", "networkPolicy.gateway.ports.exportPorts.last=40099",
 		"networkPolicy.gateway.ports.importPorts.first=16000", "networkPolicy.gateway.ports.importPorts.last=16000",
-		"networkPolicy.gateway.ports.peerPort=14000",
+		"networkPolicy.gateway.ports.peerPort=14000", "networkPolicy.gateway.ports.controlPort=40100",
 	}
 	for _, c := range []struct {
 		name            string
@@ -237,9 +243,10 @@ func TestGatewayPolicyPorts(t *testing.T) {
 		set  []string
 		want string
 	}{
-		{"site.create false, no ports", []string{"site.create=false"}, "networkPolicy.gateway.ports.exportPorts is required"},
-		{"site.create false, no peerPort", append([]string{"site.create=false"}, set[:4]...), "networkPolicy.gateway.ports.peerPort is required"},
-		{"site.create false, a range without last", []string{"site.create=false", set[0], set[2], set[3], set[4]}, "networkPolicy.gateway.ports.exportPorts needs first and last"},
+		{"site.create false, no ports", []string{"site.create=false"}, "networkPolicy.gateway.ports.controlPort is required"},
+		{"site.create false, no peerPort", append([]string{"site.create=false", set[5]}, set[:4]...), "networkPolicy.gateway.ports.peerPort is required"},
+		{"site.create false, no controlPort", append([]string{"site.create=false"}, set[:5]...), "networkPolicy.gateway.ports.controlPort is required"},
+		{"site.create false, a range without last", []string{"site.create=false", set[0], set[2], set[3], set[4], set[5]}, "networkPolicy.gateway.ports.exportPorts needs first and last"},
 		{"site.create true, networkPolicy.gateway.ports", set, "networkPolicy.gateway.ports applies with site.create false only"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -262,5 +269,80 @@ func TestGatewayPolicyPorts(t *testing.T) {
 	// Without the gateway policy, the ports are not needed.
 	if r := render(t, "site.create=false"); len(r.networkPolicies) != 1 {
 		t.Errorf("site.create false without the gateway policy: policies %v, want the controller's", r.networkPolicies)
+	}
+}
+
+// The peer gateways reach the control port and the export ports over TCP, and the WireGuard listen ports of
+// networkPolicy.gateway.wireGuardPorts over UDP, nothing else. The control port comes from site.spec.gateway, or from
+// networkPolicy.gateway.ports with site.create false. With peerCIDRs, the chart fails to render while wireGuardPorts
+// is unset; an empty list is a site with no wireguard link (RFC0007 requirement 28; issue #64).
+func TestGatewayPolicyPeers(t *testing.T) {
+	peers := networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.21/32"}}
+	rule := func(r rendered) []string {
+		t.Helper()
+		var out []string
+		for _, rule := range r.networkPolicies["strait-gateway"].Spec.Ingress {
+			if len(rule.From) != 1 || !reflect.DeepEqual(rule.From[0], peers) {
+				continue
+			}
+			for _, p := range rule.Ports {
+				proto := "TCP"
+				if p.Protocol != nil {
+					proto = string(*p.Protocol)
+				}
+				last := p.Port.IntVal
+				if p.EndPort != nil {
+					last = *p.EndPort
+				}
+				out = append(out, fmt.Sprintf("%s %d-%d", proto, p.Port.IntVal, last))
+			}
+			if len(rule.Ports) == 0 {
+				out = append(out, "every port")
+			}
+		}
+		return out
+	}
+	on := []string{"networkPolicy.gateway.enabled=true", "networkPolicy.gateway.peerCIDRs={192.0.2.21/32}"}
+	for _, c := range []struct {
+		name string
+		set  []string
+		want []string
+	}{
+		{"the CRD's defaults, two listen ports", []string{"networkPolicy.gateway.wireGuardPorts={31820,32100}"},
+			[]string{"TCP 30900-30900", "TCP 30901-31899", "UDP 31820-31820", "UDP 32100-32100"}},
+		{"no wireguard link", []string{"networkPolicy.gateway.wireGuardPorts={}"}, []string{"TCP 30900-30900", "TCP 30901-31899"}},
+		{"site.spec.gateway", []string{"networkPolicy.gateway.wireGuardPorts={31820}", "site.spec.gateway.controlPort=40100",
+			"site.spec.gateway.exportPorts.first=40000", "site.spec.gateway.exportPorts.last=40099"},
+			[]string{"TCP 40100-40100", "TCP 40000-40099", "UDP 31820-31820"}},
+		{"site.create false", []string{"networkPolicy.gateway.wireGuardPorts={31820}", "site.create=false",
+			"networkPolicy.gateway.ports.controlPort=40100", "networkPolicy.gateway.ports.peerPort=14000",
+			"networkPolicy.gateway.ports.exportPorts.first=40000", "networkPolicy.gateway.ports.exportPorts.last=40099",
+			"networkPolicy.gateway.ports.importPorts.first=16000", "networkPolicy.gateway.ports.importPorts.last=16999"},
+			[]string{"TCP 40100-40100", "TCP 40000-40099", "UDP 31820-31820"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := rule(render(t, append(slices.Clone(on), c.set...)...)); !slices.Equal(got, c.want) {
+				t.Errorf("the peers reach %v, want %v", got, c.want)
+			}
+		})
+	}
+
+	// A values file's empty list, as the README tells, renders as no listen port.
+	file := filepath.Join(t.TempDir(), "values.yaml")
+	if err := os.WriteFile(file, []byte("networkPolicy: {gateway: {enabled: true, peerCIDRs: [192.0.2.21/32], wireGuardPorts: []}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := helmTemplateArgs(t, "--values", file)
+	if err != nil || !strings.Contains(out, "{port: 30900}") || strings.Contains(out, "UDP") {
+		t.Errorf("wireGuardPorts: [] in a values file: %v, %s", err, out)
+	}
+
+	out, err = helmTemplate(t, on...)
+	if err == nil || !strings.Contains(out, "networkPolicy.gateway.wireGuardPorts is required with networkPolicy.gateway.peerCIDRs") {
+		t.Errorf("peerCIDRs without wireGuardPorts: %v, %s; want a failure", err, out)
+	}
+	// Without peerCIDRs, no rule for peers, and no need of wireGuardPorts.
+	if got := rule(render(t, "networkPolicy.gateway.enabled=true")); got != nil {
+		t.Errorf("without peerCIDRs, the peers reach %v", got)
 	}
 }

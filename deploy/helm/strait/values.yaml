@@ -116,8 +116,8 @@ networkPolicy:
   metricsFrom: []
   gateway:
     # A policy on the gateway pods. It admits every source to the probes, metricsFrom to the metrics, every pod of
-    # this cluster to the import and export ports, the controller to the peer port, and peerCIDRs to every port. Off by
-    # default: where peer traffic comes from depends on the gateway Services' type and on the CNI (RFC0007), so a
+    # this cluster to the import and export ports, the controller to the peer port, and peerCIDRs to the control and
+    # export ports and wireGuardPorts. Off by default: where peer traffic comes from depends on the gateway Services' type and on the CNI (RFC0007), so a
     # default would cut the peers off. The ports come from site.spec.gateway, and the Site CRD's defaults where it sets
     # none.
     enabled: false
@@ -125,9 +125,14 @@ networkPolicy:
     # addresses where their clusters masquerade traffic that leaves them. With NodePort gateway Services, set
     # externalTrafficPolicy Local, so that the gateway pod sees the peer's address.
     peerCIDRs: []
-    # The gateway's ports, with site.create false only, as in the Site's spec.gateway. All three are required then,
+    # The UDP listen ports of the site's wireguard SiteLinks, which peerCIDRs reach. The chart does not read
+    # SiteLinks. Required with peerCIDRs, and the chart fails to render without it: [] for a site with no wireguard
+    # link. Example: [31820]
+    # wireGuardPorts: []
+    # The gateway's ports, with site.create false only, as in the Site's spec.gateway. All four are required then,
     # and the chart fails to render without them. Example:
     # ports:
+    #   controlPort: 30900
     #   exportPorts: {first: 30901, last: 31899}
     #   importPorts: {first: 15000, last: 15999}
     #   peerPort: 14999
