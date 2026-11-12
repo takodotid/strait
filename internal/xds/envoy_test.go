@@ -314,8 +314,8 @@ func TestEnvoyRun(t *testing.T) {
 
 // adsEnvoy runs the Server and an Envoy started from Bootstrap, on the default docker network, and waits until Envoy
 // is ready. The model is the loopback one, read from objects. It returns the server, its objects, the probe, Envoy's
-// node ID and the address of the Envoy container.
-func adsEnvoy(t *testing.T) (*Server, client.Client, probe, string, string) {
+// node ID and the address of the Envoy container. args are more Envoy flags.
+func adsEnvoy(t *testing.T, args ...string) (*Server, client.Client, probe, string, string) {
 	out, err := docker("network", "inspect", "bridge", "--format", "{{(index .IPAM.Config 0).Gateway}}")
 	if err != nil {
 		t.Fatalf("docker network inspect: %v\n%s", err, out)
@@ -356,7 +356,7 @@ func adsEnvoy(t *testing.T) (*Server, client.Client, probe, string, string) {
 	host, port, _ := net.SplitHostPort(addr)
 	xdsPort, _ := strconv.Atoi(port)
 	node := "strait-gateway-ads"
-	envoy, p := runEnvoy(t, configDir(t, map[string][]byte{"envoy.yaml": []byte(Bootstrap(host, xdsPort))}), "bridge", "--service-node", node)
+	envoy, p := runEnvoy(t, configDir(t, map[string][]byte{"envoy.yaml": []byte(Bootstrap(host, xdsPort))}), "bridge", append([]string{"--service-node", node}, args...)...)
 
 	// The pod's address is known once the container runs. Until the Pod exists, the node gets no configuration.
 	out, err = docker("inspect", "--format", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", envoy)
@@ -573,4 +573,106 @@ func TestEnvoyStatsLabels(t *testing.T) {
 	if open != 1 {
 		t.Errorf("import/app/x.y-b has %d open connections at 127.0.0.1, want 1: %v", open, clusters["import/app/x.y-b"])
 	}
+}
+
+// sessionState returns the state of the probe's connection to the import listener at addr, as netstat shows it from
+// the client's end, or "" when there is none.
+func sessionState(p probe, addr string) string {
+	out, _ := docker("exec", p.name, "netstat", "-tn")
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 6 && f[4] == addr {
+			return f[5]
+		}
+	}
+	return ""
+}
+
+// closedImport holds a session through import app/admin-b to a backend that never closes it, then closes the import.
+// It returns how long the session lasted after the import was closed, up to hold.
+func closedImport(t *testing.T, hold time.Duration, args ...string) time.Duration {
+	ctx := context.Background()
+	s, c, p, _, ip := adsEnvoy(t, args...)
+	// The backend holds its one connection open: its input never ends.
+	if out, err := docker("exec", "-d", p.name, "sh", "-c", "sleep 600 | nc -l -p 9902 > /dev/null"); err != nil {
+		t.Fatalf("backend: %v\n%s", err, out)
+	}
+	var es discoveryv1.EndpointSlice
+	if err := c.Get(ctx, client.ObjectKey{Namespace: "app", Name: "admin-1"}, &es); err != nil {
+		t.Fatal(err)
+	}
+	es.Ports[0].Port = ptr.To[int32](9902)
+	if err := c.Update(ctx, &es); err != nil {
+		t.Fatal(err)
+	}
+	s.Trigger()
+	waitHealthy(p, "import/app/admin-b", map[string]string{"127.0.0.1:30901": "healthy"})
+
+	// The client's input is a FIFO held open, so it never closes its end either.
+	session := net.JoinHostPort(ip, "15000")
+	if out, err := docker("exec", "-d", p.name, "sh", "-c", "mkfifo /tmp/in; nc "+ip+" 15000 < /tmp/in & exec 3>/tmp/in; sleep 600"); err != nil {
+		t.Fatalf("client: %v\n%s", err, out)
+	}
+	p.eventually("the session is established", func() string {
+		if st := sessionState(p, session); st != "ESTABLISHED" {
+			return "state " + st
+		}
+		return ""
+	})
+
+	var imp straitv1.Import
+	if err := c.Get(ctx, client.ObjectKey{Namespace: "app", Name: "admin-b"}, &imp); err != nil {
+		t.Fatal(err)
+	}
+	imp.Spec.Closed = true
+	if err := c.Update(ctx, &imp); err != nil {
+		t.Fatal(err)
+	}
+	s.Trigger()
+	closed := time.Now()
+	// A new connection is refused once Envoy has the configuration.
+	p.eventually("a new connection is refused", func() string {
+		out, err := docker("exec", p.name, "sh", "-c", "echo | nc -w 1 "+ip+" 15000; echo rc=$?")
+		if err == nil && strings.Contains(out, "rc=1") {
+			return ""
+		}
+		return out
+	})
+	for time.Since(closed) < hold {
+		if st := sessionState(p, session); st != "ESTABLISHED" {
+			lasted := time.Since(closed)
+			t.Logf("the session left ESTABLISHED (%s) %s after the import was closed", st, lasted.Round(100*time.Millisecond))
+			// Opened again, the import has its listener back.
+			imp.Spec.Closed = false
+			if err := c.Update(ctx, &imp); err != nil {
+				t.Fatal(err)
+			}
+			s.Trigger()
+			p.eventually("the import's listener is back", func() string {
+				if _, body := p.get("http://127.0.0.1:9901/listeners"); !strings.Contains(body, ImportName("app", "admin-b")+"::") {
+					return body
+				}
+				return ""
+			})
+			return lasted
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return hold
+}
+
+// A closed import has no listener: a new connection is refused at once, and Envoy ends an established one when its
+// drain time has passed, so a short --drain-time-s ends it within seconds (RFC0005). With Envoy's default drain time,
+// 10 minutes, the session outlives the test's 20s.
+func TestEnvoyClosedImport(t *testing.T) {
+	t.Run("drain time 2s", func(t *testing.T) {
+		if lasted := closedImport(t, 20*time.Second, "--drain-time-s", "2"); lasted >= 15*time.Second {
+			t.Errorf("the session lasted %s after the import was closed, want under 15s", lasted)
+		}
+	})
+	t.Run("default drain time", func(t *testing.T) {
+		if lasted := closedImport(t, 20*time.Second); lasted < 20*time.Second {
+			t.Errorf("the session ended %s after the import was closed, want it kept for Envoy's default drain time", lasted)
+		}
+	})
 }

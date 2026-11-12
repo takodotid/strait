@@ -79,6 +79,7 @@ spec:
     unknownHold: 10m
     startupHold: 30s
     isolationTimeout: 10m
+    connections: EndGateway
 ---
 apiVersion: strait.tako.id/v1
 kind: SiteService

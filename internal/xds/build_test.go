@@ -214,6 +214,25 @@ func TestBuildListeners(t *testing.T) {
 	}
 }
 
+// A closed import keeps its cluster and endpoints but has no listener, and its port stays its own (RFC0005).
+func TestBuildClosedImport(t *testing.T) {
+	m := collect(t)
+	m.Imports[0].Closed = true
+	snap := build(t, m)
+	if _, ok := names[*listener.Listener](t, snap, resource.ListenerType)["import/app/pg-b"]; ok {
+		t.Error("closed import app/pg-b has a listener")
+	}
+	if _, ok := names[*cluster.Cluster](t, snap, resource.ClusterType)["import/app/pg-b"]; !ok {
+		t.Error("closed import app/pg-b has no cluster")
+	}
+	if _, ok := names[*endpoint.ClusterLoadAssignment](t, snap, resource.EndpointType)["import/app/pg-b"]; !ok {
+		t.Error("closed import app/pg-b has no endpoints")
+	}
+	if _, ok := names[*listener.Listener](t, snap, resource.ListenerType)["import/app/redis-b"]; !ok {
+		t.Error("open import app/redis-b lost its listener")
+	}
+}
+
 func hostPort(sa interface {
 	GetAddress() string
 	GetPortValue() uint32

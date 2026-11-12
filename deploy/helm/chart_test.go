@@ -614,6 +614,31 @@ func TestNamespacesFlagFollowsValue(t *testing.T) {
 	}
 }
 
+// Envoy's drain time is its default unless envoy.drainTimeSeconds sets it (RFC0005).
+func TestDrainTimeFollowsValue(t *testing.T) {
+	for _, tt := range []struct {
+		set  []string
+		want []string
+	}{
+		{nil, nil},
+		{[]string{"envoy.drainTimeSeconds=3"}, []string{"--drain-time-s", "3"}},
+	} {
+		pod := render(t, tt.set...).pods["strait-gateway"]
+		var got []string
+		for _, c := range pod.Spec.Containers {
+			if c.Name != "envoy" {
+				continue
+			}
+			if i := slices.Index(c.Args, "--drain-time-s"); i >= 0 && i+1 < len(c.Args) {
+				got = c.Args[i : i+2]
+			}
+		}
+		if !slices.Equal(got, tt.want) {
+			t.Errorf("%v: envoy args %v, want %v", tt.set, got, tt.want)
+		}
+	}
+}
+
 // The controller reads where its read Roles grant it, and the chart refuses namespacedReads without namespaces
 // (RFC0007, requirement 26).
 func TestNamespacedReadsFlagFollowsValue(t *testing.T) {

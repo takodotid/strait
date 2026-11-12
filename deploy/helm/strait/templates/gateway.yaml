@@ -84,6 +84,10 @@ spec:
             - {{ .Values.envoy.concurrency | quote }}
             - --log-level
             - {{ .Values.envoy.logLevel }}
+            {{- with .Values.envoy.drainTimeSeconds }}
+            - --drain-time-s
+            - {{ . | int | quote }}
+            {{- end }}
           env:
             - name: POD_NAME
               valueFrom:

@@ -16,6 +16,7 @@ metadata:
 spec:
   site: b
   export: pg-pg-b
+  closed: true
 ---
 # A hand-written Import with a Service of its own.
 apiVersion: strait.tako.id/v1

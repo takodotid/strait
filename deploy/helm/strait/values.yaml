@@ -15,6 +15,11 @@ envoy:
   # Envoy worker threads.
   concurrency: 2
   logLevel: warn
+  # Seconds that Envoy keeps a removed or changed listener's connections before it closes them. Empty: Envoy's
+  # default, 600. A SiteService with policy.connections EndGateway ends connections through this site's gateway after
+  # this time, so set a few seconds where one is used. Every other removed or changed listener of the gateway then
+  # closes its connections after this time too (RFC0005).
+  drainTimeSeconds: null
 
 controller:
   logLevel: info

@@ -120,7 +120,10 @@ func Build(m Model, podIP string) (*cache.Snapshot, error) {
 		}
 		used[i.Port] = true
 		name := ImportName(i.Namespace, i.Name)
-		listeners = append(listeners, b.tcpListener(name, podIP, i.Port))
+		// A closed import keeps its cluster, so that it is warm when it opens again, but has no listener.
+		if !i.Closed {
+			listeners = append(listeners, b.tcpListener(name, podIP, i.Port))
+		}
 		clusters = append(clusters, edsCluster(name, exportCheck(i.Namespace, i.Export)))
 		var eps []*endpoint.LocalityLbEndpoints
 		if p, ok := peers[i.Peer]; ok && i.RemotePort > 0 {

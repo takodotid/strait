@@ -42,6 +42,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | SiteLinks | `b-direct` (cost 10), `b-wan` (wireguard, cost 100, waits) | `a-direct` (cost 10), `a-wan` (wireguard, cost 100, dials) |
 | `directService` | `NodePort`, `externalTrafficPolicy: Local` | same |
 | `controller.namespaces` | `db`, `web`: the controller writes Services and EndpointSlices there and in `strait-system` only | same |
+| `envoy.drainTimeSeconds` | `2`: a closed `Import` ends its sessions after 2s | same |
 | `networkPolicy.gateway` | On. `peerCIDRs`: site b's node on both networks. `wireGuardPorts`: `32100`. `metricsFrom`: namespace `monitoring`, which holds no pod. kindnet enforces it. | The same, with site a's node |
 
 | Docker network | Subnet | Carries |
@@ -72,6 +73,7 @@ They run in this order on one fixture and stop at the first failure.
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |
 | 4b | Isolated site | The partition again, with `isolationTimeout: 8s` on `pg` at both sites. Site b routes `pg-b`, then nowhere with `SiteIsolated` no sooner than `isolationTimeout` after the cut, less one poll, and a connection at b is refused. Site a routes nowhere as in step 4. Setting the field to 0s at b routes `pg-b` again, and setting it back isolates b again. After the heal, both sites route `pg-b`. The field is removed afterwards. Step 4 is the same partition with the policy off. |
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
+| 5b | Ending gateway sessions | At site b, `web` routes to `web-a` through the gateway, and the client pod holds an idle TCP session to it. With `policy.connections` unset, moving the route to `web-b` keeps the session for 20s. With `EndGateway` at site b, the move ends it within 20s, and a new request from b reaches `web-b`. `web-a` stays up throughout. The policy is removed afterwards. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |
 | 7 | Two writable members | Site b comes back with `cluster-b` still primary, still cut off from site a, and its controller restarts. With `startupHold: 30s` on `pg`, site b routes nowhere with `AwaitingPeers` and never to `pg-b` until the hold ends, then to `pg-b`. The controller restarts again, and holds again: every start begins a new hold (RFC0002 requirement 32). Once the cut is removed, within 30s both sites route nowhere and the `Multiple` condition is `True`. |
 | rbac | Least privilege | No Strait controller or gateway agent logged a `forbidden` request, though the controller writes Services and EndpointSlices in `db`, `web` and `strait-system` only. |

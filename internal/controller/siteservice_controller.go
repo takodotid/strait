@@ -298,8 +298,9 @@ func memberObjectName(svc *straitv1.SiteService, member string) string {
 	return svc.Name + "-" + member
 }
 
-// syncExportsImports keeps one Export per local member and one Import per remote member.
-func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *straitv1.SiteService, site string, report observe.Report) error {
+// syncExportsImports keeps one Export per local member and one Import per remote member. With policy.connections
+// EndGateway, the Import of a member that is not in the route is closed (RFC#0002, requirement 14).
+func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *straitv1.SiteService, site string, report observe.Report, route []string) error {
 	wantExports := map[string]bool{}
 	wantImports := map[string]bool{}
 	for _, m := range svc.Spec.Members {
@@ -324,7 +325,8 @@ func (r *SiteServiceReconciler) syncExportsImports(ctx context.Context, svc *str
 		imp := &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: svc.Namespace}}
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, imp, func() error {
 			imp.Labels = map[string]string{LabelSiteService: svc.Name, LabelMember: m.Name}
-			imp.Spec = straitv1.ImportSpec{Site: m.Site, Export: name}
+			imp.Spec = straitv1.ImportSpec{Site: m.Site, Export: name,
+				Closed: svc.Spec.Policy.Connections == straitv1.ConnectionsEndGateway && !slices.Contains(route, m.Name)}
 			return controllerutil.SetControllerReference(svc, imp, r.Scheme())
 		}); err != nil {
 			return fmt.Errorf("import %s: %w", name, err)
@@ -601,7 +603,7 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 		return a
 	}
 
-	if a.err = r.syncExportsImports(ctx, svc, site.Name, report); a.err != nil {
+	if a.err = r.syncExportsImports(ctx, svc, site.Name, report, members); a.err != nil {
 		return a
 	}
 	if conflict {

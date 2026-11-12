@@ -95,6 +95,12 @@ type ImportSpec struct {
 	// Its endpoint is the active gateway on the import's gateway port. A SiteService never sets it on the Imports it creates.
 	// +optional
 	Port *ServicePort `json:"port,omitempty"`
+
+	// Closed, when true, gives the import no listener at the gateway: a new connection to its port is refused, and an
+	// established one ends when the gateway's drain time has passed (RFC0005). A SiteService sets it on its own Imports
+	// while their member is not routed and its policy.connections is EndGateway.
+	// +optional
+	Closed bool `json:"closed,omitempty"`
 }
 
 // ImportStatus shows the import's local gateway port and the peer's export port.

@@ -83,7 +83,7 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 	// cluster reaches them (RFC0007 requirement 28).
 	p := e.peer(s)
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
-envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}}
+envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}, drainTimeSeconds: %d}
 controller: {logLevel: debug, namespaces: [%s, %s]}
 networkPolicy:
   metricsFrom: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: monitoring}}}]
@@ -94,7 +94,7 @@ site:
     wireguard: {privateKeySecretRef: {name: %s}}
     exchange: {pollInterval: %s, peerTimeout: %s}
     gateway: {directService: {type: NodePort, externalTrafficPolicy: Local}}
-`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, dbNamespace, webNamespace, p.directIP, p.wanIP, wireGuardPort,
+`, e.image[:i], e.image[i+1:], envoyRepository, envoyTag, envoyDrainSeconds, dbNamespace, webNamespace, p.directIP, p.wanIP, wireGuardPort,
 		s.name, wireGuardSecret, pollInterval, peerTimeout)
 	path := filepath.Join(e.dir, "values-"+s.name+".yaml")
 	if err := os.WriteFile(path, []byte(values), 0o644); err != nil {

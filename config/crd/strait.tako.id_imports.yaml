@@ -53,6 +53,12 @@ spec:
           spec:
             description: ImportSpec names a peer's export.
             properties:
+              closed:
+                description: |-
+                  Closed, when true, gives the import no listener at the gateway: a new connection to its port is refused, and an
+                  established one ends when the gateway's drain time has passed (RFC0005). A SiteService sets it on its own Imports
+                  while their member is not routed and its policy.connections is EndGateway.
+                type: boolean
               export:
                 description: Export is the name of the Export at that site, in the
                   same namespace as this Import.
@@ -220,6 +226,12 @@ spec:
           spec:
             description: ImportSpec names a peer's export.
             properties:
+              closed:
+                description: |-
+                  Closed, when true, gives the import no listener at the gateway: a new connection to its port is refused, and an
+                  established one ends when the gateway's drain time has passed (RFC0005). A SiteService sets it on its own Imports
+                  while their member is not routed and its policy.connections is EndGateway.
+                type: boolean
               export:
                 description: Export is the name of the Export at that site, in the
                   same namespace as this Import.
