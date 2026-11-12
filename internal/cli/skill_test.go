@@ -91,7 +91,7 @@ func commands(c *cobra.Command) []*cobra.Command {
 func TestEveryCommandIsDocumented(t *testing.T) {
 	root := NewRoot("strait")
 	cmds := commands(root)
-	if len(cmds) != 7 {
+	if len(cmds) != 8 {
 		t.Errorf("got %d commands", len(cmds))
 	}
 	for _, c := range cmds {
