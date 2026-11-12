@@ -231,6 +231,7 @@ spec:
 | `spec.members` | One member per `Cluster`, with the site that hosts it. Each site observes only its own members. |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
 | `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. A site that comes back still primary after being lost then does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |
+| `spec.policy.isolationTimeout` | Optional, off unless set. A site that has read no other site for this long stops routing to its own member, so its clients stop writing to a primary that another site may replace. Turn it on with three or more sites, or when a site that loses the others must stop writing. With two sites, the survivor of a site loss stops too, until the operator sets it to 0s there. [RFC0002, The isolated-site policy](../rfcs/RFC0002.md#the-isolated-site-policy). |
 
 Every field and rule: [RFC0002](../rfcs/RFC0002.md).
 

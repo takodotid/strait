@@ -846,6 +846,153 @@ func TestStartupHold(t *testing.T) {
 	}
 }
 
+// The isolated-site policy (RFC#0002, requirements 44 to 47): a site that has read no peer for isolationTimeout, and
+// sees no peer now, does not route to its own member. When a peer is read again, the table decides as before.
+func TestIsolatedSite(t *testing.T) {
+	const timeout = 20 * time.Second
+	spec := func(isolation time.Duration, sites ...string) straitv1.SiteServiceSpec {
+		s := pgSpec(straitv1.RouteNowhere, hold, sites...)
+		s.Policy.IsolationTimeout = metav1.Duration{Duration: isolation}
+		return s
+	}
+	alone := map[string]decide.SiteView{"b": declares("pg-b")}
+	tests := []struct {
+		name string
+		in   decide.Input
+		want decide.Result
+	}{
+		{
+			name: "off by default: a cut-off site keeps its local primary",
+			in: decide.Input{
+				Spec: spec(0, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour), LastPeerRead: ago(time.Hour),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "no peer read for less than the timeout: still routed",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour), LastPeerRead: ago(timeout - time.Second),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "no peer read for the timeout: routed nowhere",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour), LastPeerRead: ago(timeout),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonSiteIsolated},
+		},
+		{
+			name: "never read since the start: counts from the start",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(timeout),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonSiteIsolated},
+		},
+		{
+			name: "a read before the start does not count: the start is later",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Second), LastPeerRead: ago(time.Hour),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "a peer is known again: the table decides",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour), LastPeerRead: now,
+				Sites:        map[string]decide.SiteView{"a": declares("pg-b"), "b": declares("pg-b")},
+				Observations: observations(replica("pg-a", "a"), writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "a fresh peer with no member, such as a third site, ends isolation",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 2, Started: ago(time.Hour), LastPeerRead: ago(time.Hour),
+				Sites:        map[string]decide.SiteView{"b": declares("pg-b"), "c": declares("")},
+				Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "no peer polled: never isolated",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 0, Started: ago(time.Hour),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "every member local: never isolated",
+			in: decide.Input{
+				Spec: spec(timeout, "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonActive},
+		},
+		{
+			name: "a held local member is not routed either",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour),
+				Sites: map[string]decide.SiteView{"b": declares("")}, Observations: observations(unknown("pg-b", "b")),
+				Previous: []string{"pg-b"}, LastConfirmed: map[string]time.Time{"pg-b": ago(time.Second)},
+			},
+			want: decide.Result{Reason: straitv1.ReasonSiteIsolated},
+		},
+		{
+			name: "a held remote member keeps its hold",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "a", Peers: 1, Started: ago(time.Hour), LastPeerRead: ago(time.Minute),
+				Sites: map[string]decide.SiteView{"a": declares("pg-b")}, Observations: observations(replica("pg-a", "a")),
+				Previous: []string{"pg-b"}, LastConfirmed: map[string]time.Time{"pg-b": ago(time.Second)},
+			},
+			want: decide.Result{Members: []string{"pg-b"}, Reason: straitv1.ReasonHeldUnknown, Held: []string{"pg-b"}},
+		},
+		{
+			name: "isolation comes before the startup hold",
+			in: decide.Input{
+				Spec: func() straitv1.SiteServiceSpec {
+					s := spec(timeout, "a", "b")
+					s.Policy.StartupHold = metav1.Duration{Duration: time.Minute}
+					return s
+				}(),
+				LocalSite: "b", Peers: 1, Started: ago(timeout),
+				Sites: alone, Observations: observations(writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonSiteIsolated},
+		},
+		{
+			name: "two writable members: MultipleWritable as before",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour), LastPeerRead: now,
+				Sites:        map[string]decide.SiteView{"a": declares("pg-a"), "b": declares("pg-a")},
+				Observations: observations(writable("pg-a", "a"), writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonMultipleWritable, Multiple: true},
+		},
+		{
+			name: "disagreeing declarations: DeclarationsDisagree as before",
+			in: decide.Input{
+				Spec: spec(timeout, "a", "b"), LocalSite: "b", Peers: 1, Started: ago(time.Hour), LastPeerRead: now,
+				Sites:        map[string]decide.SiteView{"a": declares("pg-a"), "b": declares("pg-b")},
+				Observations: observations(replica("pg-a", "a"), writable("pg-b", "b")),
+			},
+			want: decide.Result{Reason: straitv1.ReasonDeclarationsDisagree, Disagree: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.in.Now = now
+			check(t, decide.Decide(tt.in), tt.want)
+		})
+	}
+}
+
 // Unread lists the sites with a member, other than the local site, not read since the controller began to poll
 // peers, with no time limit.
 func TestUnread(t *testing.T) {

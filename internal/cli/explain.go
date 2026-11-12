@@ -181,6 +181,9 @@ func (o *options) explainTable(w io.Writer, v explainView) {
 	if d := v.Policy.StartupHold.Duration; d > 0 {
 		policy += fmt.Sprintf(", startupHold %s", d)
 	}
+	if d := v.Policy.IsolationTimeout.Duration; d > 0 {
+		policy += fmt.Sprintf(", isolationTimeout %s", d)
+	}
 	pairs = append(pairs,
 		[2]string{"Plugin", pluginText(v.Plugin)},
 		[2]string{"Policy", policy},

@@ -40,6 +40,8 @@ type peers struct {
 	started time.Time
 	// polled is true once the first round of polls has ended.
 	polled bool
+	// lastRead is the last time a document of any peer was read.
+	lastRead time.Time
 }
 
 func (p peers) Fresh(peer string, _ time.Time, _ time.Duration) bool { return p.fresh[peer] }
@@ -61,6 +63,8 @@ var readB = peers{read: map[string]bool{"b": true}}
 func (p peers) Started() time.Time { return p.started }
 
 func (p peers) Polled() bool { return p.polled }
+
+func (p peers) LastRead() time.Time { return p.lastRead }
 
 func site(name, gateway string) *straitv1.Site {
 	s := &straitv1.Site{ObjectMeta: metav1.ObjectMeta{Name: name}}
@@ -468,6 +472,53 @@ func TestStartupHold(t *testing.T) {
 	run(t, r)
 	if st := status(t, c); st.Route.Reason != straitv1.ReasonActive || len(endpointSlices(t, c)) != 1 {
 		t.Fatalf("after the hold: route = %+v", st.Route)
+	}
+}
+
+// With isolationTimeout, the controller counts the peers it polls from the Site's SitePeers and pollInterval, and the
+// time since it last read any peer from the exchange (RFC#0002, requirement 45). An isolated site does not route to its
+// local member, and routes it again once a peer is fresh.
+func TestIsolatedSite(t *testing.T) {
+	ss := webService("web-a")
+	ss.Spec.Policy.IsolationTimeout = metav1.Duration{Duration: 20 * time.Second}
+	polling := site("a", "10.0.9.9")
+	polling.Spec.Exchange.PollInterval = metav1.Duration{Duration: 2 * time.Second}
+	peerB := &straitv1.SitePeer{ObjectMeta: metav1.ObjectMeta{Name: "b"}}
+	cutOff := peers{started: now.Add(-time.Hour), lastRead: now.Add(-30 * time.Second)}
+
+	tests := []struct {
+		name   string
+		site   *straitv1.Site
+		peer   bool
+		peers  peers
+		reason string
+	}{
+		{"isolated", polling, true, cutOff, straitv1.ReasonSiteIsolated},
+		{"read within the timeout", polling, true, peers{started: now.Add(-time.Hour), lastRead: now.Add(-10 * time.Second)}, straitv1.ReasonActive},
+		{"no SitePeer", polling, false, cutOff, straitv1.ReasonActive},
+		{"polling off", site("a", "10.0.9.9"), true, cutOff, straitv1.ReasonActive},
+		{"a peer fresh again", polling, true, peers{
+			started: now.Add(-time.Hour), lastRead: now, fresh: map[string]bool{"b": true},
+			view: map[string]observe.Report{"b": {Declared: "web-a", Members: map[string]observe.Observation{}}},
+		}, straitv1.ReasonActive},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objs := append(appService("web-a", "10.0.0.1"), tt.site.DeepCopy(), ss.DeepCopy())
+			if tt.peer {
+				objs = append(objs, peerB.DeepCopy())
+			}
+			tt.peers.polled = true
+			r, c := reconciler(t, tt.peers, objs...)
+			run(t, r)
+			st := status(t, c)
+			if st.Route.Reason != tt.reason {
+				t.Fatalf("route = %+v, want reason %s", st.Route, tt.reason)
+			}
+			if routed := tt.reason == straitv1.ReasonActive; routed != (len(endpointSlices(t, c)) == 1) {
+				t.Fatalf("slices = %v with reason %s", endpointSlices(t, c), st.Route.Reason)
+			}
+		})
 	}
 }
 

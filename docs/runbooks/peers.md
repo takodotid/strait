@@ -8,6 +8,7 @@ At every other site, a member whose site is not a reachable peer is `Unknown`, w
 |---|---|
 | A routed member whose site stops being read | It stays in the route for `policy.unknownHold`, then the name routes nowhere: `HeldUnknown`, then `UnknownTimeout`. |
 | `policy.startupHold` set, and a member at a site that is not read | Each start of the controller keeps its local member unrouted for the full `startupHold`, with reason `AwaitingPeers` ([RFC0002, Startup hold](../../rfcs/RFC0002.md#startup-hold)). |
+| `policy.isolationTimeout` set, and no peer read for that long | The local member is not routed, with reason `SiteIsolated`. A site with no `SitePeer` left is never isolated ([RFC0002, The isolated-site policy](../../rfcs/RFC0002.md#the-isolated-site-policy)). |
 | A new site whose workload declares another primary | Every site that reads it routes the name nowhere, with `DeclarationsDisagree` ([RFC0002](../../rfcs/RFC0002.md#requirements), requirement 18, row 1). |
 
 ## Add a site

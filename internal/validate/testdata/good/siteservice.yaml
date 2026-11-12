@@ -77,6 +77,8 @@ spec:
   policy:
     multiple: PreferDeclaredIfConsistent
     unknownHold: 10m
+    startupHold: 30s
+    isolationTimeout: 10m
 ---
 apiVersion: strait.tako.id/v1
 kind: SiteService

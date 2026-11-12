@@ -78,6 +78,7 @@ type SiteService struct {
 // +kubebuilder:validation:XValidation:rule="self.members.all(m, has(self.plugin.cnpg) ? (has(m.cnpg) && !has(m.service)) : (has(m.service) && !has(m.cnpg)))",message="every member must carry the source of the plugin in use, and no other"
 // +kubebuilder:validation:XValidation:rule="self.members.all(m, self.members.exists_one(n, n.name == m.name))",message="member names must be unique"
 // +kubebuilder:validation:XValidation:rule="self.mode == 'Single' || !has(self.policy.startupHold) || duration(self.policy.startupHold) == duration('0s')",message="startupHold applies to Single mode only"
+// +kubebuilder:validation:XValidation:rule="self.mode == 'Single' || !has(self.policy.isolationTimeout) || duration(self.policy.isolationTimeout) == duration('0s')",message="isolationTimeout applies to Single mode only"
 type SiteServiceSpec struct {
 	// Mode is Single, for one writable member, or Set, for every eligible member.
 	Mode Mode `json:"mode"`
@@ -176,6 +177,7 @@ type CNPGMember struct {
 // Policy decides the route when observations are incomplete or contradict each other.
 // +kubebuilder:validation:XValidation:rule="!has(self.unknownHold) || (duration(self.unknownHold) >= duration('0s') && duration(self.unknownHold) <= duration('10m'))",message="unknownHold must be between 0s and 10m"
 // +kubebuilder:validation:XValidation:rule="!has(self.startupHold) || (duration(self.startupHold) >= duration('0s') && duration(self.startupHold) <= duration('10m'))",message="startupHold must be between 0s and 10m"
+// +kubebuilder:validation:XValidation:rule="!has(self.isolationTimeout) || (duration(self.isolationTimeout) >= duration('0s') && duration(self.isolationTimeout) <= duration('10m'))",message="isolationTimeout must be between 0s and 10m"
 type Policy struct {
 	// Multiple is what Single mode does when two or more members are writable.
 	// +kubebuilder:default=RouteNowhere
@@ -191,6 +193,11 @@ type Policy struct {
 	// with a member has been read once, or until this much time has passed. Unset or 0s turns it off.
 	// +optional
 	StartupHold metav1.Duration `json:"startupHold,omitzero"`
+
+	// IsolationTimeout keeps Single mode from routing to a local member while the site sees no peer: no peer's
+	// document is fresh, and none was read for this long. A member must be at another site. Unset or 0s turns it off.
+	// +optional
+	IsolationTimeout metav1.Duration `json:"isolationTimeout,omitzero"`
 }
 
 // State is a member's state.
@@ -244,6 +251,7 @@ const (
 	ReasonNoEligibleMember     = "NoEligibleMember"
 	ReasonEligible             = "Eligible"
 	ReasonAwaitingPeers        = "AwaitingPeers"
+	ReasonSiteIsolated         = "SiteIsolated"
 )
 
 // Condition types of a SiteService.

@@ -41,6 +41,12 @@ type Input struct {
 	Started time.Time
 	// Read holds the peers whose document was read at least once since Started.
 	Read map[string]bool
+	// Peers is the number of peers that the controller polls: the local site's SitePeers, or none while polling is
+	// off.
+	Peers int
+	// LastPeerRead is the last time a document of any peer was read. Zero when none was. The isolated-site policy
+	// counts from it, or from Started if that is later.
+	LastPeerRead time.Time
 }
 
 // Result is a route and the facts that the status reports.
@@ -181,11 +187,59 @@ func (in Input) awaiting() []string {
 	return in.Unread()
 }
 
-// decideSingle applies the startup hold to the route that the table picks: it never routes to a local member while
-// the hold lasts.
+// Isolated reports whether the local site counts as isolated (RFC#0002, requirement 45), and for how long no peer
+// has been read: isolationTimeout is set, a member is at another site, the controller polls a peer, no peer is known,
+// and no peer was read for isolationTimeout, counted from Started at the earliest.
+func (in Input) Isolated() (time.Duration, bool) {
+	starts := in.IsolationStarts()
+	if starts.IsZero() {
+		return 0, false
+	}
+	for name, s := range in.Sites {
+		if name != in.LocalSite && s.Known {
+			return 0, false
+		}
+	}
+	return in.Now.Sub(starts) + in.Spec.Policy.IsolationTimeout.Duration, !in.Now.Before(starts)
+}
+
+// IsolationStarts returns when the local site counts as isolated if no peer is read before then. Zero when the policy
+// is off or does not apply.
+func (in Input) IsolationStarts() time.Time {
+	timeout := in.Spec.Policy.IsolationTimeout.Duration
+	if timeout <= 0 || in.Peers == 0 || !in.remoteMember() {
+		return time.Time{}
+	}
+	since := in.Started
+	if in.LastPeerRead.After(since) {
+		since = in.LastPeerRead
+	}
+	return since.Add(timeout)
+}
+
+// remoteMember reports whether a member is at a site other than the local one.
+func (in Input) remoteMember() bool {
+	for _, m := range in.Spec.Members {
+		if m.Site != in.LocalSite {
+			return true
+		}
+	}
+	return false
+}
+
+// decideSingle applies the isolated-site policy and the startup hold to the route that the table picks: it never
+// routes to a local member while the site is isolated or the hold lasts. Isolation comes first (RFC#0002,
+// requirement 47).
 func decideSingle(in Input) Result {
 	r := singleTable(in)
 	if len(r.Members) != 1 || !in.local(r.Members[0]) {
+		return r
+	}
+	if unseen, isolated := in.Isolated(); isolated {
+		r.Message = fmt.Sprintf("%s would be routed (%s), but it is local and no peer has been read for %s; isolationTimeout %s",
+			r.Members[0], r.Reason, unseen.Round(time.Second), in.Spec.Policy.IsolationTimeout.Duration)
+		r.Reason = straitv1.ReasonSiteIsolated
+		r.Members, r.Held = nil, nil
 		return r
 	}
 	if sites := in.awaiting(); len(sites) > 0 {

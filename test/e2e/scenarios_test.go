@@ -594,6 +594,128 @@ func (e *env) partition(ctx context.Context, t *testing.T) {
 	}
 }
 
+// isolationTimeout of the isolated step: above peerTimeout and a few poll intervals, as RFC0002 advises.
+const isolationTimeout = 8 * time.Second
+
+// setIsolation sets pg's isolationTimeout at a site. A negative duration removes the field.
+func setIsolation(ctx context.Context, e *env, s *site, d time.Duration) error {
+	value := "null"
+	if d >= 0 {
+		value = fmt.Sprintf("%q", d.String())
+	}
+	patch := fmt.Sprintf(`{"spec":{"policy":{"isolationTimeout":%s}}}`, value)
+	return s.c.Patch(ctx, pgService(e), client.RawPatch(types.MergePatchType, []byte(patch)))
+}
+
+// isolated: the partition again, with pg's isolationTimeout set at both sites (RFC0002, requirements 44 to 47). Site
+// b, cut off from every peer, routes pg-b until isolationTimeout has passed since it last read site a, then nowhere
+// with SiteIsolated, and a connection from b is refused. Setting the field to 0s routes pg-b again: the site-loss
+// runbook's way out. After the heal, b routes pg-b with the policy on. Step 4 is the same partition with the policy
+// off: b keeps pg-b throughout.
+func (e *env) isolated(ctx context.Context, t *testing.T) {
+	a, b := e.a, e.b
+	pgB := []string{memberOf(b)}
+	for _, s := range e.sites() {
+		eventually(ctx, t, time.Minute, time.Second, "links steady", func(ctx context.Context) (bool, string) { return e.linksSteady(ctx, s) })
+		eventually(ctx, t, 30*time.Second, time.Second, "site "+s.name+" routes pg-b", routeIs(s, dbNamespace, "pg", pgB, straitv1.ReasonActive))
+	}
+	for _, s := range e.sites() {
+		if err := setIsolation(ctx, e, s, isolationTimeout); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer func() {
+		for _, s := range e.sites() {
+			if err := setIsolation(context.WithoutCancel(ctx), e, s, -1); err != nil {
+				t.Errorf("site %s: remove isolationTimeout: %v", s.name, err)
+			}
+		}
+	}()
+	// The policy changes nothing while the sites see each other.
+	for _, s := range e.sites() {
+		eventually(ctx, t, 10*time.Second, 500*time.Millisecond, "site "+s.name+" still routes pg-b", routeIs(s, dbNamespace, "pg", pgB, straitv1.ReasonActive))
+	}
+	sp := startSampler(ctx, b, dbNamespace, "pg")
+	defer sp.Stop()
+
+	cut := time.Now()
+	if err := e.cutDirectLink(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.cutWANPath(ctx); err != nil {
+		t.Fatal(err)
+	}
+	d := eventually(ctx, t, isolationTimeout+15*time.Second, 250*time.Millisecond, "site b routes nowhere, isolated",
+		routeIs(b, dbNamespace, "pg", nil, straitv1.ReasonSiteIsolated))
+	isolatedAt := time.Now()
+	e.times.record(t, "4b/isolated-"+b.name, d)
+	eventually(ctx, t, 15*time.Second, 500*time.Millisecond, "a connection from b is refused", func(ctx context.Context) (bool, string) {
+		took, rc, out, err := connectTimed(ctx, b)
+		if err != nil {
+			return false, err.Error()
+		}
+		if rc == 0 {
+			return false, "connected: " + out
+		}
+		if strings.Contains(out, "refused") {
+			e.times.record(t, "4b/refused-in", took)
+			return true, ""
+		}
+		return false, fmt.Sprintf("took %s: %s", took, out)
+	})
+	// Site a, whose member is remote, routes as in step 4.
+	eventually(ctx, t, peerTimeout+unknownHold+10*time.Second, 250*time.Millisecond, "site a routes nowhere",
+		routeIs(a, dbNamespace, "pg", nil, timedOut...))
+
+	samples := sp.StopAfter(isolatedAt)
+	t.Logf("site b routes: %s", summary(samples, cut))
+	seq := ""
+	for _, smp := range samples {
+		switch {
+		case smp.err != nil:
+			t.Errorf("site b at %+.1fs: %v", smp.start.Sub(cut).Seconds(), smp.err)
+		case smp.names(memberOf(b)) && smp.reason == straitv1.ReasonActive:
+			seq += "a"
+		case smp.nowhere() && smp.reason == straitv1.ReasonSiteIsolated:
+			seq += "i"
+			// The last read of site a is at most one poll before the cut.
+			if smp.end.Before(cut.Add(isolationTimeout - pollInterval)) {
+				t.Errorf("site b is isolated at %+.1fs, before isolationTimeout %s passed", smp.end.Sub(cut).Seconds(), isolationTimeout)
+			}
+		default:
+			seq += "?"
+		}
+	}
+	if !regexp.MustCompile(`^a+i+$`).MatchString(seq) {
+		t.Errorf("site b routes in the order %q, want pg-b Active, then nowhere with SiteIsolated", seq)
+	}
+
+	// The runbook's way out: 0s turns the policy off, and b routes its primary again. Then the policy is set again.
+	if err := setIsolation(ctx, e, b, 0); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 10*time.Second, 250*time.Millisecond, "site b routes pg-b with the policy off", routeIs(b, dbNamespace, "pg", pgB, straitv1.ReasonActive))
+	if err := setIsolation(ctx, e, b, isolationTimeout); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 10*time.Second, 250*time.Millisecond, "site b is isolated again", routeIs(b, dbNamespace, "pg", nil, straitv1.ReasonSiteIsolated))
+
+	healed := time.Now()
+	if err := e.restore(ctx, cutDirect); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.restore(ctx, cutWAN); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range e.sites() {
+		eventually(ctx, t, 15*time.Second, 250*time.Millisecond, "site "+s.name+" routes pg-b again", routeIs(s, dbNamespace, "pg", pgB, straitv1.ReasonActive))
+	}
+	e.times.record(t, "4b/heal-to-pg-b", time.Since(healed))
+	for _, s := range e.sites() {
+		eventually(ctx, t, time.Minute, time.Second, "links steady", func(ctx context.Context) (bool, string) { return e.linksSteady(ctx, s) })
+	}
+}
+
 // declarations: sites that declare different members route nowhere; once they agree, both route to the declared member.
 func (e *env) declarations(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b

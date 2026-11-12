@@ -335,6 +335,19 @@ func (p *Poller) Polled() bool {
 	return p.polled
 }
 
+// LastRead returns the last time a good document of any peer arrived, from time.Now. Zero when none did.
+func (p *Poller) LastRead() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var last time.Time
+	for _, s := range p.peers {
+		if s.state.LastSuccess.After(last) {
+			last = s.state.LastSuccess
+		}
+	}
+	return last
+}
+
 // Snapshot returns a peer's last good document, which may be stale, and its poll state.
 // The document is shared and must not be modified.
 func (p *Poller) Snapshot(peer string) (Document, PeerState) {
