@@ -235,7 +235,11 @@ func siteService(ss *straitv1.SiteService, f Fields) field.ErrorList {
 	}
 
 	pol := spec.Child("policy")
+	// An explicit empty policy is a value, which the enum refuses. A missing one took its default above.
 	errs = append(errs, enum(pol.Child("multiple"), s.Policy.Multiple, false, straitv1.RouteNowhere, straitv1.PreferDeclaredIfConsistent)...)
+	if s.Policy.Multiple == "" && f[pol.Child("multiple").String()] {
+		errs = append(errs, field.NotSupported(pol.Child("multiple"), s.Policy.Multiple, []straitv1.MultiplePolicy{straitv1.RouteNowhere, straitv1.PreferDeclaredIfConsistent}))
+	}
 	errs = append(errs, rule(pol,
 		s.Policy.UnknownHold.Duration >= 0 && s.Policy.UnknownHold.Duration <= 10*time.Minute,
 		"unknownHold must be between 0s and 10m")...)
