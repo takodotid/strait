@@ -148,7 +148,7 @@ func TestFixturesOnAPIServer(t *testing.T) {
 					t.Fatalf("the API server accepts it; strait validate gives:\n%s", strings.Join(d.wants, "\n"))
 				}
 				got := err.Error()
-				for _, e := range Object(typed[i].obj) {
+				for _, e := range ObjectWith(typed[i].obj, typed[i].fields) {
 					switch {
 					case strings.HasPrefix(e.Field, "metadata."):
 						// The API server's own checks of object metadata, not a rule of the CRDs.

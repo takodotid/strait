@@ -51,3 +51,13 @@ spec:
       duration: 15s
       renewDeadline: 10s
       retryPeriod: 2s
+---
+# A gateway Service without a type keeps none: the CRD defaults the type only when the whole Service is absent.
+apiVersion: strait.tako.id/v1
+kind: Site
+metadata:
+  name: service-without-type
+spec:
+  gateway:
+    directService:
+      annotations: {example.com/internal: "true"}

@@ -22,21 +22,23 @@ var (
 )
 
 // Site checks a Site.
-func Site(s *straitv1.Site) field.ErrorList {
+func Site(s *straitv1.Site) field.ErrorList { return site(s, nil) }
+
+func site(s *straitv1.Site, f Fields) field.ErrorList {
 	// The CRD defaults a gateway Service's type only when the whole Service is absent,
 	// so the rules on the fields that depend on the type read the type as written.
 	written := s.Spec.Gateway
 	s = s.DeepCopy()
-	defaultSite(&s.Spec)
+	defaultSite(&s.Spec, f)
 	errs := objectMeta(&s.ObjectMeta)
 	spec := field.NewPath("spec")
 
 	g := s.Spec.Gateway
 	gp := spec.Child("gateway")
-	errs = append(errs, gatewayPort(gp.Child("controlPort"), g.ControlPort)...)
-	errs = append(errs, portRange(gp.Child("exportPorts"), g.ExportPorts)...)
-	errs = append(errs, portRange(gp.Child("importPorts"), g.ImportPorts)...)
-	errs = append(errs, gatewayPort(gp.Child("peerPort"), g.PeerPort)...)
+	errs = append(errs, gatewayPort(f, gp.Child("controlPort"), g.ControlPort)...)
+	errs = append(errs, portRange(f, gp.Child("exportPorts"), g.ExportPorts)...)
+	errs = append(errs, portRange(f, gp.Child("importPorts"), g.ImportPorts)...)
+	errs = append(errs, gatewayPort(f, gp.Child("peerPort"), g.PeerPort)...)
 	hasExport, hasImport := g.ExportPorts != straitv1.PortRange{}, g.ImportPorts != straitv1.PortRange{}
 	errs = append(errs, rule(gp,
 		!hasExport || g.ControlPort == 0 || g.ExportPorts.First > g.ControlPort || g.ExportPorts.Last < g.ControlPort,
@@ -54,7 +56,8 @@ func Site(s *straitv1.Site) field.ErrorList {
 		straitv1.ServiceExposure
 	}{{"directService", written.DirectService.Type, g.DirectService}, {"wireGuardService", written.WireGuardService.Type, g.WireGuardService}} {
 		p := gp.Child(e.name)
-		if e.Type != "ClusterIP" && e.Type != "NodePort" && e.Type != "LoadBalancer" {
+		// A Service without a type keeps none, unless the defaults gave it one. An explicit empty type is refused.
+		if (e.Type != "" || f["spec.gateway."+e.name+".type"]) && e.Type != "ClusterIP" && e.Type != "NodePort" && e.Type != "LoadBalancer" {
 			errs = append(errs, field.NotSupported(p.Child("type"), e.Type, []string{"ClusterIP", "NodePort", "LoadBalancer"}))
 		}
 		errs = append(errs, enum(p.Child("externalTrafficPolicy"), e.ExternalTrafficPolicy, false, "Cluster", "Local")...)
@@ -96,11 +99,13 @@ func Site(s *straitv1.Site) field.ErrorList {
 }
 
 // SitePeer checks a SitePeer.
-func SitePeer(s *straitv1.SitePeer) field.ErrorList {
+func SitePeer(s *straitv1.SitePeer) field.ErrorList { return sitePeer(s, nil) }
+
+func sitePeer(s *straitv1.SitePeer, f Fields) field.ErrorList {
 	s = s.DeepCopy()
-	Default(s)
+	defaults(s, f)
 	errs := objectMeta(&s.ObjectMeta)
-	errs = append(errs, port(field.NewPath("spec", "controlPort"), s.Spec.ControlPort)...)
+	errs = append(errs, portSet(f, field.NewPath("spec", "controlPort"), s.Spec.ControlPort)...)
 	if w := s.Spec.WireGuard; w != nil {
 		p := field.NewPath("spec", "wireguard", "publicKey")
 		if w.PublicKey == "" {
@@ -113,9 +118,11 @@ func SitePeer(s *straitv1.SitePeer) field.ErrorList {
 }
 
 // SiteLink checks a SiteLink.
-func SiteLink(l *straitv1.SiteLink) field.ErrorList {
+func SiteLink(l *straitv1.SiteLink) field.ErrorList { return siteLink(l, nil) }
+
+func siteLink(l *straitv1.SiteLink, f Fields) field.ErrorList {
 	l = l.DeepCopy()
-	defaultSiteLink(&l.Spec)
+	defaultSiteLink(&l.Spec, f)
 	errs := objectMeta(&l.ObjectMeta)
 	s := l.Spec
 	spec := field.NewPath("spec")
@@ -136,7 +143,7 @@ func SiteLink(l *straitv1.SiteLink) field.ErrorList {
 	}
 	if w := s.WireGuard; w != nil {
 		wp := spec.Child("wireguard")
-		errs = append(errs, port(wp.Child("listenPort"), w.ListenPort)...)
+		errs = append(errs, portSet(f, wp.Child("listenPort"), w.ListenPort)...)
 		errs = append(errs, cidr(wp.Child("address"), w.Address)...)
 		errs = append(errs, ip(wp.Child("peerAddress"), w.PeerAddress)...)
 	}
@@ -177,9 +184,11 @@ func Import(i *straitv1.Import) field.ErrorList {
 }
 
 // SiteService checks a SiteService.
-func SiteService(ss *straitv1.SiteService) field.ErrorList {
+func SiteService(ss *straitv1.SiteService) field.ErrorList { return siteService(ss, nil) }
+
+func siteService(ss *straitv1.SiteService, f Fields) field.ErrorList {
 	ss = ss.DeepCopy()
-	defaultSiteService(&ss.Spec)
+	defaultSiteService(&ss.Spec, f)
 	errs := objectMeta(&ss.ObjectMeta)
 	errs = append(errs, rule(nil,
 		ss.Name == "" || (dns1035.MatchString(ss.Name) && len(ss.Name) <= 63),
@@ -335,13 +344,21 @@ func port(p *field.Path, v int32) field.ErrorList {
 	return between(p, v, 1, 65535)
 }
 
+// portSet checks a port that has a default: 0 there is a value that the source sets, unless f lacks the field.
+func portSet(f Fields, p *field.Path, v int32) field.ErrorList {
+	if v == 0 && f[p.String()] {
+		return between(p, v, 1, 65535)
+	}
+	return port(p, v)
+}
+
 // agentPorts are the ports of the gateway pod where the gateway agent's probes and metrics, and Envoy's admin
 // interface, listen. No gateway port may be one of them (RFC#0005, requirement 52).
 var agentPorts = []int32{8090, 8091, 9901}
 
 // gatewayPort checks a required port of the gateway, which must not be one of agentPorts.
-func gatewayPort(p *field.Path, v int32) field.ErrorList {
-	errs := port(p, v)
+func gatewayPort(f Fields, p *field.Path, v int32) field.ErrorList {
+	errs := portSet(f, p, v)
 	if slices.Contains(agentPorts, v) {
 		errs = append(errs, field.Invalid(p, v, "must not be 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there"))
 	}
@@ -349,9 +366,9 @@ func gatewayPort(p *field.Path, v int32) field.ErrorList {
 }
 
 // portRange checks a range of the gateway's ports, which must not include one of agentPorts.
-func portRange(p *field.Path, r straitv1.PortRange) field.ErrorList {
-	errs := port(p.Child("first"), r.First)
-	errs = append(errs, port(p.Child("last"), r.Last)...)
+func portRange(f Fields, p *field.Path, r straitv1.PortRange) field.ErrorList {
+	errs := portSet(f, p.Child("first"), r.First)
+	errs = append(errs, portSet(f, p.Child("last"), r.Last)...)
 	errs = append(errs, rule(p, r.First <= r.Last, "first must not exceed last")...)
 	reserved := slices.ContainsFunc(agentPorts, func(a int32) bool { return a >= r.First && a <= r.Last })
 	return append(errs, rule(p, !reserved, "must not include 8090, 8091 or 9901: the gateway agent and Envoy's admin interface listen there")...)

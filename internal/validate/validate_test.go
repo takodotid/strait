@@ -23,8 +23,10 @@ import (
 )
 
 type doc struct {
-	obj   runtime.Object
-	wants []string
+	obj runtime.Object
+	// fields are the fields that the document sets.
+	fields Fields
+	wants  []string
 }
 
 var scheme = func() *runtime.Scheme {
@@ -77,6 +79,13 @@ func readDocs(t *testing.T, path string) []doc {
 			t.Fatalf("%s: %v", path, err)
 		}
 		d.obj = obj
+		data, err := yaml.YAMLToJSON(chunk)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if d.fields, err = FieldsOf(data); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
 		docs = append(docs, d)
 	}
 	return docs
@@ -127,7 +136,7 @@ func TestBad(t *testing.T) {
 				}
 				before := d.obj.DeepCopyObject()
 				var got []string
-				for _, e := range Object(d.obj) {
+				for _, e := range ObjectWith(d.obj, d.fields) {
 					got = append(got, e.Error())
 				}
 				if !slices.Equal(sorted(got), sorted(d.wants)) {
@@ -146,12 +155,14 @@ func TestSet(t *testing.T) {
 		t.Run(filepath.Base(path), func(t *testing.T) {
 			docs := readDocs(t, path)
 			var objs []runtime.Object
+			var fields []Fields
 			var wants []string
 			for _, d := range docs {
 				objs = append(objs, d.obj)
+				fields = append(fields, d.fields)
 				wants = append(wants, d.wants...)
 			}
-			problems := Set(objs)
+			problems := SetWith(objs, fields)
 			var got []string
 			for i, p := range problems {
 				got = append(got, p.String())

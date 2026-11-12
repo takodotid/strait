@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,8 +24,10 @@ import (
 )
 
 type problemView struct {
-	File     string            `json:"file"`
-	Document int               `json:"document"`
+	File     string `json:"file"`
+	Document int    `json:"document"`
+	// Item is the path of the object in a List document, such as items[2]. Empty for an object of its own.
+	Item     string            `json:"item,omitempty"`
 	Object   validate.Ref      `json:"object"`
 	Severity validate.Severity `json:"severity"`
 	Field    string            `json:"field,omitempty"`
@@ -49,9 +53,9 @@ func newValidate(o *options) *cobra.Command {
 		Short: "Check Strait manifests offline, before they are applied",
 		Long: `validate checks Strait manifests with the rules that the CRDs apply. It needs no cluster.
 
-PATH is a file, a directory, or - for standard input. -f may be repeated. A directory is read recursively, for files that end in .yaml, .yml or .json. A file may hold many YAML documents.
+PATH is a file, a directory, or - for standard input. -f may be repeated. A directory is read recursively, for files that end in .yaml, .yml or .json. A file may hold many YAML documents. A document of kind List, as kubectl get -o yaml writes, counts as each of its items.
 
-Each strait.tako.id object is decoded strictly, so an unknown field is an error. Defaults are set before the checks, as the API server sets them. Documents of other API groups are skipped.
+Each strait.tako.id object is decoded strictly, so an unknown field is an error. Defaults are set before the checks, as the API server sets them: to the fields that the object leaves out, and not to those it sets, also to 0 or 0s. Documents of other API groups are skipped.
 
 The objects are then checked together: at most one Site, a SitePeer for the peer of every SiteLink, spec.wireguard on the Site and on the SitePeer of every wireguard SiteLink, and a distinct listen port for each wireguard SiteLink to one peer. A rule that needs an object missing from the input is a warning.
 
@@ -85,11 +89,54 @@ Every problem names its file, document, object and field. The exit status is 1 w
 	return cmd
 }
 
-// document is one YAML document of a file.
+// document is one YAML document of a file, or one item of a List document.
 type document struct {
 	file  string
 	index int
-	data  []byte
+	// item is the path of the item in its List document, empty for a document of its own.
+	item string
+	data []byte
+}
+
+// isList reports whether a document of this API version and kind is a list of objects: a List, as kubectl get -o
+// yaml writes, or a list kind of Strait's API group.
+func isList(gv schema.GroupVersion, kind string) bool {
+	return (gv.Group == "" && kind == "List") || (gv.Group == straitv1.GroupVersion.Group && strings.HasSuffix(kind, "List"))
+}
+
+// expand returns the document, or each item of a List document, of a List in it too.
+func expand(d document) ([]document, error) {
+	var h header
+	if err := yaml.Unmarshal(d.data, &h); err != nil {
+		return []document{d}, nil
+	}
+	gv, err := schema.ParseGroupVersion(h.APIVersion)
+	if err != nil || !isList(gv, h.Kind) {
+		return []document{d}, nil
+	}
+	var list struct {
+		Items []stdjson.RawMessage `json:"items"`
+	}
+	if err := yaml.Unmarshal(d.data, &list); err != nil {
+		return nil, fmt.Errorf("items of %s: %w", h.Kind, err)
+	}
+	var out []document
+	for i, item := range list.Items {
+		sub := document{file: d.file, index: d.index, item: fmt.Sprintf("%sitems[%d]", prefix(d.item), i), data: item}
+		docs, err := expand(sub)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, docs...)
+	}
+	return out, nil
+}
+
+func prefix(item string) string {
+	if item == "" {
+		return ""
+	}
+	return item + "."
 }
 
 // readDocuments reads every document of the paths. A directory is walked for .yaml, .yml and .json files.
@@ -168,10 +215,26 @@ type header struct {
 	} `json:"metadata"`
 }
 
-// decode returns the Strait object of a document, nil for an empty document or one of another API group.
-// An object with unknown or duplicate fields is returned with one error for each.
+// decode returns the Strait object of a document and the fields it sets, nil for an empty document or one of another
+// API group. An object with unknown or duplicate fields is returned with one error for each.
 // An object of the deprecated version is decoded as v1, which has the same schema, with a warning.
-func decode(d document) (runtime.Object, validate.Ref, []error, []string) {
+func decode(d document) (runtime.Object, validate.Fields, validate.Ref, []error, []string) {
+	obj, ref, errs, warnings := decodeObject(d)
+	if obj == nil {
+		return nil, nil, ref, errs, warnings
+	}
+	data, err := yaml.YAMLToJSON(d.data)
+	if err != nil {
+		return nil, nil, ref, []error{err}, warnings
+	}
+	fields, err := validate.FieldsOf(data)
+	if err != nil {
+		return nil, nil, ref, []error{err}, warnings
+	}
+	return obj, fields, ref, errs, warnings
+}
+
+func decodeObject(d document) (runtime.Object, validate.Ref, []error, []string) {
 	var empty any
 	if err := yaml.Unmarshal(d.data, &empty); err != nil {
 		return nil, validate.Ref{}, []error{err}, nil
@@ -217,32 +280,47 @@ func decode(d document) (runtime.Object, validate.Ref, []error, []string) {
 
 func validateFiles(paths []string, stdin io.Reader) (validateView, error) {
 	v := validateView{Problems: []problemView{}}
-	docs, err := readDocuments(paths, stdin)
+	read, err := readDocuments(paths, stdin)
 	if err != nil {
 		return v, err
 	}
+	var docs []document
+	for _, d := range read {
+		items, err := expand(d)
+		if err != nil {
+			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Item: d.item, Severity: validate.SeverityError, Message: err.Error(), order: len(docs)})
+			docs = append(docs, document{file: d.file, index: d.index})
+			continue
+		}
+		docs = append(docs, items...)
+	}
 	var objs []runtime.Object
+	var fields []validate.Fields
 	var sources []int
 	for i, d := range docs {
-		obj, ref, errs, warnings := decode(d)
+		if d.data == nil {
+			continue
+		}
+		obj, f, ref, errs, warnings := decode(d)
 		for _, err := range errs {
-			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Object: ref, Severity: validate.SeverityError, Message: err.Error(), order: i})
+			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Item: d.item, Object: ref, Severity: validate.SeverityError, Message: err.Error(), order: i})
 		}
 		for _, w := range warnings {
-			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Object: ref, Severity: validate.SeverityWarning, Field: "apiVersion", Message: w, order: i})
+			v.Problems = append(v.Problems, problemView{File: d.file, Document: d.index, Item: d.item, Object: ref, Severity: validate.SeverityWarning, Field: "apiVersion", Message: w, order: i})
 		}
 		switch {
 		case obj != nil:
 			objs = append(objs, obj)
+			fields = append(fields, f)
 			sources = append(sources, i)
 		case ref.Kind != "" && len(errs) == 0:
 			v.Skipped++
 		}
 	}
 	v.Objects = len(objs)
-	for _, p := range validate.Set(objs) {
+	for _, p := range validate.SetWith(objs, fields) {
 		i := sources[p.Index]
-		v.Problems = append(v.Problems, problemView{File: docs[i].file, Document: docs[i].index, Object: p.Object, Severity: p.Severity, Field: p.Field, Message: p.Message, order: i})
+		v.Problems = append(v.Problems, problemView{File: docs[i].file, Document: docs[i].index, Item: docs[i].item, Object: p.Object, Severity: p.Severity, Field: p.Field, Message: p.Message, order: i})
 	}
 	sort.SliceStable(v.Problems, func(a, b int) bool { return v.Problems[a].order < v.Problems[b].order })
 	for _, p := range v.Problems {
@@ -263,7 +341,11 @@ func validateTable(w io.Writer, v validateView) {
 			if p.Object.Kind == "" {
 				obj = "-"
 			}
-			rows = append(rows, []string{string(p.Severity), p.File, number(p.Document), obj, dash(p.Field), p.Message})
+			doc := number(p.Document)
+			if p.Item != "" {
+				doc += " " + p.Item
+			}
+			rows = append(rows, []string{string(p.Severity), p.File, doc, obj, dash(p.Field), p.Message})
 		}
 		table(w, []string{"SEVERITY", "FILE", "DOC", "OBJECT", "FIELD", "MESSAGE"}, rows)
 		fmt.Fprintln(w)
