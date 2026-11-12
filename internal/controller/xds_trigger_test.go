@@ -12,6 +12,9 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -140,4 +143,45 @@ func TestXDSTriggerEvents(t *testing.T) {
 	addressed.Status.PodIP = "10.244.1.7"
 	pods.Update(pending, addressed)
 	waitTriggers("a gateway pod's address", base+2)
+}
+
+// The Export reconciler and the xDS trigger both read IndexExportService. On one manager, the cache gets it once:
+// a cache refuses an index it holds already (issue #64).
+func TestExportIndexOnOneManager(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := straitv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	mapper := meta.NewDefaultRESTMapper(nil)
+	for _, gvk := range []schema.GroupVersionKind{
+		straitv1.GroupVersion.WithKind("Export"), straitv1.GroupVersion.WithKind("Site"), straitv1.GroupVersion.WithKind("SitePeer"),
+		straitv1.GroupVersion.WithKind("SiteLink"), straitv1.GroupVersion.WithKind("Import"),
+		discoveryv1.SchemeGroupVersion.WithKind("EndpointSlice"), corev1.SchemeGroupVersion.WithKind("Pod"),
+		coordinationv1.SchemeGroupVersion.WithKind("Lease"),
+	} {
+		scope := meta.RESTScopeNamespace
+		if gvk.Kind == "Site" || gvk.Kind == "SitePeer" || gvk.Kind == "SiteLink" {
+			scope = meta.RESTScopeRoot
+		}
+		mapper.Add(gvk, scope)
+	}
+	mgr, err := ctrl.NewManager(&rest.Config{Host: "http://127.0.0.1:1"}, ctrl.Options{
+		Scheme:                 scheme,
+		Metrics:                metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress: "0",
+		MapperProvider:         func(*rest.Config, *http.Client) (meta.RESTMapper, error) { return mapper, nil },
+		Controller:             config.Controller{SkipNameValidation: ptr.To(true)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (&ExportReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); err != nil {
+		t.Fatalf("Export reconciler: %v", err)
+	}
+	if err := (&XDSTrigger{Trigger: func() {}}).SetupWithManager(mgr); err != nil {
+		t.Fatalf("xDS trigger on the same manager: %v", err)
+	}
 }

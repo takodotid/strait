@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
@@ -45,9 +46,21 @@ func (t *XDSTrigger) Reconcile(context.Context, ctrl.Request) (ctrl.Result, erro
 	return ctrl.Result{}, nil
 }
 
+// exportIndexes holds each manager whose cache has IndexExportService: the trigger and the Export reconciler both
+// read it, and a cache takes an index once.
+var exportIndexes sync.Map
+
+// indexExportService adds IndexExportService to the manager's cache, once.
+func indexExportService(mgr ctrl.Manager) error {
+	if _, done := exportIndexes.LoadOrStore(mgr, true); done {
+		return nil
+	}
+	return mgr.GetFieldIndexer().IndexField(context.Background(), &straitv1.Export{}, IndexExportService, exportService)
+}
+
 // SetupWithManager registers the trigger and its index.
 func (t *XDSTrigger) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &straitv1.Export{}, IndexExportService, exportService); err != nil {
+	if err := indexExportService(mgr); err != nil {
 		return err
 	}
 	if t.Reader == nil {
