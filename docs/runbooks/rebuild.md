@@ -5,10 +5,11 @@ Anyone can rebuild a release from its tag and compare it with what the release p
 | Artifact | Same bytes as published |
 |---|---|
 | CLI archive | Yes. Compare it with the release's `SHA256SUMS`. |
-| Image of each platform, `linux/amd64` and `linux/arm64` | Yes, with the labels and annotations that the release wrote. Compare its digest with the published index's entry. |
-| Image index | No. It holds the build's provenance and SBOM, with the build's times and random identifiers ([RFC0007](../../rfcs/RFC0007.md#limitations)). |
+| Image index, from 1.5.0 | Yes, with the annotations that the release wrote on it. Its digest is the one that the chart names. |
+| Image of each platform, `linux/amd64` and `linux/arm64` | Yes, with the labels and annotations that the release wrote on it. |
+| Image index, before 1.5.0 | No. It holds the build's provenance and SBOM, with the build's times and random identifiers. Compare each platform's image instead. |
 
-Both were rebuilt this way from v1.4.0, and matched: the archive `strait_v1.4.0_linux_amd64.tar.gz`, and the images `linux/amd64` and `linux/arm64`.
+v1.4.0 was rebuilt this way, and matched: the archive `strait_v1.4.0_linux_amd64.tar.gz`, and the images `linux/amd64` and `linux/arm64`.
 
 ## What it needs
 
@@ -40,10 +41,12 @@ image=ghcr.io/takodotid/strait
 buildkit=$(grep -o 'image=moby/buildkit[^ ]*' .github/workflows/release.yaml | cut -d= -f2)
 docker buildx create --name strait-rebuild --driver docker-container --driver-opt "image=$buildkit"
 
-# The published platform images, and the labels and annotations that the release wrote on them.
-docker buildx imagetools inspect "$image:${v#v}" --raw | jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"'
-amd64=$(docker buildx imagetools inspect "$image:${v#v}" --raw | jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest')
+# The published index, and the labels and annotations that the release wrote on it and on its platform images.
+docker buildx imagetools inspect "$image:${v#v}" --raw >published.json
+amd64=$(jq -r '.manifests[] | select(.platform.architecture == "amd64") | .digest' published.json)
 args=()
+while IFS= read -r kv; do args+=(--annotation "index:$kv"); done < <(
+  jq -r '.annotations | to_entries[] | "\(.key)=\(.value)"' published.json)
 while IFS= read -r kv; do args+=(--label "$kv" --annotation "manifest:$kv"); done < <(
   docker buildx imagetools inspect "$image@$amd64" --raw | jq -r '.annotations | to_entries[] | "\(.key)=\(.value)"')
 
@@ -54,11 +57,19 @@ docker buildx build --builder strait-rebuild --platform linux/amd64,linux/arm64 
   --output "type=oci,dest=rebuild.tar,rewrite-timestamp=true" .
 
 mkdir rebuild && tar -xf rebuild.tar -C rebuild
-jq -r '.manifests[0].digest' rebuild/index.json | cut -d: -f2 |
-  xargs -I{} jq -r '.manifests[] | "\(.platform.architecture) \(.digest)"' rebuild/blobs/sha256/{}
+echo "published sha256:$(sha256sum <published.json | cut -d' ' -f1)"
+echo "rebuilt   $(jq -r '.manifests[0].digest' rebuild/index.json)"
 docker buildx rm strait-rebuild
 ```
 
-Each platform's digest equals the published one. The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, which the platform images do not hold.
+From 1.5.0, the two digests are equal. The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does: the release attests each platform image apart from it ([Verify a release](../../README.md#verify-a-release)).
+
+Before 1.5.0, compare each platform's digest:
+
+```sh
+jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"' published.json
+jq -r '.manifests[0].digest' rebuild/index.json | cut -d: -f2 |
+  xargs -I{} jq -r '.manifests[] | "\(.platform.architecture) \(.digest)"' rebuild/blobs/sha256/{}
+```
 
 A platform image's binaries can also be checked with `hack/distcheck`: [RFC0007, Releases](../../rfcs/RFC0007.md#releases), job `image-check`.
