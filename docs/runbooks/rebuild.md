@@ -15,7 +15,7 @@ v1.4.0 was rebuilt this way, and matched: the archive `strait_v1.4.0_linux_amd64
 
 | Need | Why |
 |---|---|
-| A clone with the release's tag on `HEAD`, and no other change | Go stamps the commit, and whether the tree changed, into each binary. `make dist` names the version from the tag. A clone without tags builds other bytes. |
+| A clone with the release's tag on `HEAD`, and no other change | Go records the commit, and whether the tree changed, in each binary. `make dist` names the version from the tag. A clone without tags builds other bytes. |
 | The Go version of the tag's `go.mod` | The release builds with it. |
 | docker with buildx, and `jq`, for the image | The release builds the image with the BuildKit image that its `release.yaml` pins. |
 
@@ -62,7 +62,7 @@ echo "rebuilt   $(jq -r '.manifests[0].digest' rebuild/index.json)"
 docker buildx rm strait-rebuild
 ```
 
-From 1.5.0, the two digests are equal. The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does: the release attests each platform image apart from it ([Verify a release](../../README.md#verify-a-release)).
+From 1.5.0, the two digests are equal. The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does. The release attests each platform image separately from the index ([Verify a release](../../README.md#verify-a-release)).
 
 Before 1.5.0, compare each platform's digest:
 

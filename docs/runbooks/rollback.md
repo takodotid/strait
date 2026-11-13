@@ -1,6 +1,6 @@
 # Roll back within 1.x
 
-Roll back one site at a time, as an [upgrade](../../README.md#upgrade): the site shows the same controller gap and gateway handover. Keep the CRDs of the newer release.
+Roll back one site at a time, like an [upgrade](../../README.md#upgrade). The site shows the same controller gap and gateway handover. Keep the CRDs of the newer release.
 
 ```sh
 helm --kube-context site-a history strait --namespace strait-system
@@ -36,7 +36,7 @@ The chart renders the cluster-scoped `Site` when `site.create` is true, the defa
 | Action | Effect |
 |---|---|
 | `helm uninstall` | Keeps the `Site`, and deletes the controller and the gateway. The CRDs and the `SiteService`s stay, and so do the Services and EndpointSlices that Strait wrote. Each application name keeps the endpoints written last, and nothing updates them: they no longer follow the primary. |
-| `helm upgrade` with `site.create: false` | Keeps the `Site`. From a release before 1.3.0 in one upgrade, it deletes the `Site`: upgrade to 1.3.0 with `site.create: true` first. |
+| `helm upgrade` with `site.create: false` | Keeps the `Site`. In one upgrade from a release before 1.3.0, it deletes the `Site`: upgrade to 1.3.0 with `site.create: true` first. |
 | `helm install` again, after `helm uninstall` | With the same release name and namespace: takes the kept `Site` back. With another one, Helm refuses the install with `invalid ownership metadata`. |
 | `helm rollback`, or `helm upgrade`, to a release before 1.3.0 | Removes the annotation. A later `helm uninstall`, or `site.create: false`, deletes the `Site`. |
 | `helm upgrade` with `site.create: true` | Keeps the `Site`, or writes it again. |

@@ -10,7 +10,7 @@ Every metric that Strait exports, how to scrape it, and the alert rules that the
 | Each gateway pod | `metrics`, 8091 | `/metrics` | The gateway agent's metrics. |
 | Each gateway pod | `metrics`, 8091 | `/stats/prometheus` | Envoy's stats that the agent lets through ([Envoy](#envoy)). |
 
-Scrape every gateway pod, the standbys too: their Envoy checks the links as the active one does.
+Scrape every gateway pod, including the standbys. Their Envoy checks the links just as the active pod's Envoy does.
 
 With the Prometheus Operator, the chart renders the scrape configuration and the rules. Both are off by default, since their CRDs may be absent:
 
@@ -61,7 +61,7 @@ The metrics are plain HTTP. `networkPolicy.metricsFrom` limits the sources that 
 | `strait_link_healthy` | gauge | `link`, `peer`, `transport` | 1 while the link is healthy, from `SiteLink.status`. |
 | `strait_link_active` | gauge | `link`, `peer`, `transport` | 1 while the link carries the pair's traffic, from `SiteLink.status`. |
 | `strait_site_condition` | gauge | `condition` | 1 while the condition of the local `Site` is True: `GatewayActive`, `GatewayServices`, `GatewayConfig`. |
-| `strait_gateway_lease_transitions_total` | counter | | Times a gateway replica took the gateway Lease from another holder, or after a release: the Lease's `leaseTransitions`. Each move resets every connection across the site's gateway. |
+| `strait_gateway_lease_transitions_total` | counter | | How many times a gateway replica took the gateway Lease, from another holder or after a release: the Lease's `leaseTransitions`. Each move resets every connection across the site's gateway. |
 | `strait_xds_rejected_total` | counter | `type` | Configurations that a gateway Envoy rejected, by resource type, such as `Cluster` ([RFC0005](../rfcs/RFC0005.md#configuration-rejections)). |
 | `strait_status_read_failed` | gauge | `kind` | 1 when the scrape could not read the objects of the kind. Their metrics are then missing, not 0. |
 | `leader_election_master_status` | gauge | `name` | 1 while this controller holds the Lease `name="strait-controller"`. From controller-runtime. |
@@ -81,7 +81,7 @@ The agent also exports the metrics of Go and the process.
 
 ## Envoy
 
-At `/stats/prometheus`, the agent serves these of Envoy's stats, and no other path of Envoy's admin interface. Envoy names them `envoy_` and the stat, with each `.` as `_`.
+At `/stats/prometheus`, the agent serves these of Envoy's stats, and no other path of Envoy's admin interface. Envoy names each one `envoy_` followed by the stat, with each `.` replaced by `_`.
 
 | Stats | Labels | Holds |
 |---|---|---|
@@ -102,7 +102,7 @@ Per-link bytes exist for `wireguard` links only, from the interface. A `direct` 
 
 ## Alerts
 
-The rules of `deploy/helm/strait/files/alerts.yaml`. They suit one Prometheus per site: `absent()` and `max()` span every series of the Prometheus.
+The rules of `deploy/helm/strait/files/alerts.yaml`. They suit one Prometheus per site, since `absent()` and `max()` cover every series in that Prometheus.
 
 | Alert | Fires when | Next step |
 |---|---|---|
@@ -118,11 +118,11 @@ The rules of `deploy/helm/strait/files/alerts.yaml`. They suit one Prometheus pe
 | `StraitGatewayHandovers` | The gateway Lease moved more than 3 times in an hour. | The `GatewayHandover` events of the `Site`, and the gateway pods' restarts. |
 | `StraitGatewayNotConfigured` | A gateway pod has had no xDS stream to the controller for 5m. | The controller's Service, and the network policy on it. |
 
-The `for` of each rule outlasts what Strait rides out on its own: a link failover, a gateway handover, a hold of an `Unknown` member.
+The `for` of each rule is longer than what Strait rides out on its own: a link failover, a gateway handover, a hold of an `Unknown` member.
 
 ## Probes
 
-Liveness checks only work that waits for neither the API server nor a link, so a slow API server or a link that is down restarts nothing. Work that waits for them shows in the metrics above instead.
+Liveness checks only the work that waits for neither the API server nor a link. So a slow API server, or a link that is down, restarts nothing. Work that waits for them shows in the metrics above instead.
 
 | Container | Liveness fails when |
 |---|---|
