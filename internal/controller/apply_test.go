@@ -801,6 +801,7 @@ func TestLastChangeTimeOfAFailover(t *testing.T) {
 	r.Peers = peers{polled: true}
 	at(30 * time.Second)
 	want(straitv1.ReasonHeldUnknown, []string{"web-b"}, 9*time.Second)
+}
 
 // With EndGateway, a decision that routes a gateway member nowhere because its hold ran out closes its Import, also
 // the first decision after a controller start that took longer than unknownHold, before the first poll of the peers.
