@@ -156,6 +156,15 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			read[m.Site] = true
 		}
 	}
+	// The isolated-site policy counts the peers polled: the Site's SitePeers, or none while polling is off.
+	polledPeers := 0
+	if svc.Spec.Policy.IsolationTimeout.Duration > 0 && site.Spec.Exchange.PollInterval.Duration > 0 {
+		var list straitv1.SitePeerList
+		if err := r.Reader.List(ctx, &list); err != nil {
+			return ctrl.Result{RequeueAfter: resync}, err
+		}
+		polledPeers = len(list.Items)
+	}
 	inPlace, err := r.slicesInPlace(ctx, &svc)
 	if errors.Is(err, ErrNotRead) {
 		// The controller writes no EndpointSlice in a namespace where it reads none. The apply stops at its first read
@@ -175,6 +184,8 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		Now:           now,
 		Started:       started,
 		Read:          read,
+		Peers:         polledPeers,
+		LastPeerRead:  r.Peers.LastRead(),
 	}
 	result := decide.Decide(in)
 	shown := startupStatus(result, in, r.Peers.Polled())
@@ -202,7 +213,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	logger.V(1).Info("decided", "route", result.Members, "reason", result.Reason, "endpoints", a.endpoints())
 	// An error does not return: the controller's backoff would delay the decision that ends a hold.
-	return ctrl.Result{RequeueAfter: r.next(&svc, result, confirmed, started, now)}, nil
+	return ctrl.Result{RequeueAfter: r.next(&svc, result, in, confirmed, now)}, nil
 }
 
 // startupStatus returns the result that the status shows. Until the first poll of every peer has ended, read or not,
@@ -261,14 +272,18 @@ func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService, now tim
 	return m
 }
 
-// next returns when to decide again: at the next resync, or when a hold expires, whichever is first.
-func (r *SiteServiceReconciler) next(svc *straitv1.SiteService, result decide.Result, confirmed map[string]time.Time, started, now time.Time) time.Duration {
-	ends := make([]time.Time, 0, len(result.Held)+1)
+// next returns when to decide again: at the next resync, or when a hold expires, or when the site would count as
+// isolated, whichever is first.
+func (r *SiteServiceReconciler) next(svc *straitv1.SiteService, result decide.Result, in decide.Input, confirmed map[string]time.Time, now time.Time) time.Duration {
+	ends := make([]time.Time, 0, len(result.Held)+2)
 	for _, m := range result.Held {
 		ends = append(ends, confirmed[m].Add(svc.Spec.Policy.UnknownHold.Duration))
 	}
 	if result.Reason == straitv1.ReasonAwaitingPeers {
-		ends = append(ends, started.Add(svc.Spec.Policy.StartupHold.Duration))
+		ends = append(ends, in.Started.Add(svc.Spec.Policy.StartupHold.Duration))
+	}
+	if starts := in.IsolationStarts(); !starts.IsZero() {
+		ends = append(ends, starts)
 	}
 	d := resync
 	for _, end := range ends {

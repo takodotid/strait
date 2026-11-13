@@ -246,6 +246,9 @@ func siteService(ss *straitv1.SiteService, f Fields) field.ErrorList {
 	errs = append(errs, rule(pol,
 		s.Policy.StartupHold.Duration >= 0 && s.Policy.StartupHold.Duration <= 10*time.Minute,
 		"startupHold must be between 0s and 10m")...)
+	errs = append(errs, rule(pol,
+		s.Policy.IsolationTimeout.Duration >= 0 && s.Policy.IsolationTimeout.Duration <= 10*time.Minute,
+		"isolationTimeout must be between 0s and 10m")...)
 
 	cnpg, declared := s.Plugin.CNPG, s.Plugin.Declared
 	errs = append(errs, rule(spec,
@@ -254,6 +257,9 @@ func siteService(ss *straitv1.SiteService, f Fields) field.ErrorList {
 	errs = append(errs, rule(spec,
 		s.Mode == straitv1.ModeSingle || s.Policy.StartupHold.Duration == 0,
 		"startupHold applies to Single mode only")...)
+	errs = append(errs, rule(spec,
+		s.Mode == straitv1.ModeSingle || s.Policy.IsolationTimeout.Duration == 0,
+		"isolationTimeout applies to Single mode only")...)
 	errs = append(errs, rule(spec,
 		cnpg == nil || (cnpg.Role == straitv1.CNPGRolePrimary) == (s.Mode == straitv1.ModeSingle),
 		"cnpg role primary requires Single mode; replica and any require Set mode")...)

@@ -583,3 +583,30 @@ func TestReadDocumentWithUnknownFields(t *testing.T) {
 		t.Errorf("member %+v, declared %q, exports %+v", m, view["b"].Declared, got.Exports)
 	}
 }
+
+// LastRead is the last good document of any peer. A failed poll or a site mismatch leaves it (RFC#0002,
+// requirement 45).
+func TestLastRead(t *testing.T) {
+	s, srv := newSite(t, "b", siteDocument("b", obs("pg-b", "b")))
+	_, down := newSite(t, "c", siteDocument("c", obs("pg-c", "c")))
+	down.Close()
+	p := newPoller(map[string]*httptest.Server{"b": srv, "c": down}, nil)
+	if !p.LastRead().IsZero() {
+		t.Fatalf("LastRead before any poll = %v", p.LastRead())
+	}
+	before := time.Now()
+	p.round(context.Background(), time.Second, time.Minute)
+	first := p.LastRead()
+	if first.Before(before) {
+		t.Fatalf("LastRead = %v, before the poll at %v", first, before)
+	}
+	if _, st := p.Snapshot("b"); !first.Equal(st.LastSuccess) {
+		t.Errorf("LastRead = %v, want b's last success %v", first, st.LastSuccess)
+	}
+
+	s.set(siteDocument("x", obs("pg-x", "x")), nil)
+	p.round(context.Background(), time.Second, time.Minute)
+	if got := p.LastRead(); !got.Equal(first) {
+		t.Errorf("after a site mismatch and a failed poll: LastRead = %v, want %v", got, first)
+	}
+}

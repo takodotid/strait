@@ -45,6 +45,8 @@ type Peers interface {
 	Started() time.Time
 	// Polled reports whether the first round of polls since polling began has ended, every peer read or not.
 	Polled() bool
+	// LastRead returns the last time a document of any peer was read. Zero when none was.
+	LastRead() time.Time
 }
 
 // Local is where the controller publishes the local site's observations.

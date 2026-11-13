@@ -482,6 +482,36 @@ spec:
   policy:
     startupHold: 30s
 ---
+# want: spec.policy: Invalid value: "object": isolationTimeout must be between 0s and 10m
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: isolation-timeout-range
+  namespace: app
+spec:
+  mode: Single
+  port: {name: tcp, port: 80}
+  plugin: {declared: {active: a}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    isolationTimeout: 11m
+---
+# want: spec: Invalid value: "object": isolationTimeout applies to Single mode only
+apiVersion: strait.tako.id/v1
+kind: SiteService
+metadata:
+  name: isolation-timeout-set
+  namespace: app
+spec:
+  mode: Set
+  port: {name: tcp, port: 80}
+  plugin: {declared: {}}
+  members:
+    - {name: a, site: a, service: {name: web, port: 80}}
+  policy:
+    isolationTimeout: 30s
+---
 # An explicit empty policy is a value, not a missing field (issue #64).
 # want: spec.policy.multiple: Unsupported value: "": supported values: "RouteNowhere", "PreferDeclaredIfConsistent"
 apiVersion: strait.tako.id/v1

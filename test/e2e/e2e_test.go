@@ -45,6 +45,7 @@ func TestE2E(t *testing.T) {
 		{"2-link-failover", e.linkFailover},
 		{"3-switchover", e.switchover},
 		{"4-partition", e.partition},
+		{"4b-isolated", e.isolated},
 		{"5-disagreeing-declarations", e.declarations},
 		{"6-site-loss", e.siteLoss},
 		{"7-two-writable", e.twoWritable},
