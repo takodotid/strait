@@ -7,7 +7,7 @@ The operator's steps to publish a release. What the workflow checks and in which
 | 1. Merge | Merge the release's pull request into `main`. |
 | 2. Wait for CI | Wait until the `ci` run of the merge commit on `main` has finished with every job successful: `gh run list --workflow ci.yaml --branch main`. |
 | 3. Tag | Sign an annotated tag on that commit, and push it: `git tag -s vX.Y.Z COMMIT -m "Strait vX.Y.Z"`, then `git push origin vX.Y.Z`. GitHub must show the tag as Verified: the key must belong to the tagger's GitHub account. |
-| 4. Approve | When the environment `release` has reviewers, approve the run. Nothing runs before. |
+| 4. Approve | When the environment `release` has reviewers, approve the run. Nothing runs until then. |
 | 5. Check | Once the run has finished, verify the release as the README's [Verify a release](../../README.md#verify-a-release) shows. |
 
 ## When the release stops
@@ -30,10 +30,10 @@ Only the job `publish` pushes what users see, in this order: the chart, the GitH
 
 | `publish` failed | What to do |
 |---|---|
-| Before its step `Push and sign the chart` | Re-run the failed jobs. Nothing of the version is visible. |
+| Before its step `Push and sign the chart` | Re-run the failed jobs. No part of the version is visible. |
 | In that step or later | Release the next patch version. A re-run stops with `published already`. The chart that was pushed names the image by its digest, so it installs without the image tags. |
 
-A re-run of the whole run stops in `gate` once anything of the version exists.
+A re-run of the whole run stops in `gate` once any part of the version exists.
 
 ## Known gaps
 

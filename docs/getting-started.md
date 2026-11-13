@@ -7,7 +7,7 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 | Requirement | Detail |
 |---|---|
 | Two Kubernetes clusters | One per site, of a version that [Install](../README.md#install) supports, reached with the kubeconfig contexts `site-a` and `site-b`. |
-| Kernel modules `wireguard` and `nf_tables` | On every node that can run a gateway pod. The gateway agent does not load them. It filters what arrives on its WireGuard interfaces with nftables, and holds no interface without it. |
+| Kernel modules `wireguard` and `nf_tables` | On every node that can run a gateway pod. The gateway agent does not load them. It uses nftables to filter what arrives on its WireGuard interfaces. Without nftables, it holds no interface. |
 | Pod Security level `privileged` | In the gateway's namespace. The gateway agent runs as root with `NET_ADMIN`, to hold the WireGuard interfaces ([RFC0007](../rfcs/RFC0007.md)). |
 | A UDP path from site b to site a | Site b dials a node of site a on UDP port 32100. Here, `203.0.113.10` stands for that node's address. |
 | Socket load balancing for pods | Recommended, where the CNI load-balances Services. For Cilium: socket LB on, with `socketLB.hostNamespaceOnly=false`. Without it, a new connection can still reach the previous member after a route change: [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
@@ -15,7 +15,7 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 | Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](../README.md#install), [on Windows](../README.md#cli-on-windows)). |
 | A shell | The commands are for bash. On Windows, a line that runs only `strait` or `kubectl strait` works as written in PowerShell. The others need bash, for example in WSL. |
 
-The chart value `cnpg.enabled` turns the `cnpg` plugin on: the chart's read-only rule for `postgresql.cnpg.io`, and the controller's flag `--cnpg`. While it is on, the controller watches CloudNativePG's kinds if their CRDs exist at its start ([RFC0003](../rfcs/RFC0003.md#cnpg-on-and-off), requirement 13).
+The chart value `cnpg.enabled` turns on the `cnpg` plugin, which is two things: the chart's read-only rule for `postgresql.cnpg.io`, and the controller's flag `--cnpg`. While it is on, the controller watches CloudNativePG's kinds if their CRDs exist when the controller starts ([RFC0003](../rfcs/RFC0003.md#cnpg-on-and-off), requirement 13).
 
 | Cluster | `cnpg.enabled` |
 |---|---|
@@ -69,7 +69,7 @@ site:
 | `site.spec` | The `Site`'s spec, as in [`api/v1`](../api/v1/site_types.go). The chart renders the `Site` from it. |
 | `site.spec.wireguard.privateKeySecretRef.name` | The Secret from step 1. The chart lets the gateway agent read this Secret and no other. |
 
-Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its node runs short of CPU ([benchmark](benchmark.md#under-cpu-contention)). Every other value: [`values.yaml`](../deploy/helm/strait/values.yaml).
+Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its node runs short of CPU ([benchmark](benchmark.md#under-cpu-contention)). Every other value is in [`values.yaml`](../deploy/helm/strait/values.yaml).
 
 Check the rendered `Site`, then install at both sites:
 
@@ -156,7 +156,7 @@ EOF
 |---|---|---|
 | `SitePeer` name | The peer's `site.name` | A peer's observation document names its site. A document whose site differs from the `SitePeer`'s name is rejected. |
 | `wireguard.publicKey` | The peer's public key | The link accepts only this key. |
-| `wireguard.listenPort` | 32100 | The gateway's WireGuard Service is a `NodePort` by default, and each node port equals its port. The listen port must be in the cluster's node port range, 30000-32767 by default. The default listen port, 31820, is in it. |
+| `wireguard.listenPort` | 32100 | The gateway's WireGuard Service is a `NodePort` by default, and each node port is the same number as its port. The listen port must be in the cluster's node port range, 30000-32767 by default. The default listen port, 31820, is in it. |
 | `wireguard.endpoint` | Site b only | Site b dials, and keeps the path open with keepalives. Site a waits. Traffic flows both ways once b has dialed. |
 | `wireguard.address`, `wireguard.peerAddress` | A /30 that no other network at either site uses | The tunnel's addresses. They live in the gateway pods only. |
 
@@ -231,9 +231,9 @@ spec:
 | `spec.plugin.cnpg.confirmRole` | Optional, off unless `true`. Also ask each local database `pg_is_in_recovery()`, and count a member as `Unknown` when the answer disagrees with the `Cluster`, or there is none. Needs a role with `LOGIN` and nothing else, and its Secret named in the chart value `cnpg.confirmRole.secretName`. [RFC0003, Confirming the role](../rfcs/RFC0003.md#cnpg-confirming-the-role). |
 | `spec.members` | One member per `Cluster`, with the site that hosts it. Each site observes only its own members. |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
-| `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. A site that comes back still primary after being lost then does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |
+| `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. With it, a site that was lost and comes back still primary does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |
 | `spec.policy.connections` | Optional. `Keep`, the default, keeps every established connection when the route changes. `EndGateway` ends the sessions through this site's gateway to a member that leaves the route, so that remote clients reconnect to the new one. Open transactions on them fail. Local clients keep their sessions. Needs the chart value `envoy.drainTimeSeconds` set to a few seconds. [RFC0002, What `EndGateway` covers and costs](../rfcs/RFC0002.md#what-endgateway-covers-and-costs). |
-| `spec.policy.isolationTimeout` | Optional, off unless set. A site that has read no other site for this long stops routing to its own member, so its clients stop writing to a primary that another site may replace. Turn it on with three or more sites, or when a site that loses the others must stop writing. With two sites, the survivor of a site loss stops too, until the operator sets it to 0s there. [RFC0002, The isolated-site policy](../rfcs/RFC0002.md#the-isolated-site-policy). |
+| `spec.policy.isolationTimeout` | Optional, off unless set. A site that has read no other site for this long stops routing to its own member, so its clients stop writing to a primary that another site may replace. Turn it on with three or more sites, or when a site that loses the others must stop writing. With two sites, the site that survives a site loss stops too, until the operator sets it to 0s there. [RFC0002, The isolated-site policy](../rfcs/RFC0002.md#the-isolated-site-policy). |
 
 Every field and rule: [RFC0002](../rfcs/RFC0002.md).
 
@@ -290,7 +290,7 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 | `encryption: None` | Required on a `direct` link. Traffic crosses it in clear. |
 | `cost: 10` | Lower than the WireGuard link's default, 100. |
 | `direct.address` | The peer gateway's IP address on the private path. |
-| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that admit only them: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
+| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then run `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that let only them in: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
 
 With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)). In production, set `endpointCIDRs` on that link to the peer's pod CIDRs, so a peer's document cannot point the name anywhere else. Without it, `strait validate` warns, and the link's condition `EndpointsLimited` is `False`.
 

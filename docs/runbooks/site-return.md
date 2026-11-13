@@ -53,7 +53,7 @@ The end-to-end step `Two writable members` runs step 1, and the two cases above,
 
 ## A partition that heals
 
-A site that was only cut off kept its controller running, so no hold applies. Through the partition, each side routes as in a [site loss](site-loss.md#what-strait-does): a site with the primary keeps routing to it, and a site whose primary is on the other side holds it for `policy.unknownHold`, then routes nowhere ([RFC0002, Why a partition does not stop the local primary](../../rfcs/RFC0002.md#why-a-partition-does-not-stop-the-local-primary)). Once the sites read each other again:
+A site that was only cut off kept its controller running, so no hold applies. During the partition, each side routes as in a [site loss](site-loss.md#what-strait-does): a site with the primary keeps routing to it, and a site whose primary is on the other side holds it for `policy.unknownHold`, then routes nowhere ([RFC0002, Why a partition does not stop the local primary](../../rfcs/RFC0002.md#why-a-partition-does-not-stop-the-local-primary)). Once the sites read each other again:
 
 | Case | Route at every site | Reason, conditions | End-to-end step |
 |---|---|---|---|

@@ -17,18 +17,18 @@ kubectl --context site-b -n app get siteservice pg \
 
 | Field | Means |
 |---|---|
-| `status.route.lastChangeTime` | The time of the decision whose status first showed the current members, on the controller's clock, to the second. It does not change while the members stay, also while a member is held `Unknown`. |
+| `status.route.lastChangeTime` | The time of the decision whose status first showed the current members. It uses the controller's clock and is exact to the second. It does not change while the members stay the same, even while a member is held `Unknown`. |
 | `status.route.reason` | `Active` once the one writable member is routed. |
 | The `Routed` condition's `lastTransitionTime` | When the Service last went from no endpoint to an endpoint, or back. |
 
-After a failover that passes through nowhere, a reason of `Active` with a `lastChangeTime` after the failover began is the time writes could reach the new primary again ([RFC0002](../rfcs/RFC0002.md#requirements), requirement 24). Each site has its own `SiteService`, so read each site.
+After a failover during which the route was nowhere, a reason of `Active`, with a `lastChangeTime` after the failover began, gives the time when writes could reach the new primary again ([RFC0002](../rfcs/RFC0002.md#requirements), requirement 24). Each site has its own `SiteService`, so read each site.
 
 ## The parts
 
 | Part | What decides it | Default | Tune |
 |---|---|---|---|
 | A local member's change seen | The controller watches CloudNativePG's `Cluster`s and decides again at once, and at least every 2s. | Under 2s | Nothing. |
-| A remote member's change seen | Each site polls its peers every `pollInterval`. A change shows at the other sites within `peerTimeout` ([RFC0004](../rfcs/RFC0004.md), requirement 13). | `pollInterval` 2s, `peerTimeout` 6s | `Site.spec.exchange`. `peerTimeout` must be at least twice `pollInterval`. Shorter values notice faster, and also turn a short flap into `Unknown` sooner. |
+| A remote member's change seen | Each site polls its peers every `pollInterval`. A change shows at the other sites within `peerTimeout` ([RFC0004](../rfcs/RFC0004.md), requirement 13). | `pollInterval` 2s, `peerTimeout` 6s | `Site.spec.exchange`. `peerTimeout` must be at least twice `pollInterval`. Shorter values notice a change faster, and also turn a short flap into `Unknown` sooner. |
 | A lost site seen | Its peer's document goes stale after `peerTimeout`. Its members are then `Unknown`. | 6s | `Site.spec.exchange.peerTimeout`. |
 | A routed member that turned `Unknown` | Kept for `unknownHold` after it was last confirmed, then nowhere. It does not delay a promotion elsewhere: once another member is the one writable member, it is routed at once ([RFC0002](../rfcs/RFC0002.md#decision), rows 5 and 7). | `unknownHold` 30s | `spec.policy.unknownHold`, 0s to 10m. Shorter values stop routing to a dead member sooner. Longer ones ride out longer link flaps. |
 | The workload's move | A CloudNativePG `Cluster` reads `Transitioning` while it switches over, promotes, demotes, or restarts its primary. Strait routes nowhere meanwhile ([RFC0003](../rfcs/RFC0003.md#cnpg-role-and-state)). | Depends on the workload | See [The promotion restart](#the-promotion-restart). |

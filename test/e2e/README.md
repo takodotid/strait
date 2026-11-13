@@ -53,7 +53,7 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 
 The test creates both networks when they are absent and never deletes them: other `strait-*` clusters share them.
 
-Faults are nftables tables inside the node containers: `strait-cut-direct`, `strait-cut-wan`, and `strait-cut-site` with `docker pause` for a lost site.
+The test makes faults with nftables tables inside the node containers: `strait-cut-direct`, `strait-cut-wan`, and `strait-cut-site` with `docker pause` for a lost site.
 
 ## Scenarios
 
@@ -73,7 +73,7 @@ They run in this order on one fixture and stop at the first failure.
 | 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. A new connection from b every 250ms: each one that starts 5s or more after the cut reaches `cluster-a` (RFC0005 requirement 4). |
 | 3 | Switchover with tokens | Site a stops naming `pg-a` within one 500ms sample of the demotion patch, site b within `peerTimeout`. `pg-b` never shows before the promotion patch. Both sites pass through nowhere, then route `pg-b`. |
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |
-| 4b | Isolated site | The partition again, with `isolationTimeout: 8s` on `pg` at both sites. Site b routes `pg-b`, then nowhere with `SiteIsolated` no sooner than `isolationTimeout` after the cut, less one poll, and a connection at b is refused. Site a routes nowhere as in step 4. Setting the field to 0s at b routes `pg-b` again, and setting it back isolates b again. After the heal, both sites route `pg-b`. The field is removed afterwards. Step 4 is the same partition with the policy off. |
+| 4b | Isolated site | The partition again, with `isolationTimeout: 8s` on `pg` at both sites. Site b routes `pg-b`, then nowhere with `SiteIsolated` no sooner than `isolationTimeout` after the cut, minus one poll, and a connection at b is refused. Site a routes nowhere as in step 4. Setting the field to 0s at b routes `pg-b` again, and setting it back isolates b again. After the heal, both sites route `pg-b`. The field is removed afterwards. Step 4 is the same partition with the policy off. |
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
 | 5b | Ending gateway sessions | At site b, `web` routes to `web-a` through the gateway, and the client pod holds an idle TCP session to it. With `policy.connections` unset, moving the route to `web-b` keeps the session for 20s. With `EndGateway` at site b, the move ends it within 20s, and a new request from b reaches `web-b`. `web-a` stays up throughout. The policy is removed afterwards. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |

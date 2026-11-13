@@ -1,6 +1,6 @@
 # Gateway handover
 
-One gateway replica is active: it holds the gateway Lease `strait-gateway`. A handover moves the Lease to another replica. Each one resets every connection across the site's gateway, in both directions, and new connections through the gateway fail until the new replica's links pass their health checks. The sequence and its timing: [RFC0005, Failover sequence](../../rfcs/RFC0005.md#failover-sequence).
+One gateway replica is active: it holds the gateway Lease `strait-gateway`. A handover moves the Lease to another replica. Each handover resets every connection through the site's gateway, in both directions. New connections through the gateway fail until the new replica's links pass their health checks. The sequence and its timing: [RFC0005, Failover sequence](../../rfcs/RFC0005.md#failover-sequence).
 
 | Cause | Moves |
 |---|---|
@@ -38,4 +38,4 @@ kubectl --context site-a -n strait-system delete pod POD --dry-run=server
 kubectl --context site-a -n strait-system delete pod POD
 ```
 
-The end-to-end step `gateway-handover` deletes the active pod in the same way, with the direct link cut, and requires a write from the other site to land within 8s of the takeover: [`test/e2e/README.md`](../../test/e2e/README.md#scenarios).
+The end-to-end step `gateway-handover` deletes the active pod in the same way, with the direct link cut. It requires a write from the other site to land within 8s of the takeover: [`test/e2e/README.md`](../../test/e2e/README.md#scenarios).

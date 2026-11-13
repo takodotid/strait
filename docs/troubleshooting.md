@@ -2,7 +2,7 @@
 
 Each site decides its own routes and keeps its own view. Read each site with its own `--context`, and compare the sites.
 
-A route to nowhere is a safe state, not a fault to work around. Find its cause and fix the cause: Strait follows. Do not edit Strait's resources to force a route.
+A route to nowhere is a safe state, not a fault to work around. Find its cause and fix that. Strait follows. Do not edit Strait's resources to force a route.
 
 ## Start here
 
@@ -28,14 +28,14 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 | `MultipleWritable` | The members whose `ROLE` is `primary` and `ELIGIBLE` is true | Two members accept writes, for example after a partition heals. Strait never picks one. Demote one with the workload's own tools, and Strait follows. The `Multiple` condition is True. |
 | `NoEligibleMember` | The `REASON` of each member | No member can take traffic. See [Members that are not eligible](#members-that-are-not-eligible). |
 | `SiteIsolated` | `strait peers`, and the route's `Message` | `policy.isolationTimeout` is set, and this site has read no peer for that long. The local member is not routed. It ends when a peer is read again. After a site loss with two sites, the survivor stays isolated: set `isolationTimeout` to 0s there once its member is the one to write to ([Site loss](runbooks/site-loss.md)). |
-| `AwaitingPeers` | `strait peers`, and the route's `Message` | The controller started, and its first poll of every peer has not ended. The route is what it decided before reading any peer, and the message gives that decision's reason. It ends with that first poll, within about one `pollInterval`. With `policy.startupHold`, the controller also does not route to the local member until it has read every site with a member, or until the hold ends. |
+| `AwaitingPeers` | `strait peers`, and the route's `Message` | The controller has started, and its first poll of every peer has not ended yet. The route is what it decided before reading any peer, and the message gives that decision's reason. It ends with that first poll, within about one `pollInterval`. With `policy.startupHold`, the controller also does not route to the local member until it has read every site with a member, or until the hold ends. |
 
 ## Connections after a route change
 
 | Symptom | Cause and next step |
 |---|---|
 | A client still reaches the previous member, while the `SiteService`'s EndpointSlices no longer name it | A route change never moves an established connection: the client must reconnect. A new connection that reaches the previous member comes from the CNI's connection tracking. For Cilium, check that `cilium-dbg status --verbose` in the agent shows `Socket LB: Enabled`, and that the agent's configuration does not set `bpf-lb-sock-hostns-only` to `"true"`. [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
-| A session through the gateway stays open after its member left the route, with `policy.connections: EndGateway` | Envoy closes it when its drain time has passed: 600s unless the chart value `envoy.drainTimeSeconds` sets it. Set a few seconds. Check that the member's `Import` shows `spec.closed: true`: `kubectl get import <siteservice>-<member> -o jsonpath='{.spec.closed}'`. A local client's session, or one over endpoint-direct, always stays ([RFC0002, What `EndGateway` covers and costs](../rfcs/RFC0002.md#what-endgateway-covers-and-costs)). |
+| A session through the gateway stays open after its member left the route, with `policy.connections: EndGateway` | Envoy closes it when its drain time has passed: 600s unless the chart value `envoy.drainTimeSeconds` sets it. Set it to a few seconds. Check that the member's `Import` shows `spec.closed: true`: `kubectl get import <siteservice>-<member> -o jsonpath='{.spec.closed}'`. A local client's session, or one over endpoint-direct, always stays ([RFC0002, What `EndGateway` covers and costs](../rfcs/RFC0002.md#what-endgateway-covers-and-costs)). |
 
 ## Unknown members
 
@@ -47,7 +47,7 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 | `NotObserved` | The member's site is reachable, but its document holds no observation of this member. | Apply the same `SiteService`, with the same namespace, name and member names, at the member's site. |
 | `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago, and at least 6s ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
 | `ReadFailed: ...` | The plugin could not read the workload at this site. The rest of the reason is the error. | Follow the error. For `cnpg`, check that CloudNativePG is installed at this site. |
-| `RoleMismatch: ...` | `spec.plugin.cnpg.confirmRole` is on, and the database at the `-rw` address named in the reason answers `pg_is_in_recovery()` against the `Cluster`'s role. CloudNativePG's status and the database disagree. | Compare `kubectl get cluster <name> -o yaml` (`.status.currentPrimary`, `.spec.replica`) with the database. Fix the workload with its own tools. Strait routes nowhere rather than pick one ([RFC0003](../rfcs/RFC0003.md#cnpg-confirming-the-role)). |
+| `RoleMismatch: ...` | `spec.plugin.cnpg.confirmRole` is on, and the database at the `-rw` address named in the reason gives a `pg_is_in_recovery()` answer that contradicts the `Cluster`'s role. CloudNativePG's status and the database disagree. | Compare `kubectl get cluster <name> -o yaml` (`.status.currentPrimary`, `.spec.replica`) with the database. Fix the workload with its own tools. Strait routes nowhere rather than pick one ([RFC0003](../rfcs/RFC0003.md#cnpg-confirming-the-role)). |
 | `RoleNotConfirmed: ...` | `confirmRole` is on, and the check got no answer. The rest of the reason is the error: no credentials, a refused login, a timeout, or no ready address. | Set the chart value `cnpg.confirmRole.secretName` to a Secret with `username` and `password` of a role with `LOGIN`, at this site. Check that the role exists, may log in to `postgres` over TLS, and that the controller's pod reaches the database's pods on 5432. |
 | `PluginDisabled` | The member's plugin is off at this site: the chart value `cnpg.enabled` is `false`. | Set `cnpg.enabled: true` with `helm upgrade` at the member's site. |
 
@@ -96,7 +96,7 @@ The `Healthy` condition of a `SiteLink`:
 | `EndpointUnhealthy` | Envoy marks the endpoint unhealthy. | The controller's and the gateway agent's logs. |
 | `EnvoyUnreachable` | The gateway agent cannot read Envoy's admin interface. | The `envoy` container of the active gateway pod. |
 
-A `direct` `SiteLink` with `endpointDirect` also has the condition `EndpointsLimited`. False, with `NoEndpointCIDRs`: endpoint-direct writes any member address from the peer's document that is not unspecified, loopback, link-local or multicast. Set `endpointCIDRs` to the peer's pod CIDRs ([RFC0005, Endpoint-direct](../rfcs/RFC0005.md#endpoint-direct)).
+A `direct` `SiteLink` with `endpointDirect` also has the condition `EndpointsLimited`. When it is False, with `NoEndpointCIDRs`, endpoint-direct writes any member address from the peer's document, except unspecified, loopback, link-local and multicast addresses. Set `endpointCIDRs` to the peer's pod CIDRs ([RFC0005, Endpoint-direct](../rfcs/RFC0005.md#endpoint-direct)).
 
 The conditions of the `Site`:
 
