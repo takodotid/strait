@@ -1,0 +1,55 @@
+# The documentation site in docs/, served at strait.tako.id by GitHub Pages. On a pull request or a push it only builds, to check
+# that the site still builds and has no dead link. It publishes only when run by hand, or when the release workflow calls it with
+# publish, so the live site changes with a release.
+name: pages
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: pages-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  # Runs the site's npm packages, so it can write nothing.
+  build:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      # The whole history, so each page's last-updated date, and the sitemap's, is the last commit that changed it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-bun
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - if: github.event_name == 'workflow_dispatch' || inputs.publish
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/.vitepress/dist
+  # Runs GitHub's deploy action only.
+  deploy:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || inputs.publish
+    runs-on: ubuntu-26.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

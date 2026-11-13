@@ -274,3 +274,14 @@ jobs:
           hack/release/absent.sh oci "ghcr.io/takodotid/strait:${GITHUB_REF_NAME#v}"
           mapfile -t tags <<<"$TAGS"
           hack/release/tags.sh "ghcr.io/takodotid/strait@$DIGEST" "${tags[@]}"
+  # The documentation site, built from the tag and published to GitHub Pages, once the release is out. Its build job can write
+  # nothing; its deploy job gets the Pages permissions below.
+  pages:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      publish: true
