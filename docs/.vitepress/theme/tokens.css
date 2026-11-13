@@ -1,0 +1,55 @@
+/*
+ * The chart table: every colour and font of the site, in one place. DESIGN.md at the repository's root names each token, where it
+ * shows, and the contrast of each pair. Change a value here and nowhere else: style.css, the code colours and the diagrams read
+ * these.
+ */
+
+:root {
+    /* Surfaces. */
+    --strait-paper: #f4efe3; /* the page */
+    --strait-card: #fffdf7; /* code blocks, tables, cards */
+    --strait-sea: #dce8ea; /* tinted bands: table heads, callouts */
+    --strait-land: #ecdcae; /* sparingly: the home hero, a highlight band */
+    --strait-contour: #c4d8dd; /* borders and rules */
+
+    /* Text. */
+    --strait-ink: #16233b; /* text, lines, headings */
+    --strait-soft-ink: #5b6880; /* secondary text, on paper and card only */
+    --strait-faint: #9aa7b6; /* marks that carry no text */
+
+    /* The one accent. */
+    --strait-magenta: #b0127a; /* brand, links, active navigation */
+    --strait-magenta-hover: #8d0d62;
+    --strait-on-magenta: #fffdf7; /* text on a magenta button */
+
+    /* States, each with a word or an icon beside it. */
+    --strait-orange: #c96a12; /* warning */
+    --strait-green: #1e7a4b; /* tip, works */
+    --strait-red: #c8321f; /* danger only */
+
+    /* Type. */
+    --strait-font-text: "Spectral", Georgia, "Times New Roman", serif;
+    --strait-font-label: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+    --strait-font-mono: "IBM Plex Mono", ui-monospace, "Menlo", "Consolas", monospace;
+}
+
+/* The night chart. */
+.dark {
+    --strait-paper: #0e1828;
+    --strait-card: #16233b;
+    --strait-sea: #1b2d44;
+    --strait-land: #2c2a24;
+    --strait-contour: #33495f;
+
+    --strait-ink: #f4efe3;
+    --strait-soft-ink: #b3bccb;
+    --strait-faint: #7c899b;
+
+    --strait-magenta: #f27ac2;
+    --strait-magenta-hover: #ff9fd5;
+    --strait-on-magenta: #0e1828;
+
+    --strait-orange: #f0a24f;
+    --strait-green: #5cc98f;
+    --strait-red: #ff7d6b;
+}

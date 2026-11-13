@@ -1,0 +1,268 @@
+/*
+ * The chart table on VitePress's default theme. Colours and fonts come from tokens.css only: this file names no colour and no
+ * font. The rules it follows are in DESIGN.md.
+ */
+
+@import "@fontsource/spectral/400.css";
+@import "@fontsource/spectral/400-italic.css";
+@import "@fontsource/spectral/600.css";
+@import "@fontsource/ibm-plex-sans-condensed/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+:root,
+.dark {
+    --vp-font-family-base: var(--strait-font-text);
+    --vp-font-family-mono: var(--strait-font-mono);
+
+    --vp-c-bg: var(--strait-paper);
+    --vp-c-bg-alt: var(--strait-paper);
+    --vp-c-bg-elv: var(--strait-card);
+    --vp-c-bg-soft: var(--strait-sea);
+
+    --vp-c-text-1: var(--strait-ink);
+    --vp-c-text-2: var(--strait-soft-ink);
+    --vp-c-text-3: var(--strait-soft-ink);
+
+    --vp-c-border: var(--strait-contour);
+    --vp-c-divider: var(--strait-contour);
+    --vp-c-gutter: var(--strait-contour);
+
+    --vp-c-brand-1: var(--strait-magenta);
+    --vp-c-brand-2: var(--strait-magenta-hover);
+    --vp-c-brand-3: var(--strait-magenta);
+    --vp-c-brand-soft: var(--strait-sea);
+
+    --vp-c-default-1: var(--strait-ink);
+    --vp-c-default-2: var(--strait-soft-ink);
+    --vp-c-default-3: var(--strait-soft-ink);
+    --vp-c-default-soft: var(--strait-sea);
+
+    --vp-c-note-1: var(--strait-ink);
+    --vp-c-note-2: var(--strait-ink);
+    --vp-c-note-3: var(--strait-ink);
+    --vp-c-note-soft: var(--strait-sea);
+    --vp-c-tip-1: var(--strait-green);
+    --vp-c-tip-2: var(--strait-green);
+    --vp-c-tip-3: var(--strait-green);
+    --vp-c-tip-soft: var(--strait-sea);
+    --vp-c-warning-1: var(--strait-orange);
+    --vp-c-warning-2: var(--strait-orange);
+    --vp-c-warning-3: var(--strait-orange);
+    --vp-c-warning-soft: var(--strait-sea);
+    --vp-c-danger-1: var(--strait-red);
+    --vp-c-danger-2: var(--strait-red);
+    --vp-c-danger-3: var(--strait-red);
+    --vp-c-danger-soft: var(--strait-sea);
+
+    --vp-nav-bg-color: var(--strait-paper);
+    --vp-local-nav-bg-color: var(--strait-paper);
+    --vp-sidebar-bg-color: var(--strait-paper);
+    --vp-backdrop-bg-color: color-mix(in srgb, var(--strait-ink) 55%, transparent);
+
+    --vp-code-color: var(--strait-ink);
+    --vp-code-bg: var(--strait-sea);
+    --vp-code-link-color: var(--strait-magenta);
+    --vp-code-link-hover-color: var(--strait-magenta-hover);
+    --vp-code-block-color: var(--strait-ink);
+    --vp-code-block-bg: var(--strait-card);
+    --vp-code-block-divider-color: var(--strait-contour);
+    --vp-code-lang-color: var(--strait-soft-ink);
+    --vp-code-line-number-color: var(--strait-soft-ink);
+    --vp-code-copy-code-bg: var(--strait-card);
+    --vp-code-copy-code-hover-bg: var(--strait-sea);
+    --vp-code-copy-code-border-color: var(--strait-contour);
+    --vp-code-copy-code-hover-border-color: var(--strait-ink);
+    --vp-code-copy-copied-text-content: "Copied";
+
+    --vp-button-brand-bg: var(--strait-magenta);
+    --vp-button-brand-border: var(--strait-magenta);
+    --vp-button-brand-text: var(--strait-on-magenta);
+    --vp-button-brand-hover-bg: var(--strait-magenta-hover);
+    --vp-button-brand-hover-border: var(--strait-magenta-hover);
+    --vp-button-brand-hover-text: var(--strait-on-magenta);
+    --vp-button-brand-active-bg: var(--strait-magenta-hover);
+    --vp-button-brand-active-border: var(--strait-magenta-hover);
+    --vp-button-brand-active-text: var(--strait-on-magenta);
+    --vp-button-alt-bg: var(--strait-card);
+    --vp-button-alt-border: var(--strait-ink);
+    --vp-button-alt-text: var(--strait-ink);
+    --vp-button-alt-hover-bg: var(--strait-sea);
+    --vp-button-alt-hover-border: var(--strait-ink);
+    --vp-button-alt-hover-text: var(--strait-ink);
+
+    --vp-custom-block-info-bg: var(--strait-sea);
+    --vp-custom-block-info-border: var(--strait-contour);
+    --vp-custom-block-info-text: var(--strait-ink);
+    --vp-custom-block-note-bg: var(--strait-sea);
+    --vp-custom-block-note-border: var(--strait-contour);
+    --vp-custom-block-note-text: var(--strait-ink);
+    --vp-custom-block-tip-bg: var(--strait-sea);
+    --vp-custom-block-tip-border: var(--strait-green);
+    --vp-custom-block-tip-text: var(--strait-ink);
+    --vp-custom-block-warning-bg: var(--strait-sea);
+    --vp-custom-block-warning-border: var(--strait-orange);
+    --vp-custom-block-warning-text: var(--strait-ink);
+    --vp-custom-block-danger-bg: var(--strait-sea);
+    --vp-custom-block-danger-border: var(--strait-red);
+    --vp-custom-block-danger-text: var(--strait-ink);
+    --vp-custom-block-caution-bg: var(--strait-sea);
+    --vp-custom-block-caution-border: var(--strait-red);
+    --vp-custom-block-caution-text: var(--strait-ink);
+
+    --vp-badge-info-text: var(--strait-ink);
+    --vp-badge-info-bg: var(--strait-card);
+    --vp-badge-info-border: var(--strait-contour);
+    --vp-badge-tip-text: var(--strait-ink);
+    --vp-badge-tip-bg: var(--strait-card);
+    --vp-badge-tip-border: var(--strait-green);
+    --vp-badge-warning-text: var(--strait-ink);
+    --vp-badge-warning-bg: var(--strait-card);
+    --vp-badge-warning-border: var(--strait-orange);
+    --vp-badge-danger-text: var(--strait-ink);
+    --vp-badge-danger-bg: var(--strait-card);
+    --vp-badge-danger-border: var(--strait-red);
+
+    --vp-home-hero-name-color: var(--strait-ink);
+    --vp-home-hero-name-background: none;
+    --vp-home-hero-image-background-image: none;
+    --vp-home-hero-image-filter: none;
+
+    --vp-local-search-bg: var(--strait-paper);
+    --vp-local-search-result-bg: var(--strait-card);
+    --vp-local-search-result-border: var(--strait-contour);
+    --vp-local-search-result-selected-bg: var(--strait-sea);
+    --vp-local-search-result-selected-border: var(--strait-magenta);
+    --vp-local-search-highlight-bg: var(--strait-sea);
+    --vp-local-search-highlight-text: var(--strait-ink);
+
+    /* Flat: no shadow anywhere. */
+    --vp-shadow-1: none;
+    --vp-shadow-2: none;
+    --vp-shadow-3: none;
+    --vp-shadow-4: none;
+    --vp-shadow-5: none;
+
+    /* The code colours: ink, with comments soft and strings in the accent. */
+    --shiki-foreground: var(--strait-ink);
+    --shiki-background: var(--strait-card);
+    --shiki-token-constant: var(--strait-ink);
+    --shiki-token-string: var(--strait-magenta);
+    --shiki-token-string-expression: var(--strait-magenta);
+    --shiki-token-comment: var(--strait-soft-ink);
+    --shiki-token-keyword: var(--strait-ink);
+    --shiki-token-parameter: var(--strait-ink);
+    --shiki-token-function: var(--strait-ink);
+    --shiki-token-punctuation: var(--strait-soft-ink);
+    --shiki-token-link: var(--strait-magenta);
+    --shiki-ansi-black: var(--strait-ink);
+    --shiki-ansi-white: var(--strait-paper);
+    --shiki-ansi-red: var(--strait-red);
+    --shiki-ansi-green: var(--strait-green);
+    --shiki-ansi-yellow: var(--strait-ink); /* orange text fails 4.5:1 on card */
+    --shiki-ansi-blue: var(--strait-ink);
+    --shiki-ansi-magenta: var(--strait-magenta);
+    --shiki-ansi-cyan: var(--strait-ink);
+    --shiki-ansi-bright-black: var(--strait-soft-ink);
+    --shiki-ansi-bright-white: var(--strait-card);
+    --shiki-ansi-bright-red: var(--strait-red);
+    --shiki-ansi-bright-green: var(--strait-green);
+    --shiki-ansi-bright-yellow: var(--strait-ink);
+    --shiki-ansi-bright-blue: var(--strait-ink);
+    --shiki-ansi-bright-magenta: var(--strait-magenta);
+    --shiki-ansi-bright-cyan: var(--strait-ink);
+}
+
+/* Square: no rounded corner anywhere. */
+*,
+*::before,
+*::after {
+    border-radius: 0 !important;
+}
+
+/* Flat: no blur behind the navigation. */
+.VPNav,
+.VPNavBar,
+.VPLocalNav,
+.VPNavBar .content-body {
+    backdrop-filter: none !important;
+}
+
+/* The wordmark: the name in the text face, nothing else. */
+.VPNavBarTitle .title {
+    font-family: var(--strait-font-text);
+    font-weight: 600;
+    font-size: 20px;
+}
+
+/* Labels: short, upright caps in the condensed face, tracked. Navigation groups, table heads, callout titles, badges. */
+.VPSidebarItem.level-0 > .item > .text,
+.vp-doc th,
+.vp-doc .custom-block .custom-block-title,
+.VPBadge {
+    font-family: var(--strait-font-label);
+    font-weight: 600;
+    font-size: 12.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+/* Headings in the text face, sentence case. */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.VPHero .name,
+.VPHero .text {
+    font-family: var(--strait-font-text);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+/* Tables: cards with contour rules, the head a tinted band. A wide one scrolls instead of squeezing its columns. */
+.vp-doc table {
+    display: block;
+    overflow-x: auto;
+    border: 1px solid var(--strait-contour);
+}
+.vp-doc tr,
+.vp-doc tr:nth-child(2n) {
+    background-color: var(--strait-card);
+    border-top: 1px solid var(--strait-contour);
+}
+.vp-doc th {
+    background-color: var(--strait-sea);
+    color: var(--strait-ink);
+}
+.vp-doc th,
+.vp-doc td {
+    border: 1px solid var(--strait-contour);
+}
+
+/* Code blocks: a card with a contour frame. */
+.vp-doc div[class*="language-"] {
+    border: 1px solid var(--strait-contour);
+}
+
+/* Callouts: a tinted band, framed in the state's colour. Their text stays ink; the title says the state in words. */
+.vp-doc .custom-block {
+    border-width: 2px;
+}
+
+/* Links: the accent, underlined, so they read as links without colour too. */
+.vp-doc a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* The home page: a land band behind the hero, ink text on it. */
+.VPHome .VPHero {
+    background-color: var(--strait-land);
+    border-bottom: 1px solid var(--strait-ink);
+}
+.VPHome .VPHero .tagline {
+    color: var(--strait-ink);
+}
+.VPHome .VPFeature {
+    background-color: var(--strait-card);
+    border: 1px solid var(--strait-contour);
+}
