@@ -208,7 +208,7 @@ func withoutReservedPortRules(s *apiextensionsv1.JSONSchemaProps) int {
 
 // A Site that the API server stored before the CRD refused the reserved ports keeps them. Once the CRD refuses them,
 // a write of another field of its spec passes, and a new reserved port is refused. A write of its status is refused
-// before Kubernetes 1.33, and passes from 1.33 (RFC0005 Limitations; issue #64). make test runs this on the oldest
+// before Kubernetes 1.33, and passes from 1.33 (README, Upgrade; issue #64). make test runs this on the oldest
 // Kubernetes that the README supports and on the latest.
 func TestStoredSiteWithReservedPort(t *testing.T) {
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {

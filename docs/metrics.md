@@ -98,7 +98,7 @@ At `/stats/prometheus`, the agent serves these of Envoy's stats, and no other pa
 | `peer/<peer>` | The control port of a peer, over each link. |
 | `controller` | The controller's observation port. |
 
-Per-link bytes exist for `wireguard` links only, from the interface. A `direct` link has no interface, and Envoy's stats per endpoint are labelled by address ([RFC0005](../rfcs/RFC0005.md#limitations)).
+Per-link bytes exist for `wireguard` links only, from the interface. A `direct` link has no interface, and Envoy's stats per endpoint are labelled by address.
 
 ## Alerts
 
