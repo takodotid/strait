@@ -765,6 +765,44 @@ func TestEndGatewayClosesImports(t *testing.T) {
 	})
 }
 
+// status.route.lastChangeTime is the time of the decision whose status first shows new members. After a failover that
+// passes through nowhere, it is the time the route became Active again, and it stays while the members stay, also
+// while the member is held Unknown (RFC0002, requirement 24).
+func TestLastChangeTimeOfAFailover(t *testing.T) {
+	f := &faults{}
+	r, c := routedToA(t, f)
+	at := func(d time.Duration) {
+		t.Helper()
+		r.Now = func() time.Time { return now.Add(d) }
+		if err := reconcileWeb(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := func(reason string, members []string, changed time.Duration) {
+		t.Helper()
+		st := status(t, c)
+		if st.Route.Reason != reason || !slices.Equal(st.Route.Members, members) || !st.Route.LastChangeTime.Equal(&metav1.Time{Time: now.Add(changed)}) {
+			t.Fatalf("route = %v %s changed %v; want %v %s changed %v", st.Route.Members, st.Route.Reason, st.Route.LastChangeTime, members, reason, now.Add(changed))
+		}
+	}
+	// This site declares web-b, site b still web-a: nowhere.
+	declare(t, r, c, "web-b")
+	r.Peers = declaring("web-a")
+	at(5 * time.Second)
+	want(straitv1.ReasonDeclarationsDisagree, nil, 5*time.Second)
+	// Site b promoted web-b: Active again.
+	r.Peers = declaring("web-b")
+	at(9 * time.Second)
+	want(straitv1.ReasonActive, []string{"web-b"}, 9*time.Second)
+	at(11 * time.Second)
+	at(25 * time.Second)
+	want(straitv1.ReasonActive, []string{"web-b"}, 9*time.Second)
+	// Site b goes stale: web-b is held, the members and the time stay.
+	r.Peers = peers{polled: true}
+	at(30 * time.Second)
+	want(straitv1.ReasonHeldUnknown, []string{"web-b"}, 9*time.Second)
+}
+
 // With EndGateway, a decision that routes a gateway member nowhere because its hold ran out closes its Import, also
 // the first decision after a controller start that took longer than unknownHold, before the first poll of the peers.
 // The sessions through the gateway to that member then end. This is a cost of the policy (RFC0002, What EndGateway
