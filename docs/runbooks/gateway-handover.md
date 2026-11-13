@@ -4,8 +4,8 @@ One gateway replica is active: it holds the gateway Lease `strait-gateway`. A ha
 
 | Cause | Moves |
 |---|---|
-| A gateway rollout: an upgrade to another release, or `kubectl rollout restart` | Once ([Upgrade](../../README.md#upgrade)). |
-| A drain of the active pod's node | Once ([Node drains](../../README.md#node-drains)). |
+| A gateway rollout: an upgrade to another release, or `kubectl rollout restart` | Once ([Upgrade](./upgrade.md)). |
+| A drain of the active pod's node | Once ([Node drains](./upgrade.md#node-drains)). |
 | The active pod is deleted, or its node fails | Once. |
 | The active pod's Envoy is not ready for 6s | Once. With one replica, the same replica takes the Lease again once its Envoy is ready ([Not ready](not-ready.md#gateway)). |
 
