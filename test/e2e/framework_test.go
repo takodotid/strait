@@ -96,6 +96,8 @@ type env struct {
 	keep  bool
 	a, b  *site
 	times *timings
+	// rolePassword is the password of the PostgreSQL role of confirmRole, in each site's controller Secret.
+	rolePassword string
 }
 
 func (e *env) sites() []*site { return []*site{e.a, e.b} }
@@ -140,6 +142,8 @@ func newEnv(t *testing.T) *env {
 		a:     mk("a", "10.110.0.0/16", "10.111.0.0/16", "172.31.0.11", "100.64.0.1/30"),
 		b:     mk("b", "10.120.0.0/16", "10.121.0.0/16", "172.31.0.21", "100.64.0.2/30"),
 		times: &timings{path: filepath.Join(out, "timings.txt"), run: time.Now().UTC().Format(time.RFC3339)},
+
+		rolePassword: randomPassword(),
 	}
 	// Printed to stderr at once, so a kept fixture can be found even if the test hangs.
 	for _, s := range e.sites() {

@@ -206,6 +206,7 @@ func siteService(ss *straitv1.SiteService, f Fields) field.ErrorList {
 	pl := spec.Child("plugin")
 	if c := s.Plugin.CNPG; c != nil {
 		errs = append(errs, enum(pl.Child("cnpg", "role"), c.Role, true, straitv1.CNPGRolePrimary, straitv1.CNPGRoleReplica, straitv1.CNPGRoleAny)...)
+		errs = append(errs, rule(pl.Child("cnpg"), !c.ConfirmRole || c.Role == straitv1.CNPGRolePrimary, "confirmRole applies to role primary only")...)
 	}
 	errs = append(errs, rule(pl, (s.Plugin.CNPG != nil) != (s.Plugin.Declared != nil), "set exactly one plugin")...)
 

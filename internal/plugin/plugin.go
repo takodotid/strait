@@ -42,13 +42,16 @@ func (o readOnly) List(ctx context.Context, list client.ObjectList, opts ...clie
 type Options struct {
 	// CNPGOff turns the cnpg plugin off: it reads nothing and reports every member Unknown (RFC#0003, requirement 13).
 	CNPGOff bool
+	// Roles asks a member's database whether it is in recovery, for spec.plugin.cnpg.confirmRole. Nil has no
+	// credentials: such a member is Unknown.
+	Roles RoleChecker
 }
 
 // For returns the plugin that svc names.
 func For(svc *straitv1.SiteService, o Options) (Plugin, error) {
 	switch {
 	case svc.Spec.Plugin.CNPG != nil:
-		return CNPG{Off: o.CNPGOff}, nil
+		return CNPG{Off: o.CNPGOff, Roles: o.Roles}, nil
 	case svc.Spec.Plugin.Declared != nil:
 		return Declared{}, nil
 	}

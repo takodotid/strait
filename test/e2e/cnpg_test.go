@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"text/template"
 	"time"
 
@@ -29,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/yaml"
+
+	straitv1 "github.com/takodotid/strait/api/v1"
 )
 
 //go:embed testdata/cluster.yaml.tmpl
@@ -532,4 +535,94 @@ func (w *clusterWatch) Stop() []clusterState {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return append([]clusterState(nil), w.states...)
+}
+
+// The PostgreSQL role of spec.plugin.cnpg.confirmRole, and the controller's Secret that holds its credentials.
+const (
+	roleUser   = "strait_role_check"
+	roleSecret = "strait-cnpg-role"
+)
+
+// primarySQL runs SQL as the superuser in the current primary instance of the site's Cluster.
+func primarySQL(ctx context.Context, s *site, sql string) error {
+	u, err := getCluster(ctx, s)
+	if err != nil {
+		return err
+	}
+	pod := field(u, "status", "currentPrimary")
+	if pod == "" {
+		return fmt.Errorf("%s has no current primary", clusterOf(s))
+	}
+	_, err = s.kubectl(ctx, time.Minute, "-n", dbNamespace, "exec", pod, "-c", "postgres", "--", "psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-c", sql)
+	return err
+}
+
+// setConfirmRole sets pg's spec.plugin.cnpg.confirmRole at a site.
+func setConfirmRole(ctx context.Context, e *env, s *site, on bool) error {
+	patch := fmt.Sprintf(`{"spec":{"plugin":{"cnpg":{"confirmRole":%t}}}}`, on)
+	return s.c.Patch(ctx, pgService(e), client.RawPatch(types.MergePatchType, []byte(patch)))
+}
+
+// memberReason returns the reason of a member in a site's status of pg.
+func memberReason(ctx context.Context, s *site, member string) (string, error) {
+	ss, err := siteService(ctx, s, dbNamespace, "pg")
+	if err != nil {
+		return "", err
+	}
+	for _, m := range ss.Status.Members {
+		if m.Name == member {
+			return m.Reason, nil
+		}
+	}
+	return "", fmt.Errorf("no member %s", member)
+}
+
+// roleCheck: with confirmRole on pg at site a, the controller connects to pg-a's database with a role that has
+// LOGIN and nothing else, and pg-a stays routed while pg_is_in_recovery() agrees with the Cluster (RFC0003,
+// requirement 14). When the role's password no longer matches, the check fails, pg-a is Unknown with reason
+// RoleNotConfirmed, and site a stops routing it once unknownHold has passed. With the password back, pg-a is routed
+// again. The policy is off afterwards.
+func (e *env) roleCheck(ctx context.Context, t *testing.T) {
+	a := e.a
+	pgA := []string{memberOf(a)}
+	if err := primarySQL(ctx, a, fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", roleUser, e.rolePassword)); err != nil {
+		t.Fatal(err)
+	}
+	if err := setConfirmRole(ctx, e, a, true); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := setConfirmRole(context.WithoutCancel(ctx), e, a, false); err != nil {
+			t.Errorf("confirmRole off: %v", err)
+		}
+	}()
+	// The route holds while the database agrees, over several decisions.
+	for range 5 {
+		eventually(ctx, t, 10*time.Second, 500*time.Millisecond, "site a routes pg-a with confirmRole", routeIs(a, dbNamespace, "pg", pgA, straitv1.ReasonActive))
+		time.Sleep(time.Second)
+	}
+
+	broken := time.Now()
+	if err := primarySQL(ctx, a, fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", roleUser, randomPassword())); err != nil {
+		t.Fatal(err)
+	}
+	eventually(ctx, t, 15*time.Second, 250*time.Millisecond, "pg-a is not confirmed", func(ctx context.Context) (bool, string) {
+		r, err := memberReason(ctx, a, memberOf(a))
+		if err != nil {
+			return false, err.Error()
+		}
+		return strings.HasPrefix(r, "RoleNotConfirmed: "), r
+	})
+	if r, _ := memberReason(ctx, a, memberOf(a)); strings.Contains(r, e.rolePassword) {
+		t.Error("the member's reason holds the role's password")
+	}
+	eventually(ctx, t, unknownHold+15*time.Second, 250*time.Millisecond, "site a routes nowhere", routeIs(a, dbNamespace, "pg", nil, timedOut...))
+	e.times.record(t, "role-check/nowhere", time.Since(broken))
+
+	if err := primarySQL(ctx, a, fmt.Sprintf("ALTER ROLE %s PASSWORD '%s'", roleUser, e.rolePassword)); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range e.sites() {
+		eventually(ctx, t, 30*time.Second, 250*time.Millisecond, "site "+s.name+" routes pg-a again", routeIs(s, dbNamespace, "pg", pgA, straitv1.ReasonActive))
+	}
 }

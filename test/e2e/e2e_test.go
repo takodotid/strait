@@ -35,6 +35,7 @@ func TestE2E(t *testing.T) {
 	}{
 		{"setup", e.setup},
 		{"1-baseline", e.baseline},
+		{"role-check", e.roleCheck},
 		{"import", e.importService},
 		{"switch", e.switchThroughNowhere},
 		{"conflict", e.serviceConflict},

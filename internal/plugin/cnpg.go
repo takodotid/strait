@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -44,6 +45,8 @@ type CNPG struct {
 	// Off reports every member Unknown and reads nothing: the controller may not read CloudNativePG's kinds, and a
 	// cached read of a kind it may not list waits for the reconcile's whole time limit (RFC#0003, requirement 13).
 	Off bool
+	// Roles confirms a member's role with its database, for spec.plugin.cnpg.confirmRole (RFC#0003, requirement 14).
+	Roles RoleChecker
 }
 
 // Observe implements Plugin.
@@ -59,6 +62,9 @@ func (p CNPG) Observe(ctx context.Context, r client.Reader, svc *straitv1.SiteSe
 	declared := map[string]bool{}
 	for _, m := range LocalMembers(svc, site) {
 		o, decl := observeCluster(ctx, r, svc.Namespace, m, role, now)
+		if svc.Spec.Plugin.CNPG.ConfirmRole {
+			o = p.confirm(ctx, r, svc.Namespace, m, o, now)
+		}
 		o.Site = site
 		rep.Members[m.Name] = o
 		if decl != "" {
@@ -214,6 +220,36 @@ func observeCluster(ctx context.Context, r client.Reader, namespace string, m st
 		o.Reason = "Ready"
 	}
 	return o, c.declared
+}
+
+// confirm checks a Stable member's role with its database: each ready address of the Cluster's -rw Service must be in
+// recovery exactly when the member's role is replica. A member whose database disagrees, or does not answer, is
+// Unknown. A member that is not Stable, or whose role is unknown, is left as it is.
+func (p CNPG) confirm(ctx context.Context, r client.Reader, namespace string, m straitv1.Member, o observe.Observation, now time.Time) observe.Observation {
+	if o.State != straitv1.StateStable || o.Role == straitv1.RoleUnknown {
+		return o
+	}
+	if p.Roles == nil {
+		return observe.Unknown(m.Name, "", "RoleNotConfirmed: "+ErrNoCredentials.Error(), now)
+	}
+	ep, err := ReadyEndpoint(ctx, r, namespace, m.CNPG.Cluster+"-rw", postgresPort)
+	if err != nil {
+		return observe.Unknown(m.Name, "", "RoleNotConfirmed: "+err.Error(), now)
+	}
+	if len(ep.Addresses) == 0 {
+		return observe.Unknown(m.Name, "", "RoleNotConfirmed: "+m.CNPG.Cluster+"-rw has no ready address", now)
+	}
+	want := o.Role == straitv1.RoleReplica
+	for _, a := range ep.Addresses {
+		got, err := p.Roles.InRecovery(ctx, a, ep.Port)
+		if err != nil {
+			return observe.Unknown(m.Name, "", "RoleNotConfirmed: "+err.Error(), now)
+		}
+		if got != want {
+			return observe.Unknown(m.Name, "", fmt.Sprintf("RoleMismatch: the Cluster's role is %s, and pg_is_in_recovery() at %s is %t", o.Role, a, got), now)
+		}
+	}
+	return o
 }
 
 func setReason(o *observe.Observation, reason string) {
