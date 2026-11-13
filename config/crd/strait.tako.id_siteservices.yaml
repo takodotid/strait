@@ -164,6 +164,15 @@ spec:
                 description: Policy decides the route when observations are incomplete
                   or contradict each other.
                 properties:
+                  connections:
+                    description: |-
+                      Connections is what a route change does to established connections. Keep, the default, keeps them all.
+                      EndGateway closes this site's Imports of the members that are not routed, which ends the connections through
+                      this site's gateway to them. Connections that do not pass through the gateway are kept.
+                    enum:
+                    - Keep
+                    - EndGateway
+                    type: string
                   isolationTimeout:
                     description: |-
                       IsolationTimeout keeps Single mode from routing to a local member while the site sees no peer: no peer's
@@ -565,6 +574,15 @@ spec:
                 description: Policy decides the route when observations are incomplete
                   or contradict each other.
                 properties:
+                  connections:
+                    description: |-
+                      Connections is what a route change does to established connections. Keep, the default, keeps them all.
+                      EndGateway closes this site's Imports of the members that are not routed, which ends the connections through
+                      this site's gateway to them. Connections that do not pass through the gateway are kept.
+                    enum:
+                    - Keep
+                    - EndGateway
+                    type: string
                   isolationTimeout:
                     description: |-
                       IsolationTimeout keeps Single mode from routing to a local member while the site sees no peer: no peer's

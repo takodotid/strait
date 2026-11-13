@@ -39,6 +39,17 @@ const (
 	PreferDeclaredIfConsistent MultiplePolicy = "PreferDeclaredIfConsistent"
 )
 
+// ConnectionsPolicy is what a route change does to established connections.
+// +kubebuilder:validation:Enum=Keep;EndGateway
+type ConnectionsPolicy string
+
+const (
+	// ConnectionsKeep keeps every established connection. The default.
+	ConnectionsKeep ConnectionsPolicy = "Keep"
+	// ConnectionsEndGateway ends the connections through this site's gateway to a member that is not routed.
+	ConnectionsEndGateway ConnectionsPolicy = "EndGateway"
+)
+
 // CNPGRole is the CloudNativePG role a SiteService routes to.
 // +kubebuilder:validation:Enum=primary;replica;any
 type CNPGRole string
@@ -198,6 +209,12 @@ type Policy struct {
 	// document is fresh, and none was read for this long. A member must be at another site. Unset or 0s turns it off.
 	// +optional
 	IsolationTimeout metav1.Duration `json:"isolationTimeout,omitzero"`
+
+	// Connections is what a route change does to established connections. Keep, the default, keeps them all.
+	// EndGateway closes this site's Imports of the members that are not routed, which ends the connections through
+	// this site's gateway to them. Connections that do not pass through the gateway are kept.
+	// +optional
+	Connections ConnectionsPolicy `json:"connections,omitempty"`
 }
 
 // State is a member's state.

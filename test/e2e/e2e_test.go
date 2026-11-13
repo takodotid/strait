@@ -47,6 +47,7 @@ func TestE2E(t *testing.T) {
 		{"4-partition", e.partition},
 		{"4b-isolated", e.isolated},
 		{"5-disagreeing-declarations", e.declarations},
+		{"5b-end-gateway", e.endGateway},
 		{"6-site-loss", e.siteLoss},
 		{"7-two-writable", e.twoWritable},
 		{"rbac", e.noForbidden},

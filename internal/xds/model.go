@@ -46,6 +46,8 @@ type Import struct {
 	Export    string
 	// RemotePort is the export's gateway port at the peer. 0 while unknown.
 	RemotePort int32
+	// Closed leaves the import with no listener.
+	Closed bool
 }
 
 // Peer is another site and its links, in rank order.
@@ -107,7 +109,7 @@ func Collect(ctx context.Context, r client.Reader, controllerAddr string) (Model
 		}
 		m.Imports = append(m.Imports, Import{
 			Namespace: i.Namespace, Name: i.Name, Port: i.Status.GatewayPort,
-			Peer: i.Spec.Site, Export: i.Spec.Export, RemotePort: i.Status.RemotePort,
+			Peer: i.Spec.Site, Export: i.Spec.Export, RemotePort: i.Status.RemotePort, Closed: i.Spec.Closed,
 		})
 	}
 

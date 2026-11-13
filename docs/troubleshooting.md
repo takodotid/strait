@@ -35,6 +35,7 @@ A route to nowhere is a safe state, not a fault to work around. Find its cause a
 | Symptom | Cause and next step |
 |---|---|
 | A client still reaches the previous member, while the `SiteService`'s EndpointSlices no longer name it | A route change never moves an established connection: the client must reconnect. A new connection that reaches the previous member comes from the CNI's connection tracking. For Cilium, check that `cilium-dbg status --verbose` in the agent shows `Socket LB: Enabled`, and that the agent's configuration does not set `bpf-lb-sock-hostns-only` to `"true"`. [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
+| A session through the gateway stays open after its member left the route, with `policy.connections: EndGateway` | Envoy closes it when its drain time has passed: 600s unless the chart value `envoy.drainTimeSeconds` sets it. Set a few seconds. Check that the member's `Import` shows `spec.closed: true`: `kubectl get import <siteservice>-<member> -o jsonpath='{.spec.closed}'`. A local client's session, or one over endpoint-direct, always stays ([RFC0002, What `EndGateway` covers and costs](../rfcs/RFC0002.md#what-endgateway-covers-and-costs)). |
 
 ## Unknown members
 
