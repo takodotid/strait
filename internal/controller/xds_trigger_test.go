@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,12 +17,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cache/informertest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllertest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	straitv1 "github.com/takodotid/strait/api/v1"
@@ -70,7 +73,7 @@ func TestXDSTriggerEvents(t *testing.T) {
 	var triggers atomic.Int32
 	tr := &XDSTrigger{Trigger: func() { triggers.Add(1) }, Namespace: "strait-system", Reader: c}
 
-	informers := &informertest.FakeInformers{Scheme: c.Scheme()}
+	informers := &lockedInformers{FakeInformers: &informertest.FakeInformers{Scheme: c.Scheme()}}
 	kinds := []client.Object{&straitv1.Site{}, &straitv1.SitePeer{}, &straitv1.SiteLink{}, &straitv1.Export{}, &straitv1.Import{},
 		&discoveryv1.EndpointSlice{}, &corev1.Pod{}, &coordinationv1.Lease{}}
 	for _, o := range kinds {
@@ -101,7 +104,7 @@ func TestXDSTriggerEvents(t *testing.T) {
 		<-done
 	}()
 	// The controller has started once a Site event triggers.
-	sites, _ := informers.FakeInformerFor(ctx, &straitv1.Site{})
+	sites := informers.locked(ctx, &straitv1.Site{})
 	waitTriggers := func(what string, want int32) {
 		t.Helper()
 		for deadline := time.Now().Add(5 * time.Second); triggers.Load() < want; time.Sleep(10 * time.Millisecond) {
@@ -119,12 +122,12 @@ func TestXDSTriggerEvents(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	base := triggers.Load()
 
-	leases, _ := informers.FakeInformerFor(ctx, &coordinationv1.Lease{})
+	leases := informers.locked(ctx, &coordinationv1.Lease{})
 	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Namespace: "strait-system", Name: "strait-gateway"}}
 	renewed := lease.DeepCopy()
 	renewed.Spec.RenewTime = &metav1.MicroTime{Time: time.Now()}
 	leases.Update(lease, renewed)
-	slices, _ := informers.FakeInformerFor(ctx, &discoveryv1.EndpointSlice{})
+	slices := informers.locked(ctx, &discoveryv1.EndpointSlice{})
 	other := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "pg-a-ro-x1",
 		Labels: map[string]string{discoveryv1.LabelServiceName: "pg-a-ro"}}}
 	slices.Add(other)
@@ -137,7 +140,7 @@ func TestXDSTriggerEvents(t *testing.T) {
 	slices.Add(exported)
 	waitTriggers("an exported Service's EndpointSlice", base+1)
 
-	pods, _ := informers.FakeInformerFor(ctx, &corev1.Pod{})
+	pods := informers.locked(ctx, &corev1.Pod{})
 	pending := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "strait-system", Name: "strait-gateway-0"}}
 	addressed := pending.DeepCopy()
 	addressed.Status.PodIP = "10.244.1.7"
@@ -184,4 +187,71 @@ func TestExportIndexOnOneManager(t *testing.T) {
 	if err := (&XDSTrigger{Trigger: func() {}}).SetupWithManager(mgr); err != nil {
 		t.Fatalf("xDS trigger on the same manager: %v", err)
 	}
+}
+
+// lockedInformers serves fake informers that lock around their handlers. controllertest.FakeInformer has no lock, and
+// a controller adds its handlers while the test sends events. All informers exist before the manager starts, so their
+// map is only read after that.
+type lockedInformers struct {
+	*informertest.FakeInformers
+	mu sync.Mutex
+}
+
+func (l *lockedInformers) locked(ctx context.Context, obj client.Object) *lockedInformer {
+	i, err := l.FakeInformers.FakeInformerFor(ctx, obj)
+	if err != nil {
+		panic(err)
+	}
+	return &lockedInformer{FakeInformer: i, mu: &l.mu}
+}
+
+func (l *lockedInformers) GetInformer(ctx context.Context, obj client.Object, _ ...cache.InformerGetOption) (cache.Informer, error) {
+	i, err := l.FakeInformers.FakeInformerFor(ctx, obj)
+	if err != nil {
+		return nil, err
+	}
+	return &lockedInformer{FakeInformer: i, mu: &l.mu}, nil
+}
+
+func (l *lockedInformers) GetInformerForKind(ctx context.Context, gvk schema.GroupVersionKind, _ ...cache.InformerGetOption) (cache.Informer, error) {
+	i, err := l.FakeInformers.FakeInformerForKind(ctx, gvk)
+	if err != nil {
+		return nil, err
+	}
+	return &lockedInformer{FakeInformer: i, mu: &l.mu}, nil
+}
+
+type lockedInformer struct {
+	*controllertest.FakeInformer
+	mu *sync.Mutex
+}
+
+func (i *lockedInformer) AddEventHandler(h toolscache.ResourceEventHandler) (toolscache.ResourceEventHandlerRegistration, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.FakeInformer.AddEventHandler(h)
+}
+
+func (i *lockedInformer) AddEventHandlerWithResyncPeriod(h toolscache.ResourceEventHandler, d time.Duration) (toolscache.ResourceEventHandlerRegistration, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.FakeInformer.AddEventHandlerWithResyncPeriod(h, d)
+}
+
+func (i *lockedInformer) AddEventHandlerWithOptions(h toolscache.ResourceEventHandler, o toolscache.HandlerOptions) (toolscache.ResourceEventHandlerRegistration, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.FakeInformer.AddEventHandlerWithOptions(h, o)
+}
+
+func (i *lockedInformer) Add(obj metav1.Object) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.FakeInformer.Add(obj)
+}
+
+func (i *lockedInformer) Update(oldObj, newObj metav1.Object) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.FakeInformer.Update(oldObj, newObj)
 }
