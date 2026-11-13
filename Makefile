@@ -82,14 +82,20 @@ lint: ## Verify the module's downloads, scan for known vulnerabilities, run stat
 # The Kubernetes versions of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test: the oldest that
 # the README supports, and the latest.
 ENVTEST_K8S_VERSIONS ?= 1.31.0 1.37.0
+# Flags for go test in make test.
+TEST_FLAGS ?=
 
 .PHONY: test
 test: ## Run unit tests, once on each of ENVTEST_K8S_VERSIONS. Downloads envtest's API servers into bin/envtest on first use.
 	for v in $(ENVTEST_K8S_VERSIONS); do \
 	  echo "envtest $$v"; \
 	  assets=$$(go tool setup-envtest use $$v --bin-dir $(CURDIR)/bin/envtest -p path); \
-	  KUBEBUILDER_ASSETS=$$assets go test ./...; \
+	  KUBEBUILDER_ASSETS=$$assets go test $(TEST_FLAGS) ./...; \
 	done
+
+.PHONY: test-race
+test-race: ## Run the unit tests of make test with the race detector. Needs cgo and a C compiler.
+	$(MAKE) test TEST_FLAGS=-race
 
 .PHONY: test-envoy
 test-envoy: ## Run the xDS configuration in a real Envoy, the chart's image, in docker.

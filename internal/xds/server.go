@@ -114,7 +114,11 @@ func (s *Server) Start(ctx context.Context) error {
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{MinTime: 5 * time.Second, PermitWithoutStream: true}),
 	)
 	discovery.RegisterAggregatedDiscoveryServiceServer(g, server.NewServer(ctx, s.cache, s.callbacks()))
-	go s.loop(ctx)
+	looped := make(chan struct{})
+	go func() {
+		defer close(looped)
+		s.loop(ctx)
+	}()
 
 	errc := make(chan error, 1)
 	go func() { errc <- g.Serve(lis) }()
@@ -122,6 +126,7 @@ func (s *Server) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		g.Stop()
+		<-looped
 		return nil
 	case err := <-errc:
 		return err
