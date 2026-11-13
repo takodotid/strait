@@ -44,7 +44,7 @@ flowchart LR
   ctrlA <-.->|"observations,<br/>polled over the link"| ctrlB
 ```
 
-Each controller reads only its own site's members, and polls the other site's observations through the gateways, over the same link.
+Each controller reads only the members at its own site. It polls the other site's observations through the gateways, over the same link.
 
 | Piece | Runs as | Does |
 |---|---|---|
@@ -56,13 +56,13 @@ Each controller reads only its own site's members, and polls the other site's ob
 | Link | One `SiteLink` per path to a peer | A transport, `direct` or `wireguard`, and a cost. The healthy link with the lowest cost carries the traffic. |
 | `strait` | CLI on the operator's machine | Shows and explains the state of one site. Read-only. |
 
-Each site has one `Site`, one `SitePeer` per peer and one `SiteLink` per path. Every resource: [RFC0001](rfcs/RFC0001.md#resources).
+Each site has one `Site`, one `SitePeer` per peer and one `SiteLink` per path. All resources are listed in [RFC0001](rfcs/RFC0001.md#resources).
 
 ## Properties
 
 | Property | Means | Design |
 |---|---|---|
-| Routes nowhere rather than to a guess | When Strait cannot tell which member is active, the name has no endpoints. A new connection is refused at once, and the client retries. Two writable members, sites that declare different primaries, and a member Unknown for too long all route nowhere. | [RFC0002](rfcs/RFC0002.md) |
+| Routes nowhere rather than to a guess | When Strait cannot tell which member is active, the name has no endpoints. A new connection is refused at once, and the client retries. The name routes nowhere when two members are writable, when sites declare different primaries, or when a member stays Unknown for too long. | [RFC0002](rfcs/RFC0002.md) |
 | Observes, never acts on a workload | Plugins get read-only permissions and no workload credentials. Strait never promotes, demotes, fences or reconfigures a workload. | [RFC0003](rfcs/RFC0003.md), [RFC0007](rfcs/RFC0007.md) |
 | Modes `Single` and `Set` | `Single` routes to the one writable member, such as a database primary. `Set` routes to every eligible member, such as read replicas, filtered by locality: `LocalFirst`, `LocalOnly` or `Any`. | [RFC0002](rfcs/RFC0002.md) |
 | Plugins `cnpg` and `declared` | `cnpg` reads CloudNativePG `Cluster`s, and a `Pooler` when named. `declared` takes the active member from the spec, for a workload that no plugin observes. | [RFC0003](rfcs/RFC0003.md) |
@@ -131,7 +131,7 @@ make build
 bin/strait --kubeconfig <kubeconfig of site b> --context kind-strait-e2e-b -n db explain pg
 ```
 
-The test prints where it wrote the kubeconfigs. Prerequisites, fixture and scenarios: [`test/e2e/README.md`](test/e2e/README.md).
+The test prints where it wrote the kubeconfigs. The prerequisites, the fixture and the scenarios are in [`test/e2e/README.md`](test/e2e/README.md).
 
 ## Install
 
@@ -144,7 +144,7 @@ Each release publishes:
 | CLI archives for Linux, macOS and Windows, amd64 and arm64, with `SHA256SUMS` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 | The CRDs, in one file: `strait-crds.yaml` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 
-Each site needs Kubernetes 1.31 or later. The CRDs' validation rules use the CEL functions `isIP` and `isCIDR`, and the API server of 1.30 or earlier refuses the CRDs. `make test` runs the CRDs' rules on the oldest and the latest version, as the `Makefile`'s `ENVTEST_K8S_VERSIONS` names them.
+Each site needs Kubernetes 1.31 or later. The CRDs' validation rules use the CEL functions `isIP` and `isCIDR`. The API server of 1.30 or earlier refuses these CRDs. `make test` runs the CRDs' rules on the oldest and the latest version, which the `Makefile`'s `ENVTEST_K8S_VERSIONS` names.
 
 Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](docs/getting-started.md#2-install-the-chart):
 
@@ -153,7 +153,7 @@ helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait 
   --namespace strait-system --values values-a.yaml --wait
 ```
 
-Before a site serves production traffic, go through [Before production](docs/runbooks/before-production.md). Every value of the chart: [`values.yaml`](deploy/helm/strait/values.yaml). Two clusters step by step, from the WireGuard key to a routed name: [Getting started](docs/getting-started.md). The controller's memory grows with the Services of the cluster: [Sizing](docs/sizing.md).
+Before a site serves production traffic, go through [Before production](docs/runbooks/before-production.md). Every value of the chart is in [`values.yaml`](deploy/helm/strait/values.yaml). [Getting started](docs/getting-started.md) sets up two clusters step by step, from the WireGuard key to a routed name. The controller's memory grows with the number of Services in the cluster: see [Sizing](docs/sizing.md).
 
 Install the CLI, here for Linux on amd64:
 
@@ -170,7 +170,7 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 
 ### Verify a release
 
-From 1.3.0, each release signs the image and the chart with Sigstore, keyless, under the identity of its release workflow. It attests the CLI archives, the chart archive, `strait-crds.yaml` and `SHA256SUMS` with GitHub artifact attestations. The chart names the image's index by its digest, in the annotation `strait.tako.id/image-digest` ([RFC0007, Releases](rfcs/RFC0007.md#releases)). From 1.5.0, the index lists the platform images only, `linux/amd64` and `linux/arm64`, and each platform image carries its build's provenance, SLSA v1, and its SBOM, SPDX, as cosign attestations under the same identity.
+From 1.3.0, each release signs the image and the chart with Sigstore. The signing is keyless and uses the identity of the release's workflow. It attests the CLI archives, the chart archive, `strait-crds.yaml` and `SHA256SUMS` with GitHub artifact attestations. The chart records the digest of the image's index in the annotation `strait.tako.id/image-digest` ([RFC0007, Releases](rfcs/RFC0007.md#releases)). From 1.5.0, the index lists only the platform images, `linux/amd64` and `linux/arm64`. Each platform image carries its build's provenance (SLSA v1) and its SBOM (SPDX) as cosign attestations under the same identity.
 
 Verify the chart and its image with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) 3, and an archive with the GitHub CLI's `gh attestation verify`:
 
@@ -185,7 +185,7 @@ gh attestation verify "strait_${v}_linux_amd64.tar.gz" --repo takodotid/strait -
 gh attestation verify SHA256SUMS --repo takodotid/strait --cert-identity "$id"
 ```
 
-From 1.5.0, verify each platform image's provenance and SBOM, with `docker` and `jq` too. The platform images come from the index that the chart names:
+From 1.5.0, verify each platform image's provenance and SBOM. This needs `docker` and `jq` too. The platform images come from the index that the chart names:
 
 ```sh
 for image in $(docker buildx imagetools inspect "ghcr.io/takodotid/strait@$digest" --raw | jq -r '.manifests[].digest'); do
@@ -194,9 +194,9 @@ for image in $(docker buildx imagetools inspect "ghcr.io/takodotid/strait@$diges
 done
 ```
 
-Each file holds the attestation, a DSSE envelope. `jq '.payload | @base64d | fromjson | .predicate' FILE` prints the provenance or the SBOM.
+Each file holds the attestation as a DSSE envelope. `jq '.payload | @base64d | fromjson | .predicate' FILE` prints the provenance or the SBOM.
 
-To rebuild a CLI archive or the image from the release's tag, and compare it with what the release published: [Rebuild a release](docs/runbooks/rebuild.md).
+To rebuild a CLI archive or the image from the release's tag and compare it with what the release published, see [Rebuild a release](docs/runbooks/rebuild.md).
 
 | Value | Effect on the image |
 |---|---|
@@ -233,7 +233,7 @@ kubectl strait --context site-a status
 
 | Difference on Windows | Detail |
 |---|---|
-| Exit status of `kubectl strait` | 1 on every failure, and kubectl adds the line `Error: exit status N`: kubectl runs a plugin there as a child process. `strait.exe` exits with 0, 1 or 2 as on other systems. |
+| Exit status of `kubectl strait` | 1 on every failure, and kubectl adds the line `Error: exit status N`, because on Windows kubectl runs a plugin as a child process. `strait.exe` exits with 0, 1 or 2 as on other systems. |
 | Man pages | Windows has no `man`. `strait --help` and `strait COMMAND --help` hold the same text. |
 | Skill document | Copy `SKILL.md` from the archive into `<skills dir>\strait\`. In Windows PowerShell 5.1, `strait --skill > SKILL.md` writes UTF-16LE, not the UTF-8 that `strait` prints. |
 
@@ -244,7 +244,7 @@ Upgrade one site at a time. Sites on different 1.x releases still read each othe
 | Step | What to do |
 |---|---|
 | 1. Pull the images | Required when a pull can take longer than the site's budget, below. List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. From 1.3.0, the chart's pre-pull Job also runs the release's image on the controller's node before the upgrade changes anything (`controller.prePull`), but the new controller pod can start on another node. |
-| 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until then. From a release before 1.3.0, they add `Site.spec.gateway.lease`. From a release before 1.4.0, they refuse a `Site` whose gateway ports include 8090, 8091 or 9901, where the gateway agent and Envoy's admin interface listen. Change such a port first: on Kubernetes 1.31 and 1.32, a `Site` stored with one refuses every write of its status under the new CRDs, so the controller stops updating it, the active gateway's address included. It was seen on envtest's API server, 1.31.0 to 1.37.0, and from 1.33 the status write passes ([RFC0005](rfcs/RFC0005.md#requirements), requirement 52). From a release before 1.5.0, with `networkPolicy.gateway.enabled`, the gateway's policy admits the pods of the cluster to the import and export ports only, and the controller to the peer port: a pod that reaches another gateway port, such as the control port, is refused. The CIDRs of `networkPolicy.gateway.peerCIDRs` reach the control and export ports, and the UDP ports of the new value `networkPolicy.gateway.wireGuardPorts`, only: list the site's WireGuard listen ports there, or `[]` when it has no `wireguard` link. With `site.create: false`, set `networkPolicy.gateway.ports` too. Without them, `helm upgrade` fails ([RFC0007](rfcs/RFC0007.md#network-policies), requirement 28). From a release before 1.5.0, the image's index lists the platform images only, and each platform image carries its provenance and SBOM as cosign attestations. The verify commands of 1.4.0 pass as before: `cosign verify` of the chart and the image, and `gh attestation verify` of an archive. `docker buildx imagetools inspect --format '{{json .Provenance}}'` and `'{{json .SBOM}}'` read attestations from the index, so they print `{}`: read them with `cosign verify-attestation` ([Verify a release](#verify-a-release)). From a release before 1.5.0, the gateway agent filters what arrives on its WireGuard interfaces with nftables: on a node whose kernel lacks `nf_tables`, each `wireguard` link has no interface once the gateway rolls, and shows `NotConfigured`. Check the nodes that can run a gateway pod first ([RFC0005](rfcs/RFC0005.md#wireguard)). |
+| 2. Upgrade the site | Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. From a release before 1.2.0, the new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server does not know until the new CRDs are applied. From a release before 1.3.0, they add `Site.spec.gateway.lease`. From a release before 1.4.0, they refuse a `Site` whose gateway ports include 8090, 8091 or 9901, where the gateway agent and Envoy's admin interface listen. Change such a port first. On Kubernetes 1.31 and 1.32, under the new CRDs, every write to the status of a `Site` stored with such a port is refused. The controller then stops updating that status, including the active gateway's address. This was seen on envtest's API server, 1.31.0 to 1.37.0, and from 1.33 the status write passes ([RFC0005](rfcs/RFC0005.md#requirements), requirement 52). From a release before 1.5.0, with `networkPolicy.gateway.enabled`, the gateway's policy lets the cluster's pods reach the import and export ports only, and lets the controller reach the peer port. A pod that connects to another gateway port, such as the control port, is refused. The CIDRs in `networkPolicy.gateway.peerCIDRs` can reach only these: the control and export ports, and the UDP ports in the new value `networkPolicy.gateway.wireGuardPorts`. List the site's WireGuard listen ports there, or `[]` when the site has no `wireguard` link. With `site.create: false`, set `networkPolicy.gateway.ports` too. Without them, `helm upgrade` fails ([RFC0007](rfcs/RFC0007.md#network-policies), requirement 28). From a release before 1.5.0, the image's index lists the platform images only, and each platform image carries its provenance and SBOM as cosign attestations. The verify commands of 1.4.0 still pass: `cosign verify` of the chart and the image, and `gh attestation verify` of an archive. `docker buildx imagetools inspect --format '{{json .Provenance}}'` and `'{{json .SBOM}}'` read attestations from the index, so they print `{}`. Read the attestations with `cosign verify-attestation` ([Verify a release](#verify-a-release)). From a release before 1.5.0, the gateway agent uses nftables to filter the traffic that arrives on its WireGuard interfaces. On a node whose kernel lacks `nf_tables`, once the gateway rolls, each `wireguard` link has no interface and shows `NotConfigured`. Check the nodes that can run a gateway pod first ([RFC0005](rfcs/RFC0005.md#wireguard)). |
 | 3. Wait | Run `strait --context SITE status -A` at every site. Go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. |
 | 4. Next site | Back to step 1. |
 
@@ -263,22 +263,22 @@ What the site shows during an upgrade:
 
 | Part | What happens | What the operator sees |
 |---|---|---|
-| Controller | One replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). The site has no controller from the moment its old pod stops until its new pod serves. That gap holds the image pull, the start, and the wait for the leader election Lease: none when the old controller released the Lease as it stopped, 15s when it did not ([RFC0004](rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. | At the other sites, once the gap passes `peerTimeout`, 6s by default: the site's peer is not `REACHABLE`, and its members are `Unknown`. A routed `Unknown` member stays in the route for `policy.unknownHold` after it was last confirmed, 30s by default, with reason `HeldUnknown`. Then the name routes nowhere with `UnknownTimeout` until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17). At the site: its names keep the endpoints written last, and their status does not change. Then `AwaitingPeers` until the new controller's first poll of every peer has ended. |
-| Gateway | Every release rolls the gateway: its agent runs the release's image. With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left. The active pod has a deletion cost, so it stops last ([RFC0005, Gateway rollout](rfcs/RFC0005.md#gateway-rollout)). When it stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a new replica takes it ([RFC0005, Failover sequence](rfcs/RFC0005.md#failover-sequence)). The Lease moves once. From a release before 1.3.0, it can move twice: the active pod has no deletion cost until the new controller sets it. | Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members. Connections to a local member, and endpoint-direct connections, do not cross the gateway. New connections through the gateway fail until the new active pod's links pass their health checks. The polls between the site and its peers cross the gateway too: through a move that lasts past `peerTimeout`, each end counts the other's members `Unknown`, as in the controller row. `strait status` shows the new active gateway pod. |
+| Controller | One replica with the `Recreate` strategy ([RFC0004](rfcs/RFC0004.md#requirements), requirement 12). The site has no controller from the moment its old pod stops until its new pod serves. That gap includes the image pull, the start, and the wait for the leader election Lease. There is no wait when the old controller released the Lease as it stopped, and a 15s wait when it did not ([RFC0004](rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. | At the other sites, once the gap passes `peerTimeout` (6s by default), the site's peer is not `REACHABLE`, and its members are `Unknown`. A routed `Unknown` member stays in the route, with reason `HeldUnknown`, for `policy.unknownHold` (30s by default) after it was last confirmed. Then the name routes nowhere with `UnknownTimeout` until the new controller serves ([RFC0002](rfcs/RFC0002.md#requirements), requirement 17). At the site itself, its names keep the endpoints written last, and their status does not change. Then their status shows `AwaitingPeers` until the new controller's first poll of every peer has ended. |
+| Gateway | Every release rolls the gateway, because its agent runs the release's image. With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left. The active pod has a deletion cost, so it stops last ([RFC0005, Gateway rollout](rfcs/RFC0005.md#gateway-rollout)). When it stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a new replica takes it ([RFC0005, Failover sequence](rfcs/RFC0005.md#failover-sequence)). The Lease moves once. From a release before 1.3.0, it can move twice, because the active pod has no deletion cost until the new controller sets it. | Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members. Connections to a local member, and endpoint-direct connections, do not cross the gateway. New connections through the gateway fail until the new active pod's links pass their health checks. The polls between the site and its peers cross the gateway too. When a move lasts longer than `peerTimeout`, each side counts the other's members as `Unknown`, as in the controller row. `strait status` shows the new active gateway pod. |
 
 How to plan:
 
 | Plan | Why |
 |---|---|
 | Keep the controller gap under the smallest `policy.unknownHold` of the names with a member at the site. | Past that, those names route nowhere at the other sites until the new controller serves. |
-| Pull the images first (step 1) when a pull can take longer than that budget, less the start and the Lease wait. | The pull is part of the gap. |
+| Pull the images first (step 1) when a pull can take longer than that budget, minus the start and the Lease wait. | The pull is part of the gap. |
 | Upgrade while the clients of names that cross the gateway can reconnect. | Each move of the gateway Lease resets their connections. |
 | Move no primary at any site while a site upgrades. | During the gap, the site's names keep the endpoints written last, and the other sites cannot read what the site declares. |
 | One site at a time. | Only that site's members are at risk, and step 3 shows the upgrade worked before the next site. Every site at once puts every site's members at risk together. |
 
 #### Node drains
 
-A drain moves Strait's pods off a node. The chart's PodDisruptionBudget lets a drain evict one gateway pod at a time, and a gateway pod that is not ready at any time (`gateway.podDisruptionBudget`). The controller has none: it runs one replica, and a budget would block every drain of its node.
+A drain moves Strait's pods off a node. The chart's PodDisruptionBudget lets a drain evict one gateway pod at a time. A gateway pod that is not ready can be evicted at any time (`gateway.podDisruptionBudget`). The controller has no budget, because it runs one replica, and a budget would block every drain of its node.
 
 | The drained node runs | Effect |
 |---|---|
@@ -288,7 +288,7 @@ A drain moves Strait's pods off a node. The chart's PodDisruptionBudget lets a d
 
 With `gateway.antiAffinity: required`, each gateway replica runs on a node of its own, so one drain never takes two. A rollout then needs one node more than `gateway.replicas`, for the new pod it starts first. With the default, `preferred`, two replicas can share a node when no other node fits.
 
-Drain the nodes of one site at a time, and plan each drain as an upgrade. After a node that ran the controller or the active gateway pod, wait as in step 3 before the next node. `kubectl --context site-a -n strait-system get pods -o wide` shows each pod's node, and `strait --context site-a status` the active gateway pod.
+Drain the nodes of one site at a time, and plan each drain as an upgrade. After a node that ran the controller or the active gateway pod, wait as in step 3 before the next node. `kubectl --context site-a -n strait-system get pods -o wide` shows each pod's node, and `strait --context site-a status` shows the active gateway pod.
 
 #### From 0.1 to 1.0
 
@@ -311,7 +311,7 @@ for r in sites sitepeers sitelinks exports imports siteservices; do
 done
 ```
 
-`replace` writes each object again, in the version the API server stores: `v1`. If it reports a conflict, the controller changed that object in between: run the first loop again. Run the second loop only once the first has replaced every object.
+`replace` writes each object again, in the version that the API server stores, which is `v1`. If it reports a conflict, the controller changed that object in the meantime. Run the first loop again. Run the second loop only once the first has replaced every object.
 
 The 1.0 CLI reads `v1`, so it needs a site whose CRDs are 1.0. With the 1.0 CRDs in place, `helm rollback` to 0.1 still works, since they serve `v1alpha1`.
 
@@ -361,7 +361,7 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 | `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 | `strait completion SHELL` | The completion script for `bash`, `zsh`, `fish` or `powershell`. |
 
-Each command that reads a cluster reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, or `kubectl-strait.exe` on Windows, the same commands run as `kubectl strait`.
+Each command that reads a cluster reads one site, so pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, or `kubectl-strait.exe` on Windows, the same commands run as `kubectl strait`.
 
 For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skill that explains how to read Strait's state.
 
@@ -398,6 +398,27 @@ Completion covers commands, flags, the values of `-o`, the kubeconfig's contexts
 | [RFC0007](rfcs/RFC0007.md) | Security: permissions, credentials, links, releases. |
 
 `strait --help` and the man pages cover every command and flag.
+
+## How this project is built
+
+Strait is built with AI coding agents (Claude Code), and a person directs and approves the work.
+
+**What the agents do:** write code, tests and docs, review each other's changes, and look for bugs and gaps.
+
+**What a person decides:**
+- **Design.** Every change starts as an RFC, and a maintainer approves each RFC and each change to one.
+- **Scope.** A maintainer decides what goes into each round of work and what waits.
+- **Merges and releases.** Only a maintainer merges a pull request. Releases come from tags signed by a maintainer, and a maintainer approves each release run.
+
+**How the work is checked:**
+- Each fix comes with a test that fails without the fix.
+- CI runs the unit tests, the race detector, and end-to-end tests on kind for every pull request.
+- Before a release, the change is tested on real clusters, not only in CI.
+- Releases are signed, and you can verify every release asset (see [Verify a release](#verify-a-release)).
+
+**Why we trust it in production:** we run Strait ourselves, for our own databases. A router that sends writes to the wrong database would hurt us first.
+
+If you find a problem, open an issue. Saying that it looks AI-written is fine, as long as you say what's wrong.
 
 ## Contributing
 
