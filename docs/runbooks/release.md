@@ -4,7 +4,7 @@ The operator's steps to publish a release. What the workflow checks and in which
 
 | Step | What to do |
 |---|---|
-| 1. Merge | Merge the release's pull request into `main`. It names the new version on the pages that name the latest release, [Install](../guide/install.md) and [Upgrade](./upgrade.md): their `v=` lines, and the version in their sentences. The site is built from the tag, so it shows what the tag holds. |
+| 1. Merge | Merge the release's pull request into `main`. It names the new version wherever the docs name the latest release: `git grep -nE -- '--version [0-9]|v=v[0-9]|\$v = "v|latest release' README.md docs` lists each place. [Rebuild a release](./rebuild.md) names v1.4.0 on purpose, the release it was checked on. The site is built from the tag, so it shows what the tag holds. |
 | 2. Wait for CI | Wait until the `ci` run of the merge commit on `main` has finished with every job successful: `gh run list --workflow ci.yaml --branch main`. |
 | 3. Tag | Sign an annotated tag on that commit, and push it: `git tag -s vX.Y.Z COMMIT -m "Strait vX.Y.Z"`, then `git push origin vX.Y.Z`. GitHub must show the tag as Verified: the key must belong to the tagger's GitHub account. |
 | 4. Approve | When the environment `release` has reviewers, approve the run. Nothing runs until then. |

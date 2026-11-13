@@ -53,7 +53,6 @@ typography:
         fontSize: "12.5px"
         fontWeight: 600
         letterSpacing: "0.12em"
-        textTransform: "uppercase"
     wordmark:
         fontFamily: "Spectral, Georgia, Times New Roman, serif"
         fontSize: "20px"
@@ -64,10 +63,12 @@ typography:
         fontWeight: 400
 rounded:
     none: "0px"
-borders:
-    rule: "1px {colors.contour}"
-    frame: "1px {colors.ink}"
-    callout: "2px, the state's colour"
+spacing:
+    xs: "4px"
+    sm: "8px"
+    md: "16px"
+    lg: "24px"
+    xl: "48px"
 components:
     button-primary:
         backgroundColor: "{colors.magenta}"
@@ -79,7 +80,6 @@ components:
     button-alt:
         backgroundColor: "{colors.card}"
         textColor: "{colors.ink}"
-        border: "{borders.frame}"
         rounded: "{rounded.none}"
     table-head:
         backgroundColor: "{colors.sea}"
@@ -88,19 +88,20 @@ components:
     table-cell:
         backgroundColor: "{colors.card}"
         textColor: "{colors.ink}"
-        border: "{borders.rule}"
     code-block:
         backgroundColor: "{colors.card}"
         textColor: "{colors.ink}"
-        border: "{borders.rule}"
         typography: "{typography.mono}"
+        rounded: "{rounded.none}"
+        padding: "{spacing.md} {spacing.lg}"
     code-inline:
         backgroundColor: "{colors.sea}"
         textColor: "{colors.ink}"
     callout:
         backgroundColor: "{colors.sea}"
         textColor: "{colors.ink}"
-        border: "{borders.callout}"
+        rounded: "{rounded.none}"
+        padding: "{spacing.md} {spacing.md}"
     hero:
         backgroundColor: "{colors.land}"
         textColor: "{colors.ink}"
@@ -132,6 +133,18 @@ Every colour and font is a token in one file, `docs/.vitepress/theme/tokens.css`
 
 - **Magenta** (magenta / night-magenta): the one accent. Links, the primary button, the active page in the navigation, strings in code. Hover is darker by day (magenta-hover) and lighter by night (night-magenta-hover).
 
+### Secondary
+
+None. Magenta is the only accent (The One Accent Rule).
+
+### Tertiary
+
+The states, each with a word or an icon beside it.
+
+- **Orange** (orange / night-orange): warning.
+- **Green** (green / night-green): tip, and what works.
+- **Red** (red / night-red): danger only.
+
 ### Neutral
 
 - **Paper** (paper / night-paper): the page.
@@ -142,12 +155,6 @@ Every colour and font is a token in one file, `docs/.vitepress/theme/tokens.css`
 - **Ink** (ink / night-ink): text, headings, frames that must be seen.
 - **Soft ink** (soft-ink / night-soft-ink): secondary text: the sidebar, captions, code comments, card details. On paper and card only.
 - **Faint** (faint / night-faint): marks that carry no text. It fails contrast as text on every surface.
-
-### States
-
-- **Orange** (orange / night-orange): warning.
-- **Green** (green / night-green): tip, and what works.
-- **Red** (red / night-red): danger only.
 
 ### Named Rules
 
@@ -205,7 +212,7 @@ All three are open-licensed (SIL Open Font License) and served by the site itsel
 
 ## Layout
 
-VitePress's default layout: a navigation bar, a sidebar of five groups (Guide, Operations, Reference, Limitations, Project), the page, and its outline. Tables are the main form of the docs. A wide one scrolls sideways instead of squeezing its columns.
+Spacing steps by 4px and 8px: `spacing` above. VitePress's default layout: a navigation bar, a sidebar of five groups (Guide, Operations, Reference, Limitations, Project), the page, and its outline. Tables are the main form of the docs. A wide one scrolls sideways instead of squeezing its columns.
 
 ## Elevation & Depth
 
@@ -221,7 +228,7 @@ None beyond VitePress's defaults. Nothing pulses, nothing loops.
 
 ## Shapes
 
-Square corners everywhere: buttons, code blocks, tables, callouts, the search box. Borders are 1px contour, or 1px ink where a frame must be seen. A callout's frame is 2px.
+Square corners everywhere: buttons, code blocks, tables, callouts, the search box. Borders are 1px contour, or 1px ink where a frame must be seen, such as a secondary button. A callout's frame is 2px, in the state's colour.
 
 ## Components
 

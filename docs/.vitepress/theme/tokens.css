@@ -4,6 +4,14 @@
  * these.
  */
 
+/* The fonts, served by the site itself from the @fontsource packages. */
+@import "@fontsource/spectral/400.css";
+@import "@fontsource/spectral/400-italic.css";
+@import "@fontsource/spectral/600.css";
+@import "@fontsource/ibm-plex-sans-condensed/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
 :root {
     /* Surfaces. */
     --strait-paper: #f4efe3; /* the page */
