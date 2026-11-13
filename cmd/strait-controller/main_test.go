@@ -438,9 +438,11 @@ func TestLivenessWhileAPIServerAndLinksHang(t *testing.T) {
 	xdsServer := xds.NewServer(c, "strait-system", "127.0.0.1:0", "controller.example:8082")
 	poller := newPoller(c, func(string) { xdsServer.Trigger() })
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// The loops read LoopGrace, so they stop before the cleanup above sets it back.
+	var loops sync.WaitGroup
+	t.Cleanup(func() { cancel(); loops.Wait() })
 	for _, r := range runnables("127.0.0.1:0", func() exchange.Document { return exchange.Document{} }, poller, c, xdsServer) {
-		go func() { _ = r.Start(ctx) }()
+		loops.Go(func() { _ = r.Start(ctx) })
 	}
 	check := loopsAlive(poller, xdsServer)
 	for end := time.Now().Add(6 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
@@ -458,7 +460,6 @@ func TestLivenessFailsWhenALoopStops(t *testing.T) {
 	exchange.LoopGrace = 100 * time.Millisecond
 	t.Cleanup(func() { exchange.LoopGrace = 30 * time.Second })
 	stuck := make(chan struct{})
-	t.Cleanup(func() { close(stuck) })
 	calls := atomic.Int32{}
 	p := &exchange.Poller{
 		Peers: func() []string { return nil },
@@ -475,8 +476,10 @@ func TestLivenessFailsWhenALoopStops(t *testing.T) {
 		t.Fatalf("before Start: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Start(ctx) }()
+	// The poller reads LoopGrace, so it stops before the cleanup above sets it back.
+	stopped := make(chan struct{})
+	t.Cleanup(func() { cancel(); close(stuck); <-stopped })
+	go func() { defer close(stopped); _ = p.Start(ctx) }()
 	time.Sleep(100 * time.Millisecond)
 	if err := check(nil); err != nil {
 		t.Fatalf("while on time: %v", err)
