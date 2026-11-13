@@ -575,17 +575,18 @@ func TestEnvoyStatsLabels(t *testing.T) {
 	}
 }
 
-// sessionState returns the state of the probe's connection to the import listener at addr, as netstat shows it from
-// the client's end, or "" when there is none.
-func sessionState(p probe, addr string) string {
+// sessionState returns the state of the probe's connection from local to the import listener at addr, as netstat shows
+// it from the client's end, or "" when there is none. With local empty, it returns the state of the first connection
+// to addr, and its local address.
+func sessionState(p probe, local, addr string) (state, from string) {
 	out, _ := docker("exec", p.name, "netstat", "-tn")
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
-		if len(f) == 6 && f[4] == addr {
-			return f[5]
+		if len(f) == 6 && f[4] == addr && (local == "" || f[3] == local) {
+			return f[5], f[3]
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // closedImport holds a session through import app/admin-b to a backend that never closes it, then closes the import.
@@ -613,10 +614,15 @@ func closedImport(t *testing.T, hold time.Duration, args ...string) time.Duratio
 	if out, err := docker("exec", "-d", p.name, "sh", "-c", "mkfifo /tmp/in; nc "+ip+" 15000 < /tmp/in & exec 3>/tmp/in; sleep 600"); err != nil {
 		t.Fatalf("client: %v\n%s", err, out)
 	}
+	// The session is the one connection to the listener now. Later checks follow it by its local address, since the
+	// check of a refused connection below can leave sockets of its own to the same listener.
+	var local string
 	p.eventually("the session is established", func() string {
-		if st := sessionState(p, session); st != "ESTABLISHED" {
+		st, from := sessionState(p, "", session)
+		if st != "ESTABLISHED" {
 			return "state " + st
 		}
+		local = from
 		return ""
 	})
 
@@ -639,7 +645,7 @@ func closedImport(t *testing.T, hold time.Duration, args ...string) time.Duratio
 		return out
 	})
 	for time.Since(closed) < hold {
-		if st := sessionState(p, session); st != "ESTABLISHED" {
+		if st, _ := sessionState(p, local, session); st != "ESTABLISHED" {
 			lasted := time.Since(closed)
 			t.Logf("the session left ESTABLISHED (%s) %s after the import was closed", st, lasted.Round(100*time.Millisecond))
 			// Opened again, the import has its listener back.
