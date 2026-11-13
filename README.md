@@ -359,10 +359,23 @@ Applications at both sites connect to `pg.app.svc:5432`. Each site's controller 
 | `strait validate -f PATH` | Checks manifests offline, with the rules of the CRDs. |
 | `strait --skill` | Prints the skill document for AI agents. |
 | `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
+| `strait completion SHELL` | The completion script for `bash`, `zsh`, `fish` or `powershell`. |
 
 Each command that reads a cluster reads one site: pass `--context` for each. Every command takes `-o json` or `-o yaml`. Installed as `kubectl-strait`, or `kubectl-strait.exe` on Windows, the same commands run as `kubectl strait`.
 
 For an AI agent: `strait --skill > <skills dir>/strait/SKILL.md` installs a skill that explains how to read Strait's state.
+
+### Shell completion
+
+Completion covers commands, flags, the values of `-o`, the kubeconfig's contexts, and the names of namespaces and `SiteService`s. Names come from the context's cluster, within 2s. A completion never asks for credentials.
+
+| Shell | Add |
+|---|---|
+| bash | `source <(strait completion bash)` in `~/.bashrc`. Needs the `bash-completion` package. |
+| zsh | `source <(strait completion zsh)` in `~/.zshrc`, after `compinit`. |
+| fish | `strait completion fish > ~/.config/fish/completions/strait.fish` |
+| PowerShell | `strait completion powershell \| Out-String \| Invoke-Expression` in `$PROFILE`. |
+| `kubectl strait` | A link named `kubectl_complete-strait` to the binary, on the `PATH`: `ln -s "$(command -v kubectl-strait)" ~/.local/bin/kubectl_complete-strait`. On Windows, a copy of `kubectl-strait.exe` named `kubectl_complete-strait.exe` next to it. kubectl 1.26 or later runs it to complete `kubectl strait`. |
 
 ## Documentation
 

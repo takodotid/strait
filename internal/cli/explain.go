@@ -64,7 +64,8 @@ On a terminal, a symbol marks the route: ✔ a route to a confirmed member, ▲ 
 
   # The same, as JSON.
   strait explain pg -n app --context site-a -o json`,
-		Args: exactArgs(1),
+		Args:              exactArgs(1),
+		ValidArgsFunction: o.completeSiteServices,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, ns, err := o.read()
 			if err != nil {

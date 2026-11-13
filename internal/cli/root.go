@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -36,6 +37,9 @@ type options struct {
 	now     func() time.Time
 	// terminal reports whether a stream is a terminal, and its width. Nil is detectTerminal. Tests replace it.
 	terminal func(io.Writer) (bool, int)
+	// completing is true while a shell completion reads the cluster: each request then has completionTimeout, and a
+	// credential plugin may not ask a person anything.
+	completing bool
 }
 
 // usageError is a mistake in the command line. It exits with status 2.
@@ -112,9 +116,10 @@ strait is read-only. It never creates, updates, patches or deletes an object. Ea
 
   # Install the skill document for an AI agent.
   strait --skill > <skills dir>/strait/SKILL.md`,
-		Args:              noArgs,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
+		Args:          noArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		// The completion command is strait's own, with its help in this repository's words.
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if !slices.Contains(outputs, o.output) {
@@ -151,8 +156,17 @@ strait is read-only. It never creates, updates, patches or deletes an object. Ea
 	f.StringVarP(&o.output, "output", "o", "table", "The output format: table, json or yaml.")
 	f.BoolVar(&o.skill, "skill", false, "Print the skill document for AI agents and exit.")
 	f.BoolVar(&o.version, "version", false, "Print the version of this CLI and the commit it was built from, and exit.")
+	_ = root.RegisterFlagCompletionFunc("output", completeOutputs)
+	_ = root.RegisterFlagCompletionFunc("context", o.completeContexts)
+	_ = root.RegisterFlagCompletionFunc("namespace", o.completeNamespaces)
+	_ = root.MarkPersistentFlagFilename("kubeconfig")
 
-	root.AddCommand(newStatus(o), newExplain(o), newLinks(o), newPeers(o), newValidate(o), newVersion(o))
+	root.AddCommand(newStatus(o), newExplain(o), newLinks(o), newPeers(o), newValidate(o), newVersion(o), newCompletion())
+	for _, c := range root.Commands() {
+		if c.ValidArgsFunction == nil && len(c.ValidArgs) == 0 {
+			c.ValidArgsFunction = noCompletion
+		}
+	}
 	return root
 }
 
@@ -179,6 +193,13 @@ func restConfig(o *options) (*rest.Config, string, error) {
 	cfg, err := cc.ClientConfig()
 	if err != nil {
 		return nil, "", err
+	}
+	if o.completing {
+		cfg.Timeout = completionTimeout
+		if cfg.ExecProvider != nil {
+			cfg.ExecProvider.InteractiveMode = clientcmdapi.NeverExecInteractiveMode
+			cfg.ExecProvider.StdinUnavailable = true
+		}
 	}
 	ns, _, err := cc.Namespace()
 	if err != nil {
