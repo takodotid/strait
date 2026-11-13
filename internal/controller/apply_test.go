@@ -764,3 +764,27 @@ func TestEndGatewayClosesImports(t *testing.T) {
 		}
 	})
 }
+
+// With EndGateway, a decision that routes a gateway member nowhere because its hold ran out closes its Import, also
+// the first decision after a controller start that took longer than unknownHold, before the first poll of the peers.
+// The sessions through the gateway to that member then end. This is a cost of the policy (RFC0002, What EndGateway
+// covers and costs).
+func TestEndGatewayAfterALongStart(t *testing.T) {
+	f := &faults{}
+	r, c := routedToB(t, f)
+	endGateway(t, r, c)
+	if importClosed(t, c) {
+		t.Fatal("web-b is routed, and its Import is closed")
+	}
+	// A new controller: nothing in memory, no peer read yet, and the last confirmation 40s ago, past unknownHold.
+	fresh := &SiteServiceReconciler{
+		Client: c, Reader: c, Recorder: r.Recorder, Peers: peers{started: now.Add(40 * time.Second)}, Local: r.Local,
+		Now: func() time.Time { return now.Add(40 * time.Second) },
+	}
+	if err := reconcileWeb(fresh); err != nil {
+		t.Fatal(err)
+	}
+	if st := status(t, c); len(st.Route.Members) != 0 || !importClosed(t, c) {
+		t.Fatalf("route %v, Import closed %v; want nowhere and closed", st.Route.Members, importClosed(t, c))
+	}
+}
