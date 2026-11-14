@@ -10,7 +10,7 @@ let drawn = 0;
 
 /** A token of tokens.css, as the page has it now. */
 function token(name: string): string {
-    return getComputedStyle(document.documentElement).getPropertyValue(`--strait-${name}`).trim();
+    return getComputedStyle(document.documentElement).getPropertyValue(`--chart-${name}`).trim();
 }
 
 async function draw() {

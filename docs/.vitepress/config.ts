@@ -106,6 +106,7 @@ export default defineConfig({
             { text: "Guide", link: "/guide/introduction" },
             { text: "Operations", link: "/runbooks/before-production" },
             { text: "Reference", link: "/reference/cli" },
+            { text: "Limitations", link: "/limitations" },
             { text: "Releases", link: `${repository}/releases` },
         ],
 

@@ -1,74 +1,63 @@
 ---
 name: Strait
-description: A paper sea chart. Ink on warm paper, sea bands and contour rules, one magenta accent, set in a serif with condensed caps for labels. For the documentation site.
+description: Ink on warm paper, like a sea chart, with one magenta accent, set in Spectral. For the documentation site.
 colors:
     paper: "#f4efe3"
     card: "#fffdf7"
     sea: "#dce8ea"
-    land: "#ecdcae"
     contour: "#c4d8dd"
+    land: "#ecdcae"
     ink: "#16233b"
     soft-ink: "#5b6880"
     faint: "#9aa7b6"
     magenta: "#b0127a"
     magenta-hover: "#8d0d62"
-    on-magenta: "#fffdf7"
-    orange: "#c96a12"
-    green: "#1e7a4b"
-    red: "#c8321f"
+    on-magenta: "#f4efe3"
+    warning: "#c96a12"
+    tip: "#1e7a4b"
+    danger: "#c8321f"
     night-paper: "#0e1828"
     night-card: "#16233b"
-    night-sea: "#1b2d44"
-    night-land: "#2c2a24"
-    night-contour: "#33495f"
+    night-sea: "#1a2d40"
+    night-contour: "#304660"
+    night-land: "#2a3a4a"
     night-ink: "#f4efe3"
-    night-soft-ink: "#b3bccb"
-    night-faint: "#7c899b"
-    night-magenta: "#f27ac2"
-    night-magenta-hover: "#ff9fd5"
+    night-soft-ink: "#b4bfcc"
+    night-faint: "#7d8b9c"
+    night-magenta: "#f27cc6"
+    night-magenta-hover: "#f7a6d8"
     night-on-magenta: "#0e1828"
-    night-orange: "#f0a24f"
-    night-green: "#5cc98f"
-    night-red: "#ff7d6b"
+    night-warning: "#f0a24f"
+    night-tip: "#5cc98d"
+    night-danger: "#ff8a78"
 typography:
-    display:
+    headline:
         fontFamily: "Spectral, Georgia, Times New Roman, serif"
-        fontSize: "56px"
-        fontWeight: 600
-        lineHeight: 1.1
-        letterSpacing: "-0.01em"
-    title:
-        fontFamily: "Spectral, Georgia, Times New Roman, serif"
-        fontSize: "32px"
-        fontWeight: 600
-        lineHeight: 1.25
+        fontWeight: 700
         letterSpacing: "-0.01em"
     body:
         fontFamily: "Spectral, Georgia, Times New Roman, serif"
-        fontSize: "16px"
+        fontSize: "17px"
         fontWeight: 400
-        lineHeight: 1.75
+        lineHeight: 1.7
     label:
-        fontFamily: "IBM Plex Sans Condensed, Arial Narrow, sans-serif"
-        fontSize: "12.5px"
+        fontFamily: "IBM Plex Sans Condensed, Arial Narrow, Arial, sans-serif"
+        fontSize: "12px"
         fontWeight: 600
         letterSpacing: "0.12em"
+        textTransform: "uppercase"
     wordmark:
         fontFamily: "Spectral, Georgia, Times New Roman, serif"
-        fontSize: "20px"
-        fontWeight: 600
+        fontSize: "22px"
+        fontWeight: 700
     mono:
         fontFamily: "IBM Plex Mono, ui-monospace, Menlo, Consolas, monospace"
-        fontSize: "14px"
         fontWeight: 400
 rounded:
     none: "0px"
-spacing:
-    xs: "4px"
-    sm: "8px"
-    md: "16px"
-    lg: "24px"
-    xl: "48px"
+borders:
+    hairline: "1px"
+    frame: "2px"
 components:
     button-primary:
         backgroundColor: "{colors.magenta}"
@@ -77,34 +66,45 @@ components:
     button-primary-hover:
         backgroundColor: "{colors.magenta-hover}"
         textColor: "{colors.on-magenta}"
-    button-alt:
+    button-default:
         backgroundColor: "{colors.card}"
         textColor: "{colors.ink}"
+        borderColor: "{colors.ink}"
+        rounded: "{rounded.none}"
+    table:
+        backgroundColor: "{colors.card}"
+        borderColor: "{colors.contour}"
         rounded: "{rounded.none}"
     table-head:
         backgroundColor: "{colors.sea}"
         textColor: "{colors.ink}"
         typography: "{typography.label}"
-    table-cell:
-        backgroundColor: "{colors.card}"
-        textColor: "{colors.ink}"
     code-block:
         backgroundColor: "{colors.card}"
         textColor: "{colors.ink}"
+        borderColor: "{colors.contour}"
         typography: "{typography.mono}"
         rounded: "{rounded.none}"
-        padding: "{spacing.md} {spacing.lg}"
-    code-inline:
-        backgroundColor: "{colors.sea}"
-        textColor: "{colors.ink}"
     callout:
         backgroundColor: "{colors.sea}"
         textColor: "{colors.ink}"
+        borderWidth: "{borders.frame}"
         rounded: "{rounded.none}"
-        padding: "{spacing.md} {spacing.md}"
+    callout-tip:
+        borderColor: "{colors.tip}"
+    callout-warning:
+        borderColor: "{colors.warning}"
+    callout-danger:
+        borderColor: "{colors.danger}"
+    badge:
+        backgroundColor: "{colors.card}"
+        textColor: "{colors.ink}"
+        typography: "{typography.label}"
+        rounded: "{rounded.none}"
     hero:
         backgroundColor: "{colors.land}"
         textColor: "{colors.ink}"
+        borderColor: "{colors.ink}"
 ---
 
 # Design System: Strait
@@ -113,167 +113,166 @@ components:
 
 **Creative North Star: "The Chart Table"**
 
-A strait is the water between two pieces of land, and Strait carries traffic between two sites. The docs look like a paper sea chart spread on a chart table: ink on warm paper, sea tinted in pale bands, contour lines as rules, and one magenta mark for where to go. Everything is printed, flat and square. Nothing glows.
+The docs read like a paper sea chart spread on a chart table: ink on warm paper, pale sea bands, thin contour lines, and land used sparingly. A strait is the water between two pieces of land, and Strait carries traffic between two sites.
 
-The site is the reader's chart while they set up and run Strait: they come to find a fact, a step or a reason, often during an incident. The chart's job is to be read quickly and trusted.
+Nothing on the chart decorates. Lines are drawn in ink or in contour blue, corners are square, and the paper is flat: no shadow, no glow, no gradient. One colour, magenta, marks what you can act on: the brand, links and the active place in the navigation. Orange, green and red each mean one state, and always come with a word or an icon.
 
-Every colour and font is a token in one file, `docs/.vitepress/theme/tokens.css`. `style.css` maps them onto VitePress's default theme and names no colour or font of its own. Code colours and the diagrams read the same tokens.
+There is a night chart for dark mode: deep ink paper, slate bands, text in the paper's colour, and the same magenta, lightened so it keeps its contrast.
+
+Every colour and font is a token in one file, `docs/.vitepress/theme/tokens.css`, by its role. `style.css` maps the tokens onto VitePress's default theme and names no colour or font of its own. The code colours and the diagrams read the same tokens.
 
 **Key Characteristics:**
 
-- Warm paper, ink text, sea bands, contour rules.
-- One accent, magenta, for links, the primary button and the current page.
-- A serif for reading and headings. Condensed upright caps only for short labels.
-- Square corners, thin borders, no shadows.
-- A night chart for dark mode: deep ink ground, paper-coloured text, the same magenta made lighter.
+- Ink on warm paper; sea bands for table heads, callouts and the current page; land only for the home page's opening.
+- One accent, magenta. Everything else is ink, paper and the chart's blues.
+- Spectral, a serif, for headings and reading; IBM Plex Sans Condensed in small tracked caps for short labels; IBM Plex Mono for code.
+- Square corners and 1px or 2px lines. Flat.
+- Plain English: the answer first, in short sentences.
 
 ## Colors
 
+Warm paper and ink, a sea blue for bands and contours, a sand land, and one magenta.
+
 ### Primary
 
-- **Magenta** (magenta / night-magenta): the one accent. Links, the primary button, the active page in the navigation, strings in code. Hover is darker by day (magenta-hover) and lighter by night (night-magenta-hover).
+- **Ink** (ink / night-ink): text, headings, the wordmark, the 2px rule over each second-level heading, frames.
+- **Paper** (paper / night-paper): the page.
+- **Magenta** (magenta / night-magenta): the one accent. Links, the active nav item, the current page in the sidebar, primary buttons, search hits, code keywords. Hover darkens it (magenta-hover) on paper, and lightens it at night.
 
 ### Secondary
 
-None. Magenta is the only accent (The One Accent Rule).
+- **Card** (card / night-card): code blocks, inline code, tables and feature cards, a step whiter than the paper.
+- **Sea** (sea / night-sea): tinted bands. A table's head, a callout's ground, the current page in the sidebar, groups in a diagram.
+- **Contour** (contour / night-contour): borders and rules: table cells, code frames, the nav's edge.
+- **Land** (land / night-land): the home page's opening, and nothing else.
 
 ### Tertiary
 
-The states, each with a word or an icon beside it.
-
-- **Orange** (orange / night-orange): warning.
-- **Green** (green / night-green): tip, and what works.
-- **Red** (red / night-red): danger only.
+- **Warning** (warning / night-warning): orange. The frame of a warning callout and a warning badge. Never text: on paper it reaches 3.30:1, enough for a mark, not for words.
+- **Tip** (tip / night-tip): green. The frame of a tip, and what works.
+- **Danger** (danger / night-danger): red. The frame of a danger callout: split brain, data loss, a destructive step.
 
 ### Neutral
 
-- **Paper** (paper / night-paper): the page.
-- **Card** (card / night-card): code blocks, table cells, feature cards: anything set on the page.
-- **Sea** (sea / night-sea): tinted bands. Table heads, callouts, inline code, the selected search result.
-- **Land** (land / night-land): sparingly. The home page's hero, or one highlight band. Never behind long text.
-- **Contour** (contour / night-contour): borders and rules: table cells, code frames, dividers.
-- **Ink** (ink / night-ink): text, headings, frames that must be seen.
-- **Soft ink** (soft-ink / night-soft-ink): secondary text: the sidebar, captions, code comments, card details. On paper and card only.
-- **Faint** (faint / night-faint): marks that carry no text. It fails contrast as text on every surface.
+- **Soft Ink** (soft-ink / night-soft-ink): secondary text and code comments, on paper and card only.
+- **Faint** (faint / night-faint): decoration only. Never text, never the only mark of a state.
+- **On Magenta** (on-magenta / night-on-magenta): text on a magenta ground.
 
 ### Named Rules
 
-**The One Accent Rule.** Magenta is the only accent. No second accent colour, no gradients, no glows, no blur.
+**The One Accent Rule.** Magenta is the only accent. There is no second accent colour, and no gradient, glow, shadow or blur.
 
-**The Red Means Danger Rule.** Red is for danger callouts and destructive steps only, such as a split brain or data loss. Warnings are orange. Every colour state also carries a word or an icon: a callout's title says WARNING or DANGER, and the CLI's route states have the symbols ✔ ▲ ■.
+**The Red Means Danger Rule.** Red is for danger only: split brain, data loss, a destructive step. Warnings are orange. Every colour state also carries a word or an icon, so it reads without colour: a callout's title says WARNING or DANGER, and the CLI's route states have the symbols ✔ ▲ ■.
 
-**The State Frame Rule.** Orange, green and red frame a callout or mark an icon. Its text stays ink. In light, orange text fails 4.5:1 on every surface, and green and red fail on sea and land.
-
-### Contrast
-
-Checked with WCAG 2.2's formula. Body text needs 4.5:1, large text and frames 3:1.
-
-| Pair | Used for | Light | Night | Needs |
-|---|---|---|---|---|
-| ink on paper | body text | 13.68 | 15.51 | 4.5:1 |
-| ink on card | tables, code, cards | 15.43 | 13.68 | 4.5:1 |
-| ink on sea | table heads, callouts, inline code | 12.54 | 12.16 | 4.5:1 |
-| ink on land | the home hero | 11.52 | 12.50 | 4.5:1 |
-| soft-ink on paper | sidebar, secondary text | 4.90 | 9.30 | 4.5:1 |
-| soft-ink on card | code comments, card details | 5.53 | 8.20 | 4.5:1 |
-| magenta on paper | links, active navigation | 5.70 | 7.07 | 4.5:1 |
-| magenta on card | strings in code, links in tables | 6.42 | 6.23 | 4.5:1 |
-| magenta on sea | links in callouts | 5.22 | 5.54 | 4.5:1 |
-| magenta-hover on paper | link hover | 7.73 | 9.47 | 4.5:1 |
-| on-magenta on magenta | the primary button | 6.42 | 7.07 | 4.5:1 |
-| on-magenta on magenta-hover | the primary button, hover | 8.72 | 9.47 | 4.5:1 |
-| orange on paper | warning frame | 3.30 | 8.46 | 3:1 |
-| green on paper | tip frame | 4.64 | 8.65 | 3:1 |
-| red on paper | danger frame | 4.65 | 7.12 | 3:1 |
-| orange on sea | warning frame, inside | 3.02 | 6.63 | 3:1 |
-
-Pairs that fail, and so are never used: soft-ink on sea (4.49 light) and on land (4.13 light); faint as text anywhere (1.80 to 2.41 light, 3.92 to 5.01 night); orange as text (2.78 to 3.72 light); green and red as text on sea or land (3.91 to 4.27 light).
+**The Ink Text Rule.** Text in a callout, a table head or a badge is ink. The state's colour goes on the frame.
 
 ## Typography
 
-**Text font:** Spectral, a serif, for headings and reading.
-**Label font:** IBM Plex Sans Condensed, 600, upright caps tracked 0.12em, for short labels only.
-**Mono font:** IBM Plex Mono for code, commands and file names.
+**Display Font:** Spectral (with Georgia, Times New Roman, serif)
+**Body Font:** Spectral (same stack)
+**Label/Mono Font:** IBM Plex Sans Condensed 600 for labels; IBM Plex Mono for code
 
-All three are open-licensed (SIL Open Font License) and served by the site itself from `@fontsource` packages. No font comes from an external CDN.
+**Character:** a book serif for reading, like the type on a chart, with a narrow sans for the short labels a chart prints in caps. All three families are open-licensed and self-hosted with the site, from the `@fontsource` packages: no font is fetched from another host.
 
 ### Hierarchy
 
-- **Display** (600, 56px, -0.01em): the home page's hero only.
-- **Title** (600, 32px page title, 24px section): page and section headings, sentence case.
-- **Body** (400, 16px, 1.75): all reading text.
-- **Label** (600, 12.5px, caps, 0.12em): navigation groups, table heads, callout titles, badges.
-- **Wordmark** (600, 20px): "Strait" in the navigation bar.
-- **Mono** (400, 14px in blocks): code.
+- **Headline** (Spectral 700, -0.01em): page titles and section headings, in sentence case. A second-level heading has a 2px ink rule above it.
+- **Body** (Spectral 400, 17px, line height 1.7): reading text.
+- **Label** (IBM Plex Sans Condensed 600, 12px, uppercase, 0.12em tracking): nav links, sidebar group names, table heads, callout titles, badges, the outline's title, feature titles on the home page.
+- **Wordmark** (Spectral 700, 22px): "Strait" in the nav. There is no logo yet.
+- **Mono** (IBM Plex Mono 400 and 600): code, commands, field names.
 
 ### Named Rules
 
-**The Short Label Rule.** Caps are for labels of a few words. Headings, buttons, navigation links and reading text stay in sentence case.
+**The Short Caps Rule.** Uppercase is only for short labels, set in Plex Sans Condensed and tracked 0.12em. Everything else is sentence case.
 
 ## Layout
 
-Spacing steps by 4px and 8px: `spacing` above. VitePress's default layout: a navigation bar, a sidebar of five groups (Guide, Operations, Reference, Limitations, Project), the page, and its outline. Tables are the main form of the docs. A wide one scrolls sideways instead of squeezing its columns.
+VitePress's documentation layout: the nav across the top (Guide, Operations, Reference, Limitations, Releases), the sidebar with the Guide, Operations, Reference, Limitations and Project groups, the page, and its outline. The home page opens on land, framed below by a 2px ink rule, then lists its features on cards. Tables are the main form of the docs; a wide one scrolls sideways instead of squeezing its columns.
 
 ## Elevation & Depth
 
-Flat. Depth comes from surfaces (card on paper, a sea band) and from 1px contour rules. No shadow anywhere.
-
-### Named Rules
-
-**The Flat Chart Rule.** A thing that needs separation gets a surface or a rule, never a shadow or a blur.
+Flat. Depth comes from the paper, the card and the sea band, and from lines: 1px contour around tables and code, 2px around callouts. A table's head is a sea band, not a rule. There is no shadow anywhere.
 
 ## Motion
 
-None beyond VitePress's defaults. Nothing pulses, nothing loops.
+None beyond VitePress's own. Nothing pulses.
 
 ## Shapes
 
-Square corners everywhere: buttons, code blocks, tables, callouts, the search box. Borders are 1px contour, or 1px ink where a frame must be seen, such as a secondary button. A callout's frame is 2px, in the state's colour.
+Every corner is square: radius 0, for buttons, code, tables, callouts, badges and the search box.
 
 ## Components
 
 ### Buttons
 
-The primary button is magenta with on-magenta text. Others are card with a 1px ink frame and ink text.
+The primary button is magenta with paper-coloured text, and darkens on hover. The other buttons are card with an ink frame and ink text, and take a sea ground on hover.
 
 ### Tables
 
-Cells are card, ruled 1px contour. The head is a sea band with label text, never a heavier rule.
+A card with a contour frame and contour cell lines. The head row is a sea band with ink labels in tracked caps.
 
 ### Code
 
-Blocks are card in a 1px contour frame, in IBM Plex Mono. Text is ink, comments soft ink, strings magenta. Inline code sits on sea.
+Ink on card, in a contour frame. Comments are soft ink and italic, keywords are magenta, and everything else is ink.
 
 ### Callouts
 
-A sea band with a 2px frame in the state's colour: contour for a note, green for a tip, orange for a warning, red for danger. The title says the state in words. The text stays ink.
+A sea ground with a 2px frame in the state's colour: green for a tip, orange for a warning, red for danger, ink for information. The title is the state's word, in ink.
+
+### Badges
+
+Card with ink text in tracked caps, framed in the state's colour.
+
+### Navigation
+
+The wordmark in Spectral; nav links and sidebar groups in tracked caps; the current page on a sea band, in magenta.
 
 ### Diagrams
 
 Mermaid diagrams take the tokens: card boxes with ink frames and text, sea for groups, ink lines.
 
-### Identity marks
+## Contrast
 
-No logo yet. The wordmark is "Strait" in Spectral 600.
+Every text pair meets WCAG AA: 4.5:1 for text, 3:1 for a mark that is not text. Computed with the WCAG 2 formula.
+
+| Use | Pair | Needs | Day | Night |
+|---|---|---|---|---|
+| Text | `ink` on `paper` | 4.5:1 | 13.68 | 15.51 |
+| Text, code, inline code | `ink` on `card` | 4.5:1 | 15.43 | 13.68 |
+| Text in a callout or table head | `ink` on `sea` | 4.5:1 | 12.54 | 12.26 |
+| Text on the home opening | `ink` on `land` | 4.5:1 | 11.52 | 10.15 |
+| Secondary text | `soft-ink` on `paper` | 4.5:1 | 4.90 | 9.55 |
+| Secondary text, code comments | `soft-ink` on `card` | 4.5:1 | 5.53 | 8.42 |
+| Links, active nav | `magenta` on `paper` | 4.5:1 | 5.70 | 7.18 |
+| Links in tables, code keywords | `magenta` on `card` | 4.5:1 | 6.42 | 6.33 |
+| Links in a callout, the current page | `magenta` on `sea` | 4.5:1 | 5.22 | 5.67 |
+| Link hover | `magenta-hover` on `paper` | 4.5:1 | 7.73 | 9.66 |
+| Text on a magenta button, search hits, selection | `on-magenta` on `magenta` | 4.5:1 | 5.70 | 7.18 |
+| Text on a magenta button, hover | `on-magenta` on `magenta-hover` | 4.5:1 | 7.73 | 9.66 |
+| Tip mark (frame, icon) | `tip` on `paper` | 3:1 | 4.64 | 8.64 |
+| Danger mark (frame, icon) | `danger` on `paper` | 3:1 | 4.65 | 7.76 |
+| Warning mark (frame, icon) | `warning` on `paper` | 3:1 | 3.30 | 8.46 |
+| Tip frame on a callout | `tip` on `sea` | 3:1 | 4.26 | 6.83 |
+| Danger frame on a callout | `danger` on `sea` | 3:1 | 4.27 | 6.13 |
+| Warning frame on a callout | `warning` on `sea` | 3:1 | 3.02 | 6.69 |
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** take every colour and font from `tokens.css`, by its role name.
-- **Do** use magenta for links, the primary action and the current page, and nothing else.
+- **Do** take every colour and font from `docs/.vitepress/theme/tokens.css`, by its role.
+- **Do** keep text ink, or soft ink on paper and card, and put a state's colour on a frame or an icon.
 - **Do** give every state a word or an icon as well as its colour.
-- **Do** set the head of a table on a sea band.
-- **Do** keep soft ink on paper and card.
-- **Do** check a new pair of colours for 4.5:1, or 3:1 for large text and frames, and add it to the contrast table.
-- **Do** write plain English: the answer first, short sentences, everyday words.
+- **Do** keep corners square and lines 1px or 2px.
+- **Do** check a new pair of colours for 4.5:1, or 3:1 for a mark, and add it to the contrast table.
+- **Do** write the answer first, in short sentences of everyday English.
 
 ### Don't:
 
 - **Don't** add a second accent colour, a gradient, a glow, a shadow or a blur.
-- **Don't** use red for a warning. Warnings are orange; red is danger.
-- **Don't** set text in orange, or in faint.
-- **Don't** round a corner.
-- **Don't** set long text on land.
-- **Don't** load a font from an external CDN.
+- **Don't** use red for anything but danger. Warnings are orange.
+- **Don't** set text in orange or faint, or soft ink on sea or land: they fall under 4.5:1.
+- **Don't** use land beyond the home page's opening.
+- **Don't** load a font from another host.
 - **Don't** use em-dashes in any copy.
