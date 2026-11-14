@@ -282,6 +282,6 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    uses: ./.github/workflows/pages.yml
+    uses: ./.github/workflows/pages.yaml
     with:
       publish: true
