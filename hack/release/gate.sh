@@ -48,10 +48,11 @@ while read -r id state conclusion; do
 	[[ $conclusion == success ]] || continue
 	jobs=$(gh api --paginate "repos/$repo/actions/runs/$id/jobs?filter=latest&per_page=100" \
 		--jq '.jobs[] | select(.conclusion == "success") | .name') || refuse "cannot list the jobs of ci run $id"
-	mapfile -t ok <<<"$jobs"
 	missing=()
+	# A here-string, not printf | grep -q: under pipefail, grep's early exit can kill printf with SIGPIPE, and a
+	# successful job would then count as missing.
 	for job in "${want[@]}"; do
-		printf '%s\n' "${ok[@]}" | grep -qxF -- "$job" || missing+=("$job")
+		grep -qxF -- "$job" <<<"$jobs" || missing+=("$job")
 	done
 	if [[ ${#missing[@]} -eq 0 ]]; then
 		echo "ci run $id on main: every job successful (${want[*]})"
