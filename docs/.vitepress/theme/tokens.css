@@ -1,0 +1,56 @@
+/*
+ * The chart table: every colour and font of the site, by role. DESIGN.md at the repository's root says what each is
+ * for and lists the contrast of each text pair. Change the identity here, and only here.
+ */
+
+:root {
+    /* Surfaces */
+    --chart-paper: #f4efe3; /* the page */
+    --chart-card: #fffdf7; /* code blocks, tables, cards */
+    --chart-sea: #dce8ea; /* tinted bands: table heads, callouts, the current page */
+    --chart-contour: #c4d8dd; /* borders and rules */
+    --chart-land: #ecdcae; /* sparingly: the home page's opening */
+
+    /* Text and lines */
+    --chart-ink: #16233b; /* text, headings, frames */
+    --chart-soft-ink: #5b6880; /* secondary text, on paper and card only */
+    --chart-faint: #9aa7b6; /* decoration only, never text */
+
+    /* The one accent */
+    --chart-magenta: #b0127a; /* the brand, links, the active nav */
+    --chart-magenta-hover: #8d0d62;
+    --chart-on-magenta: #f4efe3; /* text on a magenta button */
+
+    /* States: each always carries a word or an icon too */
+    --chart-warning: #c96a12; /* orange: frames and marks, not text */
+    --chart-tip: #1e7a4b; /* green: tip, done */
+    --chart-danger: #c8321f; /* red: danger only, such as split brain or data loss */
+
+    /* Type */
+    --chart-font-text: "Spectral", Georgia, "Times New Roman", serif;
+    --chart-font-label: "IBM Plex Sans Condensed", "Arial Narrow", Arial, sans-serif;
+    --chart-font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    --chart-label-tracking: 0.12em;
+    --chart-radius: 0;
+}
+
+/* The night chart. */
+.dark {
+    --chart-paper: #0e1828;
+    --chart-card: #16233b;
+    --chart-sea: #1a2d40;
+    --chart-contour: #304660;
+    --chart-land: #2a3a4a;
+
+    --chart-ink: #f4efe3;
+    --chart-soft-ink: #b4bfcc;
+    --chart-faint: #7d8b9c;
+
+    --chart-magenta: #f27cc6;
+    --chart-magenta-hover: #f7a6d8;
+    --chart-on-magenta: #0e1828;
+
+    --chart-warning: #f0a24f;
+    --chart-tip: #5cc98d;
+    --chart-danger: #ff8a78;
+}

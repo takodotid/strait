@@ -24,6 +24,11 @@
       "description": "helm's SHA-256 is changed by hand (customManagers), so its update stays out of the group, and fails CI alone until then.",
       "matchDepNames": ["helm/helm"],
       "groupName": "helm"
+    },
+    {
+      "description": "bun's SHA-256 is changed by hand (customManagers), so its update stays out of the group, and fails the pages build alone until then.",
+      "matchDepNames": ["oven-sh/bun"],
+      "groupName": "bun"
     }
   ],
   "customManagers": [
@@ -42,6 +47,15 @@
       "matchStrings": ["VERSION: (?<currentValue>v\\S+)"],
       "depNameTemplate": "helm/helm",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "bun of .github/actions/setup-bun, which builds the documentation site: its version only. The SHA-256 of bun-linux-x64.zip, from its release's SHASUMS256.txt, is changed by hand, and the pages build fails on it until then.",
+      "managerFilePatterns": ["/^\\.github/actions/setup-bun/action\\.yaml$/"],
+      "matchStrings": ["VERSION: (?<currentValue>\\d\\S+)"],
+      "depNameTemplate": "oven-sh/bun",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^bun-v(?<version>.+)$"
     },
     {
       "customType": "regex",

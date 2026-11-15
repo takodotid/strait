@@ -62,7 +62,7 @@ echo "rebuilt   $(jq -r '.manifests[0].digest' rebuild/index.json)"
 docker buildx rm strait-rebuild
 ```
 
-From 1.5.0, the two digests are equal. The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does. The release attests each platform image separately from the index ([Verify a release](../../README.md#verify-a-release)).
+From 1.5.0, the two digests are equal. The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does. The release attests each platform image separately from the index ([Verify a release](../guide/install.md#verify-a-release)).
 
 Before 1.5.0, compare each platform's digest:
 

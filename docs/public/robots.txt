@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://strait.tako.id/sitemap.xml

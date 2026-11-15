@@ -1,0 +1,18 @@
+name: setup-bun
+description: Installs bun, which builds the documentation site, pinned by version and SHA-256 (RFC0007, requirement 24).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: 1.4.4
+        SHA256: bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
+      run: |
+        [[ $RUNNER_OS == Linux && $RUNNER_ARCH == X64 ]] || { echo "bun is pinned for Linux on amd64 only" >&2; exit 1; }
+        dir="$RUNNER_TEMP/bun-$VERSION"
+        mkdir -p "$dir"
+        curl -fsSLo "$dir/bun.zip" "https://github.com/oven-sh/bun/releases/download/bun-v$VERSION/bun-linux-x64.zip"
+        echo "$SHA256  $dir/bun.zip" | sha256sum -c
+        unzip -q -j "$dir/bun.zip" bun-linux-x64/bun -d "$dir"
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/bun" --version

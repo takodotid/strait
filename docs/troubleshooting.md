@@ -53,7 +53,7 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 
 While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
 
-A peer is unreachable while its controller restarts, as in an upgrade. Upgrade one site at a time: [Upgrade](../README.md#upgrade).
+A peer is unreachable while its controller restarts, as in an upgrade. Upgrade one site at a time: [Upgrade](runbooks/upgrade.md).
 
 ## Members that are not eligible
 
@@ -130,7 +130,7 @@ The conditions of the `Site`:
 | A site's WireGuard private key must change. | [WireGuard key rotation](runbooks/wireguard-key-rotation.md) |
 | The controller or a gateway pod does not become ready, or restarts. | [Not ready](runbooks/not-ready.md) |
 | The active gateway moves to another replica, or must move off a node. | [Gateway handover](runbooks/gateway-handover.md) |
-| An upgrade, or a node drain. | [Upgrade](../README.md#upgrade) |
+| An upgrade, or a node drain. | [Upgrade](runbooks/upgrade.md) |
 | A site must go back to an earlier 1.x release. | [Roll back within 1.x](runbooks/rollback.md) |
 | The operator publishes a release, or the release workflow refuses one. | [Release](runbooks/release.md) |
 | Someone checks that a release's CLI archive or image is what its tag builds. | [Rebuild a release](runbooks/rebuild.md) |

@@ -139,3 +139,4 @@ Commit and push only when the operator asks.
 | `make images` | Builds the container image. |
 | `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |
 | `make bench` | Runs the gateway benchmark on kind clusters named `strait-bench-*`. See `docs/benchmark.md`. |
+| `cd docs && bun install --frozen-lockfile && bun run build` | Builds the documentation site into `docs/.vitepress/dist`, and fails on a dead link. Its look is in `DESIGN.md`. |

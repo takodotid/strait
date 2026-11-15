@@ -116,6 +116,7 @@ func TestRenovateCustomManagers(t *testing.T) {
 	want := map[string]struct{ dep, value, digest string }{
 		".github/actions/setup-cosign/action.yaml": {"sigstore/cosign", "VERSION: ", "SHA256: "},
 		".github/actions/setup-helm/action.yaml":   {"helm/helm", "VERSION: ", ""},
+		".github/actions/setup-bun/action.yaml":    {"oven-sh/bun", "VERSION: ", ""},
 		".github/workflows/release.yaml":           {"moby/buildkit", "image=moby/buildkit:", "@"},
 	}
 	actions, err := filepath.Glob("../../.github/actions/*/action.yaml")

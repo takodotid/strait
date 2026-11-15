@@ -6,13 +6,13 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 
 | Requirement | Detail |
 |---|---|
-| Two Kubernetes clusters | One per site, of a version that [Install](../README.md#install) supports, reached with the kubeconfig contexts `site-a` and `site-b`. |
+| Two Kubernetes clusters | One per site, of a version that [Install](./guide/install.md) supports, reached with the kubeconfig contexts `site-a` and `site-b`. |
 | Kernel modules `wireguard` and `nf_tables` | On every node that can run a gateway pod. The gateway agent does not load them. It uses nftables to filter what arrives on its WireGuard interfaces. Without nftables, it holds no interface. |
 | Pod Security level `privileged` | In the gateway's namespace. The gateway agent runs as root with `NET_ADMIN`, to hold the WireGuard interfaces ([RFC0007](../rfcs/RFC0007.md)). |
 | A UDP path from site b to site a | Site b dials a node of site a on UDP port 32100. Here, `203.0.113.10` stands for that node's address. |
 | Socket load balancing for pods | Recommended, where the CNI load-balances Services. For Cilium: socket LB on, with `socketLB.hostNamespaceOnly=false`. Without it, a new connection can still reach the previous member after a route change: [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
 | CloudNativePG | At both sites, installed before Strait. One `Cluster` per site in namespace `app`, in CloudNativePG's distributed topology: `pg-a` at site a, `pg-b` at site b. Strait only reads them. |
-| Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](../README.md#install), [on Windows](../README.md#cli-on-windows)). |
+| Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](./guide/install.md), [on Windows](./guide/install.md#on-windows)). |
 | A shell | The commands are for bash. On Windows, a line that runs only `strait` or `kubectl strait` works as written in PowerShell. The others need bash, for example in WSL. |
 
 The chart value `cnpg.enabled` turns on the `cnpg` plugin, which is two things: the chart's read-only rule for `postgresql.cnpg.io`, and the controller's flag `--cnpg`. While it is on, the controller watches CloudNativePG's kinds if their CRDs exist when the controller starts ([RFC0003](../rfcs/RFC0003.md#cnpg-on-and-off), requirement 13).
@@ -74,11 +74,11 @@ Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its 
 Check the rendered `Site`, then install at both sites:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
+helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f -
 
 for s in a b; do
-  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
+  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
     --namespace strait-system --values values-$s.yaml --wait
 done
 ```
@@ -164,7 +164,7 @@ Check each site's objects together with its `Site`. The output must end with `Er
 
 ```sh
 for s in a b; do
-  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.3.2 \
+  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
     --namespace strait-system --values values-$s.yaml | strait validate -f - -f site-$s.yaml
 done
 ```

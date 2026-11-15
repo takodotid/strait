@@ -1,0 +1,310 @@
+/*
+ * The chart table on VitePress's default theme. Colours and fonts come from tokens.css only: this file names no colour and no
+ * font. The rules it follows are in DESIGN.md.
+ */
+
+:root,
+.dark {
+    --vp-font-family-base: var(--chart-font-text);
+    --vp-font-family-mono: var(--chart-font-mono);
+
+    --vp-c-bg: var(--chart-paper);
+    --vp-c-bg-alt: var(--chart-paper);
+    --vp-c-bg-elv: var(--chart-card);
+    --vp-c-bg-soft: var(--chart-sea);
+
+    --vp-c-text-1: var(--chart-ink);
+    --vp-c-text-2: var(--chart-soft-ink);
+    --vp-c-text-3: var(--chart-soft-ink);
+
+    --vp-c-border: var(--chart-contour);
+    --vp-c-divider: var(--chart-contour);
+    --vp-c-gutter: var(--chart-contour);
+
+    --vp-c-brand-1: var(--chart-magenta);
+    --vp-c-brand-2: var(--chart-magenta-hover);
+    --vp-c-brand-3: var(--chart-magenta);
+    --vp-c-brand-soft: var(--chart-sea);
+
+    --vp-c-default-1: var(--chart-ink);
+    --vp-c-default-2: var(--chart-soft-ink);
+    --vp-c-default-3: var(--chart-soft-ink);
+    --vp-c-default-soft: var(--chart-sea);
+
+    --vp-c-note-1: var(--chart-ink);
+    --vp-c-note-2: var(--chart-ink);
+    --vp-c-note-3: var(--chart-ink);
+    --vp-c-note-soft: var(--chart-sea);
+    --vp-c-tip-1: var(--chart-tip);
+    --vp-c-tip-2: var(--chart-tip);
+    --vp-c-tip-3: var(--chart-tip);
+    --vp-c-tip-soft: var(--chart-sea);
+    --vp-c-warning-1: var(--chart-warning);
+    --vp-c-warning-2: var(--chart-warning);
+    --vp-c-warning-3: var(--chart-warning);
+    --vp-c-warning-soft: var(--chart-sea);
+    --vp-c-danger-1: var(--chart-danger);
+    --vp-c-danger-2: var(--chart-danger);
+    --vp-c-danger-3: var(--chart-danger);
+    --vp-c-danger-soft: var(--chart-sea);
+
+    --vp-nav-bg-color: var(--chart-paper);
+    --vp-local-nav-bg-color: var(--chart-paper);
+    --vp-sidebar-bg-color: var(--chart-paper);
+    --vp-backdrop-bg-color: color-mix(in srgb, var(--chart-ink) 55%, transparent);
+
+    --vp-code-color: var(--chart-ink);
+    --vp-code-bg: var(--chart-card);
+    --vp-code-link-color: var(--chart-magenta);
+    --vp-code-link-hover-color: var(--chart-magenta-hover);
+    --vp-code-block-color: var(--chart-ink);
+    --vp-code-block-bg: var(--chart-card);
+    --vp-code-block-divider-color: var(--chart-contour);
+    --vp-code-lang-color: var(--chart-soft-ink);
+    --vp-code-line-number-color: var(--chart-soft-ink);
+    --vp-code-copy-code-bg: var(--chart-card);
+    --vp-code-copy-code-hover-bg: var(--chart-sea);
+    --vp-code-copy-code-border-color: var(--chart-contour);
+    --vp-code-copy-code-hover-border-color: var(--chart-ink);
+    --vp-code-copy-copied-text-content: "Copied";
+
+    --vp-button-brand-bg: var(--chart-magenta);
+    --vp-button-brand-border: var(--chart-magenta);
+    --vp-button-brand-text: var(--chart-on-magenta);
+    --vp-button-brand-hover-bg: var(--chart-magenta-hover);
+    --vp-button-brand-hover-border: var(--chart-magenta-hover);
+    --vp-button-brand-hover-text: var(--chart-on-magenta);
+    --vp-button-brand-active-bg: var(--chart-magenta-hover);
+    --vp-button-brand-active-border: var(--chart-magenta-hover);
+    --vp-button-brand-active-text: var(--chart-on-magenta);
+    --vp-button-alt-bg: var(--chart-card);
+    --vp-button-alt-border: var(--chart-ink);
+    --vp-button-alt-text: var(--chart-ink);
+    --vp-button-alt-hover-bg: var(--chart-sea);
+    --vp-button-alt-hover-border: var(--chart-ink);
+    --vp-button-alt-hover-text: var(--chart-ink);
+
+    --vp-custom-block-info-bg: var(--chart-sea);
+    --vp-custom-block-info-border: var(--chart-ink);
+    --vp-custom-block-info-text: var(--chart-ink);
+    --vp-custom-block-note-bg: var(--chart-sea);
+    --vp-custom-block-note-border: var(--chart-ink);
+    --vp-custom-block-note-text: var(--chart-ink);
+    --vp-custom-block-tip-bg: var(--chart-sea);
+    --vp-custom-block-tip-border: var(--chart-tip);
+    --vp-custom-block-tip-text: var(--chart-ink);
+    --vp-custom-block-warning-bg: var(--chart-sea);
+    --vp-custom-block-warning-border: var(--chart-warning);
+    --vp-custom-block-warning-text: var(--chart-ink);
+    --vp-custom-block-danger-bg: var(--chart-sea);
+    --vp-custom-block-danger-border: var(--chart-danger);
+    --vp-custom-block-danger-text: var(--chart-ink);
+    --vp-custom-block-caution-bg: var(--chart-sea);
+    --vp-custom-block-caution-border: var(--chart-danger);
+    --vp-custom-block-caution-text: var(--chart-ink);
+
+    --vp-badge-info-text: var(--chart-ink);
+    --vp-badge-info-bg: var(--chart-card);
+    --vp-badge-info-border: var(--chart-contour);
+    --vp-badge-tip-text: var(--chart-ink);
+    --vp-badge-tip-bg: var(--chart-card);
+    --vp-badge-tip-border: var(--chart-tip);
+    --vp-badge-warning-text: var(--chart-ink);
+    --vp-badge-warning-bg: var(--chart-card);
+    --vp-badge-warning-border: var(--chart-warning);
+    --vp-badge-danger-text: var(--chart-ink);
+    --vp-badge-danger-bg: var(--chart-card);
+    --vp-badge-danger-border: var(--chart-danger);
+
+    --vp-home-hero-name-color: var(--chart-ink);
+    --vp-home-hero-name-background: none;
+    --vp-home-hero-image-background-image: none;
+    --vp-home-hero-image-filter: none;
+
+    --vp-local-search-bg: var(--chart-paper);
+    --vp-local-search-result-bg: var(--chart-card);
+    --vp-local-search-result-border: var(--chart-contour);
+    --vp-local-search-result-selected-bg: var(--chart-sea);
+    --vp-local-search-result-selected-border: var(--chart-magenta);
+    --vp-local-search-highlight-bg: var(--chart-magenta);
+    --vp-local-search-highlight-text: var(--chart-on-magenta);
+
+    /* Flat: no shadow anywhere. */
+    --vp-shadow-1: none;
+    --vp-shadow-2: none;
+    --vp-shadow-3: none;
+    --vp-shadow-4: none;
+    --vp-shadow-5: none;
+
+    /* The code colours: ink, with comments in soft ink and keywords in the accent. */
+    --shiki-foreground: var(--chart-ink);
+    --shiki-background: var(--chart-card);
+    --shiki-token-constant: var(--chart-ink);
+    --shiki-token-string: var(--chart-ink);
+    --shiki-token-string-expression: var(--chart-ink);
+    --shiki-token-comment: var(--chart-soft-ink);
+    --shiki-token-keyword: var(--chart-magenta);
+    --shiki-token-parameter: var(--chart-ink);
+    --shiki-token-function: var(--chart-ink);
+    --shiki-token-punctuation: var(--chart-soft-ink);
+    --shiki-token-link: var(--chart-magenta);
+    --shiki-ansi-black: var(--chart-ink);
+    --shiki-ansi-white: var(--chart-paper);
+    --shiki-ansi-red: var(--chart-danger);
+    --shiki-ansi-green: var(--chart-tip);
+    --shiki-ansi-yellow: var(--chart-ink); /* orange text fails 4.5:1 on card */
+    --shiki-ansi-blue: var(--chart-ink);
+    --shiki-ansi-magenta: var(--chart-magenta);
+    --shiki-ansi-cyan: var(--chart-ink);
+    --shiki-ansi-bright-black: var(--chart-soft-ink);
+    --shiki-ansi-bright-white: var(--chart-card);
+    --shiki-ansi-bright-red: var(--chart-danger);
+    --shiki-ansi-bright-green: var(--chart-tip);
+    --shiki-ansi-bright-yellow: var(--chart-ink);
+    --shiki-ansi-bright-blue: var(--chart-ink);
+    --shiki-ansi-bright-magenta: var(--chart-magenta);
+    --shiki-ansi-bright-cyan: var(--chart-ink);
+}
+
+/* Square: no rounded corner anywhere. */
+*,
+*::before,
+*::after {
+    border-radius: var(--chart-radius) !important;
+}
+
+/* Flat: no blur behind the navigation. */
+.VPNav,
+.VPNavBar,
+.VPLocalNav,
+.VPNavBar .content-body {
+    backdrop-filter: none !important;
+}
+
+/* The wordmark: the name in the text face, no logo. */
+.VPNavBarTitle .title {
+    font-family: var(--chart-font-text);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 0;
+}
+
+/* Labels: short, upright caps in the condensed face, tracked. Headings and reading text stay in sentence case. */
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text,
+.VPNavScreenMenuLink,
+.VPNavScreenMenuGroup .button-text,
+.VPSidebarItem.level-0 > .item > .text,
+.vp-doc th,
+.vp-doc .custom-block .custom-block-title,
+.VPBadge,
+.VPDocAsideOutline .outline-title,
+.VPHomeFeatures .VPFeature .title {
+    font-family: var(--chart-font-label);
+    font-weight: 600;
+    letter-spacing: var(--chart-label-tracking);
+    text-transform: uppercase;
+}
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text,
+.VPNavScreenMenuLink,
+.VPNavScreenMenuGroup .button-text,
+.VPSidebarItem.level-0 > .item > .text,
+.vp-doc th,
+.vp-doc .custom-block .custom-block-title,
+.VPDocAsideOutline .outline-title {
+    font-size: 12px;
+}
+
+/* Headings in the text face, sentence case. A second-level heading has an ink rule above it. */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4,
+.VPHero .name,
+.VPHero .text {
+    font-family: var(--chart-font-text);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.vp-doc h2 {
+    border-top: 2px solid var(--chart-ink);
+}
+
+/* Reading text. */
+.vp-doc p,
+.vp-doc li {
+    font-size: 17px;
+    line-height: 1.7;
+}
+
+/* A diagram's labels keep the size mermaid measured them at, so they are not clipped. */
+.vp-doc .mermaid p {
+    font-size: inherit;
+    line-height: inherit;
+}
+
+/* The current page in the sidebar: a sea band behind it, in magenta. */
+.VPSidebarItem.is-active > .item {
+    background-color: var(--chart-sea);
+}
+
+/* Tables: cards with contour rules, the head a tinted band. A wide one scrolls instead of squeezing its columns. */
+.vp-doc table {
+    display: block;
+    overflow-x: auto;
+    border: 1px solid var(--chart-contour);
+}
+.vp-doc tr,
+.vp-doc tr:nth-child(2n) {
+    background-color: var(--chart-card);
+    border-top: 1px solid var(--chart-contour);
+}
+.vp-doc th {
+    background-color: var(--chart-sea);
+    color: var(--chart-ink);
+}
+.vp-doc th,
+.vp-doc td {
+    border: 1px solid var(--chart-contour);
+}
+
+/* Code: ink on card, in a contour frame. */
+.vp-doc div[class*="language-"],
+.vp-doc :not(pre) > code {
+    border: 1px solid var(--chart-contour);
+}
+
+/* Callouts: a tinted band, framed in the state's colour. Their text stays ink; the title says the state in words. */
+.vp-doc .custom-block {
+    border-width: 2px;
+}
+
+/* Links: the accent, underlined, so they read as links without colour too. */
+.vp-doc a {
+    color: var(--chart-magenta);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.vp-doc a:hover {
+    color: var(--chart-magenta-hover);
+}
+
+/* The home page: a land band behind the hero, ink text on it. */
+.VPHome .VPHero {
+    background-color: var(--chart-land);
+    border-bottom: 2px solid var(--chart-ink);
+}
+.VPHome .VPHero .tagline {
+    color: var(--chart-ink);
+}
+.VPHome .VPFeature {
+    background-color: var(--chart-card);
+    border: 1px solid var(--chart-contour);
+}
+
+/* Selection in the accent. */
+::selection {
+    background: var(--chart-magenta);
+    color: var(--chart-on-magenta);
+}

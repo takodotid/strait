@@ -1,6 +1,6 @@
 # Roll back within 1.x
 
-Roll back one site at a time, like an [upgrade](../../README.md#upgrade). The site shows the same controller gap and gateway handover. Keep the CRDs of the newer release.
+Roll back one site at a time, like an [upgrade](./upgrade.md). The site shows the same controller gap and gateway handover. Keep the CRDs of the newer release.
 
 ```sh
 helm --kube-context site-a history strait --namespace strait-system
@@ -9,7 +9,7 @@ helm --kube-context site-a rollback strait REVISION --namespace strait-system --
 
 `helm upgrade --version VERSION` with the same values also works. Then wait as in step 3 of the upgrade, before the next site.
 
-From 1.3.0, a rollback to a release of 1.3.0 or later first runs the pre-pull Job with that release's image ([Upgrade](../../README.md#upgrade)). When that image cannot be pulled, the rollback fails after Helm's `--timeout`, and the current release stays. `helm rollback --no-hooks` skips the Job: the controller then stops before its new pod pulls the image.
+From 1.3.0, a rollback to a release of 1.3.0 or later first runs the pre-pull Job with that release's image ([Upgrade](./upgrade.md)). When that image cannot be pulled, the rollback fails after Helm's `--timeout`, and the current release stays. `helm rollback --no-hooks` skips the Job: the controller then stops before its new pod pulls the image.
 
 ## Compatibility
 

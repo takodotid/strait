@@ -9,7 +9,7 @@ kubectl --context site-a -n strait-system get events --sort-by=.lastTimestamp
 
 ## Controller
 
-The controller pod is ready only while it holds the leader election Lease `strait-controller` ([RFC0004, Leader election](../../rfcs/RFC0004.md#leader-election)). While no controller is ready, the other sites cannot read this site: see [Upgrade](../../README.md#upgrade) for what they show.
+The controller pod is ready only while it holds the leader election Lease `strait-controller` ([RFC0004, Leader election](../../rfcs/RFC0004.md#leader-election)). While no controller is ready, the other sites cannot read this site: see [Upgrade](./upgrade.md) for what they show.
 
 | Symptom | Cause | Next step |
 |---|---|---|
