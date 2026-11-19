@@ -5,7 +5,7 @@ runs:
   steps:
     - shell: bash
       env:
-        VERSION: 1.4.4
+        VERSION: 1.4.5
         SHA256: bf8ccbfb2b0b80159e0f9a6d15c55317add8077534dbc6130a3edb52fccb395c
       run: |
         [[ $RUNNER_OS == Linux && $RUNNER_ARCH == X64 ]] || { echo "bun is pinned for Linux on amd64 only" >&2; exit 1; }
