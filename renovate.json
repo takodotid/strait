@@ -42,6 +42,14 @@
     },
     {
       "customType": "regex",
+      "description": "vale of .github/actions/setup-vale, which lints the prose: its version, and the SHA-256 of vale_VERSION_Linux_64-bit.tar.gz, which the release's vale_VERSION_checksums.txt holds (RFC0007, requirement 29).",
+      "managerFilePatterns": ["/^\\.github/actions/setup-vale/action\\.yaml$/"],
+      "matchStrings": ["VERSION: (?<currentValue>v\\S+)\\s+SHA256: (?<currentDigest>[a-f0-9]{64})"],
+      "depNameTemplate": "errata-ai/vale",
+      "datasourceTemplate": "github-release-attachments"
+    },
+    {
+      "customType": "regex",
       "description": "helm of .github/actions/setup-helm: its version only. Helm publishes its archives and their SHA-256 on get.helm.sh, not as assets of its GitHub releases, so the SHA-256 is changed by hand, and the job fails on it until then (RFC0007, requirement 29).",
       "managerFilePatterns": ["/^\\.github/actions/setup-helm/action\\.yaml$/"],
       "matchStrings": ["VERSION: (?<currentValue>v\\S+)"],
