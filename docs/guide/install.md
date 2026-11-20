@@ -1,5 +1,17 @@
 # Install
 
+Install the chart at each site, then the CLI on the operator's machine. [Requirements](#requirements) are below.
+
+## Install in short
+
+Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](../getting-started.md#2-install-the-chart). Change `--kube-context` and the values file for each site. Set `--version` to the release to install:
+
+```sh
+helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait \
+  --version 1.5.0 \
+  --namespace strait-system --values values-a.yaml --wait
+```
+
 ## What a release publishes
 
 | Artifact | Where |
@@ -17,19 +29,14 @@ Each site needs Kubernetes 1.31 or later. The CRDs' validation rules use the CEL
 
 ## The chart
 
-Install the chart at each site, in a namespace with the Pod Security level `privileged`, with the values of [Getting started](../getting-started.md#2-install-the-chart):
+What to read for each case:
 
-```sh
-helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
-  --namespace strait-system --values values-a.yaml --wait
-```
-
-| Before | Read |
+| Case | Read |
 |---|---|
 | Setting up two clusters for the first time | [Getting started](../getting-started.md): from the WireGuard key to a routed name. |
 | A site serves production traffic | [Before production](../runbooks/before-production.md). |
 | Choosing the controller's memory | [Sizing the controller](../sizing.md): it grows with the number of Services in the cluster. |
-| Changing a value | [`values.yaml`](../../deploy/helm/strait/values.yaml), which holds every value of the chart. |
+| Changing a value | The chart's [values.yaml](../../deploy/helm/strait/values.yaml), which holds every value of the chart. |
 
 ### Which image the chart runs
 
@@ -46,11 +53,13 @@ On Linux, here on amd64:
 
 ```sh
 v=v1.5.0
-curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait_${v}_linux_amd64.tar.gz"
-curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/SHA256SUMS"
+base=https://github.com/takodotid/strait/releases/download/$v
+f="strait_${v}_linux_amd64"
+curl -fsSLO "$base/$f.tar.gz"
+curl -fsSLO "$base/SHA256SUMS"
 sha256sum --ignore-missing -c SHA256SUMS
-tar -xzf "strait_${v}_linux_amd64.tar.gz"
-sudo install "strait_${v}_linux_amd64/strait" "strait_${v}_linux_amd64/kubectl-strait" /usr/local/bin/
+tar -xzf "$f.tar.gz"
+sudo install "$f/strait" "$f/kubectl-strait" /usr/local/bin/
 ```
 
 The archive also holds the man pages in `man/man1/` and the skill document `SKILL.md`. Shell completion is in [The strait command](../reference/cli.md#shell-completion).
@@ -85,34 +94,54 @@ How the CLI differs on Windows is in [The strait command](../reference/cli.md#on
 
 ## Verify a release
 
-From 1.3.0, each release signs the image and the chart with Sigstore. The signing is keyless and uses the identity of the release's workflow. It attests the CLI archives, the chart archive, `strait-crds.yaml` and `SHA256SUMS` with GitHub artifact attestations. The chart records the digest of the image's index in the annotation `strait.tako.id/image-digest` ([RFC0007, Releases](../../rfcs/RFC0007.md#releases)). From 1.5.0, the index lists only the platform images, `linux/amd64` and `linux/arm64`. Each platform image carries its build's provenance (SLSA v1) and its SBOM (SPDX) as cosign attestations under the same identity.
+From 1.3.0, each release is signed and attested, so that an operator can check what was published.
 
-Verify the chart and its image with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) 3, and an archive with the GitHub CLI's `gh attestation verify`:
+- From 1.3.0, the image and the chart are signed with Sigstore. The signing is keyless and uses the identity of the release's workflow.
+- From 1.3.0, the CLI archives, the chart archive, `strait-crds.yaml` and `SHA256SUMS` carry GitHub artifact attestations.
+- The chart records the digest of the image's index in the annotation `strait.tako.id/image-digest` ([RFC0007, Releases](../../rfcs/RFC0007.md#releases)).
+- From 1.5.0, the index lists only the platform images, `linux/amd64` and `linux/arm64`.
+- From 1.5.0, each platform image carries its build's provenance (SLSA v1) and its SBOM (SPDX) as cosign attestations under the same identity.
+
+Verify the chart and its image with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) 3, and an archive with the GitHub CLI:
 
 ```sh
 v=v1.5.0
 id="https://github.com/takodotid/strait/.github/workflows/release.yaml@refs/tags/$v"
 issuer=https://token.actions.githubusercontent.com
-cosign verify "ghcr.io/takodotid/charts/strait:${v#v}" --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
-digest=$(helm show chart oci://ghcr.io/takodotid/charts/strait --version "${v#v}" | sed -n 's|^  strait.tako.id/image-digest: ||p')
-cosign verify "ghcr.io/takodotid/strait@$digest" --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
-gh attestation verify "strait_${v}_linux_amd64.tar.gz" --repo takodotid/strait --cert-identity "$id"
-gh attestation verify SHA256SUMS --repo takodotid/strait --cert-identity "$id"
+cosign verify "ghcr.io/takodotid/charts/strait:${v#v}" \
+  --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
+digest=$(helm show chart oci://ghcr.io/takodotid/charts/strait --version "${v#v}" \
+  | sed -n 's|^  strait.tako.id/image-digest: ||p')
+cosign verify "ghcr.io/takodotid/strait@$digest" \
+  --certificate-identity "$id" --certificate-oidc-issuer "$issuer"
+gh attestation verify "strait_${v}_linux_amd64.tar.gz" \
+  --repo takodotid/strait --cert-identity "$id"
+gh attestation verify SHA256SUMS \
+  --repo takodotid/strait --cert-identity "$id"
 ```
 
 From 1.5.0, verify each platform image's provenance and SBOM. This needs `docker` and `jq` too. The platform images come from the index that the chart names:
 
 ```sh
-for image in $(docker buildx imagetools inspect "ghcr.io/takodotid/strait@$digest" --raw | jq -r '.manifests[].digest'); do
-  cosign verify-attestation "ghcr.io/takodotid/strait@$image" --type slsaprovenance1 --certificate-identity "$id" --certificate-oidc-issuer "$issuer" >"provenance-${image#sha256:}.json"
-  cosign verify-attestation "ghcr.io/takodotid/strait@$image" --type spdxjson --certificate-identity "$id" --certificate-oidc-issuer "$issuer" >"sbom-${image#sha256:}.json"
+for image in $(docker buildx imagetools inspect \
+  "ghcr.io/takodotid/strait@$digest" --raw | jq -r '.manifests[].digest'); do
+  cosign verify-attestation "ghcr.io/takodotid/strait@$image" --type slsaprovenance1 \
+    --certificate-identity "$id" --certificate-oidc-issuer "$issuer" \
+    >"provenance-${image#sha256:}.json"
+  cosign verify-attestation "ghcr.io/takodotid/strait@$image" --type spdxjson \
+    --certificate-identity "$id" --certificate-oidc-issuer "$issuer" \
+    >"sbom-${image#sha256:}.json"
 done
 ```
 
-Each file holds the attestation as a DSSE envelope. `jq '.payload | @base64d | fromjson | .predicate' FILE` prints the provenance or the SBOM.
+Each file holds the attestation as a DSSE envelope. This prints the provenance or the SBOM of one file. Replace `FILE` with the file:
+
+```sh
+jq '.payload | @base64d | fromjson | .predicate' FILE
+```
 
 To rebuild a CLI archive or the image from the release's tag and compare it with what the release published, see [Rebuild a release](../runbooks/rebuild.md).
 
 ## Upgrade
 
-Upgrade one site at a time: see [Upgrade](../runbooks/upgrade.md).
+Upgrade one site at a time: see the [Upgrade runbook](../runbooks/upgrade.md).

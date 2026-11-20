@@ -2,16 +2,49 @@
 
 This benchmark measures what the gateway costs an application at site b that talks to a server at site a. It compares Strait's Envoy gateway with a plain HAProxy pair on the same `direct` link, and with endpoint-direct, which has no proxy. [RFC0005](../rfcs/RFC0005.md) cites its results.
 
+## Summary
+
+Medians of five rounds, from [Results](#results).
+
+| Path | Request/response p50, µs | Connection setup p50, µs | 4 streams, Gbit/s |
+|---|---|---|---|
+| Strait gateway (Envoy), direct link | 339 | 841 | 11.62 |
+| HAProxy pair, direct link | 270 | 629 | 6.67 |
+| Strait endpoint-direct, no proxy | 112 | 299 | 48.10 |
+| Strait gateway (Envoy), WireGuard link | 481 | 1141 | 0.75 |
+
+[Reading](#reading) gives the conclusion.
+
 ## Paths
 
-| Path | Hops from the client pod at b to the server pod at a |
-|---|---|
-| Strait gateway (Envoy), direct link | `bench.bench.svc:7000` (ClusterIP) -> gateway b, import listener -> node a's direct address, export NodePort -> gateway a, export listener -> server pod |
-| HAProxy pair, direct link | `haproxy-b.bench.svc:7000` (ClusterIP) -> HAProxy b -> node a's direct address, NodePort 32100 -> HAProxy a -> server pod |
-| Strait endpoint-direct, no proxy | `bench.bench.svc:7000` (ClusterIP) -> server pod, routed over the direct link |
-| Strait gateway (Envoy), WireGuard link | As the first row, with the gateways joined by the `wireguard` link |
+Each path is the chain of hops from the client pod at b to the server pod at a.
 
-The `direct` link has no tunnel, so the first three rows compare the proxies, not encryption. The fourth row shows what the tunnel adds.
+**Strait gateway (Envoy), direct link**
+
+1. `bench.bench.svc:7000` (ClusterIP)
+2. gateway b, import listener
+3. node a's direct address, export NodePort
+4. gateway a, export listener
+5. server pod
+
+**HAProxy pair, direct link**
+
+1. `haproxy-b.bench.svc:7000` (ClusterIP)
+2. HAProxy b
+3. node a's direct address, NodePort 32100
+4. HAProxy a
+5. server pod
+
+**Strait endpoint-direct, no proxy**
+
+1. `bench.bench.svc:7000` (ClusterIP)
+2. server pod, routed over the direct link
+
+**Strait gateway (Envoy), WireGuard link**
+
+As the first path, with the gateways joined by the `wireguard` link.
+
+The `direct` link has no tunnel, so the first three paths compare the proxies, not encryption. The fourth path shows what the tunnel adds.
 
 ## Fixture
 
@@ -101,29 +134,60 @@ Each cell of the results is the median over rounds, with the lowest and highest 
 
 Latency, µs:
 
-| Path | Request/response p50 | p90 | p99 | Connection setup p50 | p90 | p99 |
-|---|---|---|---|---|---|---|
-| Strait gateway (Envoy), direct link | 339 (299 to 341) | 404 (343 to 408) | 483 (407 to 489) | 841 (807 to 879) | 909 (857 to 1001) | 1040 (986 to 1127) |
-| HAProxy pair, direct link | 270 (249 to 293) | 329 (287 to 350) | 387 (344 to 428) | 629 (609 to 663) | 689 (673 to 736) | 784 (736 to 863) |
-| Strait endpoint-direct, no proxy | 112 (92 to 114) | 141 (113 to 143) | 174 (140 to 177) | 299 (274 to 317) | 351 (316 to 373) | 422 (358 to 478) |
-| Strait gateway (Envoy), WireGuard link | 481 (458 to 489) | 616 (576 to 630) | 2298 (2187 to 2488) | 1141 (1100 to 1227) | 1467 (1352 to 1791) | 3401 (3173 to 3976) |
+Request/response:
+
+| Path | Request/response p50, µs | Request/response p90, µs | Request/response p99, µs |
+|---|---|---|---|
+| Strait gateway (Envoy), direct link | 339 (299 to 341) | 404 (343 to 408) | 483 (407 to 489) |
+| HAProxy pair, direct link | 270 (249 to 293) | 329 (287 to 350) | 387 (344 to 428) |
+| Strait endpoint-direct, no proxy | 112 (92 to 114) | 141 (113 to 143) | 174 (140 to 177) |
+| Strait gateway (Envoy), WireGuard link | 481 (458 to 489) | 616 (576 to 630) | 2298 (2187 to 2488) |
+
+Connection setup:
+
+| Path | Connection setup p50, µs | Connection setup p90, µs | Connection setup p99, µs |
+|---|---|---|---|
+| Strait gateway (Envoy), direct link | 841 (807 to 879) | 909 (857 to 1001) | 1040 (986 to 1127) |
+| HAProxy pair, direct link | 629 (609 to 663) | 689 (673 to 736) | 784 (736 to 863) |
+| Strait endpoint-direct, no proxy | 299 (274 to 317) | 351 (316 to 373) | 422 (358 to 478) |
+| Strait gateway (Envoy), WireGuard link | 1141 (1100 to 1227) | 1467 (1352 to 1791) | 3401 (3173 to 3976) |
 
 Added over endpoint-direct in the same round, µs:
 
-| Path | Request/response p50 | Request/response p99 | Connection setup p50 |
+| Path | Request/response p50, µs | Request/response p99, µs | Connection setup p50, µs |
 |---|---|---|---|
 | Strait gateway (Envoy), direct link | 225 (206 to 229) | 306 (268 to 317) | 546 (529 to 571) |
 | HAProxy pair, direct link | 156 (138 to 183) | 210 (175 to 256) | 344 (292 to 357) |
 | Strait gateway (Envoy), WireGuard link | 366 (345 to 397) | 2124 (2047 to 2316) | 835 (783 to 928) |
 
-Throughput, CPU and latency under load. CPU is in millicores per connection, at 100 requests per second on each connection:
+Throughput, CPU and latency under load, in three tables. CPU is in millicores per connection, at 100 requests per second on each connection.
 
-| Path | 1 stream, Gbit/s | 4 streams, Gbit/s | CPU at a | CPU at b | CPU, both | Under load p50, µs | Under load p99, µs |
-|---|---|---|---|---|---|---|---|
-| Strait gateway (Envoy), direct link | 8.71 (7.21 to 10.55) | 11.62 (11.13 to 12.50) | 10.6 (9.9 to 10.9) | 10.7 (10.3 to 11.1) | 21.3 (20.2 to 22.0) | 332 (309 to 354) | 566 (467 to 640) |
-| HAProxy pair, direct link | 3.34 (3.07 to 3.52) | 6.67 (6.52 to 7.08) | 9.9 (9.3 to 10.1) | 10.1 (9.4 to 10.2) | 20.0 (18.7 to 20.3) | 282 (244 to 285) | 443 (376 to 451) |
-| Strait endpoint-direct, no proxy | 15.59 (12.46 to 16.26) | 48.10 (47.46 to 50.58) | 0 | 0 | 0 | 152 (139 to 155) | 296 (266 to 300) |
-| Strait gateway (Envoy), WireGuard link | 0.75 (0.72 to 0.79) | 0.75 (0.60 to 0.79) | 8.8 (8.6 to 9.4) | 8.8 (8.7 to 9.5) | 17.6 (17.3 to 18.8) | 528 (504 to 563) | 1550 (1485 to 1607) |
+Throughput:
+
+| Path | 1 stream, Gbit/s | 4 streams, Gbit/s |
+|---|---|---|
+| Strait gateway (Envoy), direct link | 8.71 (7.21 to 10.55) | 11.62 (11.13 to 12.50) |
+| HAProxy pair, direct link | 3.34 (3.07 to 3.52) | 6.67 (6.52 to 7.08) |
+| Strait endpoint-direct, no proxy | 15.59 (12.46 to 16.26) | 48.10 (47.46 to 50.58) |
+| Strait gateway (Envoy), WireGuard link | 0.75 (0.72 to 0.79) | 0.75 (0.60 to 0.79) |
+
+CPU, millicores per connection:
+
+| Path | CPU at a | CPU at b | CPU, both |
+|---|---|---|---|
+| Strait gateway (Envoy), direct link | 10.6 (9.9 to 10.9) | 10.7 (10.3 to 11.1) | 21.3 (20.2 to 22.0) |
+| HAProxy pair, direct link | 9.9 (9.3 to 10.1) | 10.1 (9.4 to 10.2) | 20.0 (18.7 to 20.3) |
+| Strait endpoint-direct, no proxy | 0 | 0 | 0 |
+| Strait gateway (Envoy), WireGuard link | 8.8 (8.6 to 9.4) | 8.8 (8.7 to 9.5) | 17.6 (17.3 to 18.8) |
+
+Latency under load, µs:
+
+| Path | Under load p50, µs | Under load p99, µs |
+|---|---|---|
+| Strait gateway (Envoy), direct link | 332 (309 to 354) | 566 (467 to 640) |
+| HAProxy pair, direct link | 282 (244 to 285) | 443 (376 to 451) |
+| Strait endpoint-direct, no proxy | 152 (139 to 155) | 296 (266 to 300) |
+| Strait gateway (Envoy), WireGuard link | 528 (504 to 563) | 1550 (1485 to 1607) |
 
 Envoy minus HAProxy, on the direct link, in the same round. Positive latency and CPU favour HAProxy. Positive throughput favours Envoy.
 
@@ -176,7 +240,19 @@ A pooled PostgreSQL or Valkey connection pays the request/response cost once per
 | What does WireGuard add? | 142 µs at p50 and 1.8 ms at p99 over the direct link, and one stream tops out near 0.75 Gbit/s on this host. |
 | What happens when CPU runs short? | Both proxies slow down 35 to 40 times at p50, from about 0.3 ms to about 11 ms. Within each A B B A block, Envoy's p99 is 1.1 to 1.5 times HAProxy's, with and without the neighbour, and its p50 is higher too. That gap is small next to the slowdown. |
 
-Conclusion: the difference between Envoy and HAProxy is not meaningful for an application that talks to PostgreSQL or Valkey across sites, while the gateway has CPU to spare. Envoy costs about 50 µs more per round trip over two hops and about 7% more CPU per request, and moves 1.7 to 2.6 times as much data at defaults. Against a cross-site round trip of 1 ms or more, the latency difference is 5% or less. Between sites so close that the round trip is shorter, the gateway itself, 156 to 225 µs here, matters more than the choice of proxy. Endpoint-direct removes it. When the gateway's node runs short of CPU, both proxies slow down far more than they differ: the gateway needs CPU headroom whichever proxy runs.
+::: tip Conclusion
+The difference between Envoy and HAProxy is not meaningful for an application that talks to PostgreSQL or Valkey across sites, while the gateway has CPU to spare.
+
+Envoy costs about 50 µs more per round trip over two hops and about 7% more CPU per request, and moves 1.7 to 2.6 times as much data at defaults.
+
+Against a cross-site round trip of 1 ms or more, the latency difference is 5% or less.
+
+Between sites so close that the round trip is shorter, the gateway itself, 156 to 225 µs here, matters more than the choice of proxy.
+
+Endpoint-direct removes it.
+
+When the gateway's node runs short of CPU, both proxies slow down far more than they differ: the gateway needs CPU headroom whichever proxy runs.
+:::
 
 ## Limits
 

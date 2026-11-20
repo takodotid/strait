@@ -51,13 +51,47 @@ Installed as `kubectl-strait`, or `kubectl-strait.exe` on Windows, the same comm
 
 Completion covers commands, flags, the values of `-o`, the kubeconfig's contexts, and the names of namespaces and `SiteService`s. Names come from the context's cluster, within 2s. A completion never asks for credentials.
 
-| Shell | Add |
-|---|---|
-| bash | `source <(strait completion bash)` in `~/.bashrc`. Needs the `bash-completion` package. |
-| zsh | `source <(strait completion zsh)` in `~/.zshrc`, after `compinit`. |
-| fish | `strait completion fish > ~/.config/fish/completions/strait.fish` |
-| PowerShell | `strait completion powershell \| Out-String \| Invoke-Expression` in `$PROFILE`. |
-| `kubectl strait` | A link named `kubectl_complete-strait` to the binary, on the `PATH`: `ln -s "$(command -v kubectl-strait)" ~/.local/bin/kubectl_complete-strait`. On Windows, a copy of `kubectl-strait.exe` named `kubectl_complete-strait.exe` next to it. kubectl 1.26 or later runs it to complete `kubectl strait`. |
+### bash
+
+Needs the `bash-completion` package. Add this line to `~/.bashrc`:
+
+```sh
+source <(strait completion bash)
+```
+
+### zsh
+
+Add this line to `~/.zshrc`, after `compinit`:
+
+```sh
+source <(strait completion zsh)
+```
+
+### fish
+
+Write the script to the fish completions directory:
+
+```sh
+strait completion fish > ~/.config/fish/completions/strait.fish
+```
+
+### PowerShell
+
+Add this line to `$PROFILE`:
+
+```powershell
+strait completion powershell | Out-String | Invoke-Expression
+```
+
+### The kubectl plugin
+
+kubectl 1.26 or later runs a program named `kubectl_complete-strait` to complete `kubectl strait`. Put a link to the binary with that name on the `PATH`:
+
+```sh
+ln -s "$(command -v kubectl-strait)" ~/.local/bin/kubectl_complete-strait
+```
+
+On Windows, put a copy of `kubectl-strait.exe` named `kubectl_complete-strait.exe` next to it.
 
 ## On Windows
 
