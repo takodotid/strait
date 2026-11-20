@@ -113,11 +113,16 @@ Strait is built with AI coding agents (Claude Code), and a person directs and ap
 - Each fix comes with a test that fails without the fix.
 - CI runs the unit tests, the race detector, and end-to-end tests on kind for every pull request.
 - Before a release, the change is tested on real clusters, not only in CI.
-- Releases are signed, and you can verify every release asset (see [Verify a release](https://strait.tako.id/guide/install#verify-a-release)).
+- Releases are signed, and every release asset can be verified (see [Verify a release](https://strait.tako.id/guide/install#verify-a-release)).
+
+<!-- The maintainers speak for themselves in the next two paragraphs. -->
+<!-- vale Strait.Pronouns = NO -->
 
 **Why we trust it in production:** we run Strait ourselves, for our own databases. A router that sends writes to the wrong database would hurt us first.
 
 If you find a problem, open an issue. Saying that it looks AI-written is fine, as long as you say what's wrong.
+
+<!-- vale Strait.Pronouns = YES -->
 
 ## Contributing
 
@@ -125,7 +130,7 @@ Design decisions live in [`rfcs/`](rfcs/). Before changing a subject, read the R
 
 | Change | Process |
 |---|---|
-| Code that conforms to an Active RFC | A pull request. CI runs `make verify`, `make test`, `make test-race`, `make lint`, `make test-envoy`, `make test-netns`, `make build` and `make e2e` on it, and builds the docs site. |
+| Code that conforms to an Active RFC | A pull request. CI runs `make verify`, `make test`, `make test-race`, `make lint`, `make prose`, `make test-envoy`, `make test-netns`, `make build` and `make e2e` on it, and builds the docs site. |
 | Code that departs from an RFC | Amend the RFC first, in the same pull request or an earlier one. When the code and an RFC disagree, the RFC wins. |
 | A new subject | A new RFC with the status Draft. It becomes Active with the maintainers' approval, once its open questions are resolved. |
 | A change that breaks a user of the API | A new API version. |

@@ -28,7 +28,9 @@ scrape_configs:
       - role: pod
         namespaces: {names: [strait-system]}
     relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_container_port_name]
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_name
+          - __meta_kubernetes_pod_container_port_name
         regex: strait;metrics
         action: keep
       - source_labels: [__meta_kubernetes_pod_name]
@@ -39,7 +41,9 @@ scrape_configs:
       - role: pod
         namespaces: {names: [strait-system]}
     relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component, __meta_kubernetes_pod_container_port_name]
+      - source_labels:
+          - __meta_kubernetes_pod_label_app_kubernetes_io_component
+          - __meta_kubernetes_pod_container_port_name
         regex: gateway;metrics
         action: keep
       - source_labels: [__meta_kubernetes_pod_name]
@@ -81,20 +85,20 @@ The agent also exports the metrics of Go and the process.
 
 ## Envoy
 
-At `/stats/prometheus`, the agent serves these of Envoy's stats, and no other path of Envoy's admin interface. Envoy names each one `envoy_` followed by the stat, with each `.` replaced by `_`.
+At `/stats/prometheus`, the agent serves these of Envoy's stats, and no other path of Envoy's admin interface. Envoy names each one `envoy_` followed by the stat, with each dot replaced by an underscore.
 
 | Stats | Labels | Holds |
 |---|---|---|
-| `cluster.*.upstream_cx_{total,active,connect_fail,connect_timeout,none_healthy,rx_bytes_total,tx_bytes_total}`, `membership_{healthy,total}`, `health_check.{success,failure,network_failure}`, `update_rejected` | `envoy_cluster_name` | Per cluster: each export and import, each peer, the controller. Connections, bytes, connect failures, healthy endpoints. |
+| `cluster.*.upstream_cx_{total,active,connect_fail,connect_timeout,none_healthy,rx_bytes_total,tx_bytes_total}`<br>`membership_{healthy,total}`<br>`health_check.{success,failure,network_failure}`<br>`update_rejected` | `envoy_cluster_name` | Per cluster: each export and import, each peer, the controller. Connections, bytes, connect failures, healthy endpoints. |
 | `tcp.*.downstream_cx_{total,rx_bytes_total,tx_bytes_total,no_route}` | `envoy_tcp_prefix` | Per export and import: connections and bytes from clients. |
 | `http.{control,peers}.downstream_rq_{total,1xx,..,5xx}` | `envoy_http_conn_manager_prefix`, `envoy_response_code_class` | Requests to the control port and to the peer listener. |
 | `server.{live,state,uptime,memory_allocated,memory_heap_size,total_connections}` | | Envoy's state. |
 | `control_plane.connected_state` | | 1 while Envoy holds its xDS stream to the controller. |
-| `cluster_manager.{active_clusters,cds.update_success,cds.update_rejected}`, `listener_manager.{total_listeners_active,lds.update_success,lds.update_rejected}` | | Configuration updates. |
+| `cluster_manager.{active_clusters,cds.update_success,cds.update_rejected}`<br>`listener_manager.{total_listeners_active,lds.update_success,lds.update_rejected}` | | Configuration updates. |
 
 | Name in the labels | Means |
 |---|---|
-| `export/<namespace>/<name>`, `import/<namespace>/<name>` | An `Export` or an `Import`. A `.` in the name shows as `_`: Envoy's labels end a name at its first `.`. |
+| `export/<namespace>/<name>`, `import/<namespace>/<name>` | An `Export` or an `Import`. A dot in the name shows as an underscore: Envoy's labels end a name at its first dot. |
 | `peer/<peer>` | The control port of a peer, over each link. |
 | `controller` | The controller's observation port. |
 

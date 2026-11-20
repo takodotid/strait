@@ -1,0 +1,767 @@
+/* The home page. The hull fills the opening; below the waterline the planes alternate: white, black hull, deck, and the
+   funnel's buff to close. */
+
+.ship-home-page .VPContent .VPPage {
+    padding: 0;
+}
+
+.ship-home {
+    color: var(--ship-ink);
+    font-size: 17px;
+    line-height: 1.6;
+}
+.ship-home a {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+}
+.ship-home a:hover {
+    text-decoration-thickness: 3px;
+}
+.ship-home h1,
+.ship-home h2,
+.ship-home h3 {
+    margin: 0;
+    font-weight: 800;
+    text-wrap: balance;
+}
+.ship-home p {
+    margin: 0;
+}
+.ship-home code {
+    font-family: var(--ship-font-mono);
+    font-size: 0.88em;
+}
+
+.sh-wrap {
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-left: max(32px, env(safe-area-inset-left, 0px));
+    padding-right: max(32px, env(safe-area-inset-right, 0px));
+}
+@media (max-width: 767px) {
+    .sh-wrap {
+        padding-left: max(24px, env(safe-area-inset-left, 0px));
+        padding-right: max(24px, env(safe-area-inset-right, 0px));
+    }
+}
+
+/* The opening: the hull, with the title lettered on it and a plan printing beside. */
+.sh-opening {
+    background: var(--ship-hull);
+    color: var(--ship-on-hull);
+    padding-block: clamp(40px, 6vw, 88px) clamp(48px, 7vw, 104px);
+}
+.sh-opening-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: clamp(28px, 4vw, 72px);
+    align-items: center;
+}
+.sh-opening h1 {
+    font-size: clamp(40px, 4.7vw, 78px);
+    line-height: 0.98;
+    font-stretch: 112%;
+    letter-spacing: -0.025em;
+}
+.sh-lede {
+    margin-top: 28px !important;
+    max-width: 34em;
+    font-size: clamp(17px, 1.35vw, 20px);
+    line-height: 1.55;
+    color: var(--ship-on-hull);
+    text-wrap: pretty;
+}
+.sh-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 36px !important;
+}
+.ship-home .sh-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    height: 52px;
+    padding: 0 24px;
+    border: 2px solid var(--ship-on-hull);
+    border-radius: var(--ship-radius);
+    color: var(--ship-on-hull);
+    font-weight: 750;
+    font-size: 16px;
+    text-decoration: none;
+    transition:
+        background 0.2s,
+        color 0.2s;
+}
+.ship-home .sh-button:hover {
+    background: var(--ship-on-hull);
+    color: var(--ship-hull-deep);
+}
+.ship-home .sh-button-go {
+    background: var(--ship-buff);
+    border-color: var(--ship-buff);
+    color: #101a17;
+}
+.ship-home .sh-button-go:hover {
+    background: var(--ship-on-hull);
+    border-color: var(--ship-on-hull);
+    color: #101a17;
+}
+.sh-button svg {
+    width: 20px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sh-button:hover svg {
+    transform: translateX(4px);
+}
+
+/* The plan sheet: the terminal, on the black hull. */
+.sh-sheet {
+    margin: 0;
+    min-width: 0;
+    background: #101a17;
+    color: #e8f0ea;
+    border-radius: var(--ship-radius);
+    box-shadow: 0 24px 48px -12px rgb(16 26 23 / 0.55);
+}
+/* The sheet's own width, not the window's, decides which drawing shows. */
+.sh-body {
+    display: flex;
+    flex-direction: column;
+    container-type: inline-size;
+}
+.sh-sheet figcaption {
+    padding: 14px 20px;
+    border-bottom: 1px solid #2c3a36;
+    font-family: var(--ship-font-mono);
+    font-size: 13.5px;
+    overflow-wrap: anywhere;
+}
+.sh-prompt {
+    color: var(--ship-buff);
+    user-select: none;
+}
+.sh-sheet pre {
+    margin: 0;
+    padding: 16px 20px 6px;
+    overflow-x: auto;
+    font-family: var(--ship-font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    scrollbar-color: #4f5d58 #101a17;
+}
+.sh-line {
+    display: block;
+    color: #c0cdc6;
+    opacity: 0;
+}
+.sh-line.is-printed {
+    opacity: 1;
+}
+.sh-line.head {
+    color: #f3fbf6;
+    font-weight: 600;
+}
+.sh-line.step {
+    color: var(--ship-buff);
+}
+.sh-line.soft {
+    color: #97a8a1;
+}
+.sh-line.done {
+    color: #f3fbf6;
+    font-weight: 600;
+}
+.sh-sheet-note {
+    padding: 0 20px 14px;
+    font-size: 13px;
+    color: #97a8a1;
+}
+
+/* The waterline: a white stripe, then the boot-top's ink band. */
+.sh-waterline {
+    height: 18px;
+    background: var(--ship-band);
+}
+.sh-waterline::before {
+    content: "";
+    display: block;
+    height: 5px;
+    background: var(--ship-plane);
+}
+
+/* The chapters: a heavy heading at the left, the matter at the right. */
+.sh-plane,
+.sh-black,
+.sh-deck,
+.sh-buff {
+    padding-block: clamp(56px, 8vw, 120px);
+}
+.sh-plane {
+    background: var(--ship-plane);
+}
+.sh-deck {
+    background: var(--ship-deck);
+}
+.sh-black {
+    background: var(--ship-band);
+    color: #e8f0ea;
+}
+.sh-buff {
+    background: var(--ship-buff);
+    color: #101a17;
+}
+.sh-chapter {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: clamp(28px, 5vw, 88px);
+    align-items: start;
+}
+.sh-chapter-head h2,
+.sh-close h2 {
+    font-size: clamp(32px, 3.6vw, 56px);
+    line-height: 1.04;
+    font-stretch: 108%;
+    letter-spacing: -0.022em;
+}
+.sh-chapter-head p {
+    margin-top: 22px;
+    max-width: 30em;
+}
+.sh-plane .sh-chapter-head a,
+.sh-deck a {
+    color: var(--ship-link);
+}
+
+/* The phases, as draft marks: a tall narrow numeral on a rule, and the ledger's state at the right. */
+.sh-marks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 3px solid var(--ship-ink);
+}
+.sh-marks li {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) 118px;
+    gap: 20px;
+    align-items: start;
+    padding-block: 22px;
+    border-bottom: 1px solid var(--ship-line);
+}
+.sh-mark {
+    font-size: 76px;
+    line-height: 0.82;
+    font-weight: 800;
+    font-stretch: 62%;
+    color: var(--ship-hull);
+    font-variant-numeric: lining-nums;
+}
+.dark .sh-mark {
+    color: var(--ship-link);
+}
+.sh-mark-text h3 {
+    font-size: 22px;
+    line-height: 1.2;
+    font-stretch: 106%;
+}
+.sh-mark-text p {
+    margin-top: 6px;
+    color: var(--ship-soft-ink);
+    font-size: 16px;
+}
+.sh-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    justify-self: end;
+    margin-top: 4px;
+    font-weight: 700;
+    font-stretch: 78%;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ship-soft-ink);
+    transition: color 0.3s;
+}
+.sh-state svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+.sh-state .hollow,
+.sh-state .tick {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+.sh-state .tick {
+    stroke-width: 2.6;
+}
+.is-running .sh-state {
+    color: var(--ship-warning);
+}
+.is-succeeded .sh-state {
+    color: var(--ship-tip);
+}
+
+/* The stops: each reason by its name in the ledger, with when it happens. */
+.sh-black .sh-chapter-head p {
+    color: var(--ship-band-soft);
+}
+.sh-black code {
+    color: var(--ship-buff);
+}
+.sh-stops {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 3px solid #e8f0ea;
+}
+.sh-stops li {
+    display: grid;
+    grid-template-columns: minmax(0, 15em) minmax(0, 1fr);
+    gap: 4px 24px;
+    padding-block: 13px;
+    border-bottom: 1px solid var(--ship-band-line);
+}
+.ship-home .sh-stops a {
+    font-family: var(--ship-font-mono);
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ship-buff);
+    text-decoration-style: dotted;
+    overflow-wrap: anywhere;
+}
+.ship-home .sh-stops a:hover {
+    text-decoration-style: solid;
+}
+.sh-stops span {
+    color: var(--ship-band-soft);
+    font-size: 16px;
+}
+
+/* The two modes, side by side. */
+.sh-modes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(24px, 3vw, 48px);
+}
+.sh-modes > div {
+    border-top: 3px solid var(--ship-ink);
+    padding-top: 20px;
+}
+.sh-modes h3 {
+    font-size: 26px;
+    font-stretch: 106%;
+}
+.sh-flag {
+    margin-top: 6px !important;
+    color: var(--ship-soft-ink);
+}
+.sh-modes dl {
+    margin: 18px 0;
+}
+.sh-modes dt {
+    font-weight: 700;
+    font-stretch: 78%;
+    font-size: 13.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ship-soft-ink);
+    margin-top: 14px;
+}
+.sh-modes dd {
+    margin: 2px 0 0;
+}
+
+/* The close: the first command, on the funnel's buff. */
+.sh-close {
+    display: grid;
+    gap: 28px;
+    justify-items: start;
+}
+.sh-close h2 {
+    max-width: 14em;
+}
+.sh-command {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    width: min(100%, 640px);
+    padding: 12px 12px 12px 22px;
+    background: #101a17;
+    color: #e8f0ea;
+    border-radius: var(--ship-radius);
+    font-family: var(--ship-font-mono);
+    font-size: 15.5px;
+    overflow-wrap: anywhere;
+}
+.ship-home .sh-command-text {
+    font-size: inherit;
+    background: none;
+    color: inherit;
+    padding: 0;
+}
+.sh-command-text span:last-child {
+    user-select: all;
+}
+.ship-home .sh-copy {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 16px;
+    background: none;
+    border: 1.5px solid #97a8a1;
+    border-radius: var(--ship-radius);
+    font-family: var(--ship-font);
+    font-weight: 700;
+    font-stretch: 78%;
+    font-size: 13.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ship-buff);
+    cursor: pointer;
+}
+.ship-home .sh-copy:hover {
+    border-color: #f3fbf6;
+    color: #f3fbf6;
+}
+.ship-home .sh-copy:focus-visible {
+    outline: 3px solid #f3fbf6;
+    outline-offset: 2px;
+}
+.sh-close p {
+    max-width: 38em;
+}
+.sh-buff :focus-visible {
+    outline-color: #101a17;
+}
+
+@media (max-width: 900px) {
+    .sh-opening-grid,
+    .sh-chapter {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 560px) {
+    .sh-marks li {
+        grid-template-columns: 48px minmax(0, 1fr);
+    }
+    .sh-mark {
+        font-size: 56px;
+    }
+    .sh-state {
+        grid-column: 2;
+        justify-self: start;
+    }
+    .sh-stops li,
+    .sh-modes {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sh-button svg,
+    .sh-state {
+        transition: none;
+    }
+}
+
+/* On the home page the masthead runs into the hull below it: the boot-top comes at the waterline instead. */
+.ship-home-page .VPNav {
+    border-bottom-color: var(--ship-hull);
+}
+
+/* What is supported, said plainly under the actions. */
+.sh-supports {
+    margin-top: 28px !important;
+    max-width: 36em;
+    font-size: 15px;
+    color: var(--ship-on-hull-soft);
+}
+
+/* The drawing: two sites on the black hull, drawn twice. The wide drawing puts the sites side by side, and the tall one stacks them for
+   a narrow sheet. The drawing that shows is always scaled so that its labels stay at 11px or more. The route in use is drawn in the
+   funnel's buff; the rest stays quiet. */
+.sh-drawing {
+    display: block;
+    width: 100%;
+    height: auto;
+    padding: 14px 14px 4px;
+    font-family: var(--ship-font);
+    font-size: 13px;
+    fill: #e8f0ea;
+}
+.sh-drawing.tall {
+    display: none;
+}
+@container (max-width: 579px) {
+    .sh-drawing.wide {
+        display: none;
+    }
+    .sh-drawing.tall {
+        display: block;
+        max-width: 320px;
+        margin-inline: auto;
+    }
+    /* Stacked, the controls come first and stay in view while the drawing scrolls. */
+    .sh-controls {
+        order: -1;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #101a17;
+        padding-top: 12px;
+    }
+}
+.sh-drawing .frame {
+    fill: none;
+    stroke: #2c3a36;
+    stroke-width: 1.5;
+}
+.sh-drawing .box {
+    fill: #101a17;
+    stroke: #97a8a1;
+    stroke-width: 1.5;
+    rx: 3px;
+    transition:
+        fill 0.4s,
+        stroke 0.4s;
+}
+.sh-drawing .marking {
+    font-weight: 700;
+    font-stretch: 78%;
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    fill: #97a8a1;
+}
+.sh-drawing .mono {
+    font-family: var(--ship-font-mono);
+    font-size: 12.5px;
+}
+.sh-drawing .soft {
+    fill: #c0cdc6;
+    font-size: 12.5px;
+}
+.sh-drawing .wire,
+.sh-drawing .route {
+    fill: none;
+    stroke: #8a9b94;
+    stroke-width: 1.5;
+}
+.sh-drawing .route {
+    stroke-dasharray: 3 5;
+    transition: stroke 0.4s;
+}
+.sh-drawing .route.is-on {
+    stroke: var(--ship-buff);
+    stroke-width: 3;
+    stroke-dasharray: none;
+}
+/* The link is up in every moment: solid, never dotted. */
+.sh-drawing .route.link {
+    stroke-dasharray: none;
+    stroke-width: 2.5;
+}
+.sh-drawing .route.link.is-on {
+    stroke-width: 3;
+}
+.sh-drawing .name {
+    stroke: var(--ship-buff);
+    stroke-width: 2;
+}
+.sh-drawing.is-nowhere .name {
+    stroke: #ff8a78;
+    stroke-dasharray: 6 5;
+}
+.sh-drawing.is-nowhere .endpoints {
+    fill: #ff8a78;
+    font-weight: 700;
+}
+.sh-drawing .member.is-primary {
+    fill: var(--ship-buff);
+    stroke: var(--ship-buff);
+}
+.sh-drawing .member-text {
+    transition: fill 0.4s;
+}
+.sh-drawing .member-text.is-primary {
+    fill: #101a17;
+}
+.sh-sheet figcaption {
+    color: var(--ship-buff);
+}
+/* The caption holds the room of the longest one, so the sheet keeps its height at every width. */
+.sh-moment {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding-top: 8px !important;
+    font-size: 14.5px !important;
+    line-height: 1.5;
+    color: #e8f0ea !important;
+}
+.sh-moment svg {
+    width: 14px;
+    height: 14px;
+    margin-top: 4px;
+    fill: #ff8a78;
+}
+.sh-moment .tick {
+    fill: none;
+    stroke: #5cc98d;
+    stroke-width: 2.6;
+}
+.sh-moment-text {
+    display: grid;
+}
+.sh-moment-text > span {
+    grid-area: 1 / 1;
+}
+.sh-moment-text > span + span {
+    visibility: hidden;
+}
+
+/* What a screen reader hears and the eye does not need. */
+.sh-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* The controls: pause, and a button for each moment. */
+.sh-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 6px 20px 12px;
+}
+.sh-ctl-moments {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sh-ctl-label {
+    font-size: 14px;
+    color: #97a8a1;
+}
+.sh-ctl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 14px;
+    background: none;
+    border: 1.5px solid #97a8a1;
+    border-radius: var(--ship-radius);
+    color: #e8f0ea;
+    font-family: var(--ship-font);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition:
+        background 0.2s,
+        color 0.2s,
+        border-color 0.2s;
+}
+.sh-ctl svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+.sh-ctl:hover {
+    border-color: #f3fbf6;
+}
+.sh-ctl.is-current {
+    background: var(--ship-buff);
+    border-color: var(--ship-buff);
+    color: #101a17;
+}
+.sh-ctl:focus-visible {
+    outline: 3px solid #f3fbf6;
+    outline-offset: 2px;
+}
+
+/* The key to the drawing's lines. */
+.sh-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 20px;
+    margin: 0;
+    padding: 0 20px 10px;
+    list-style: none;
+    font-size: 13px;
+    color: #c0cdc6;
+}
+.sh-key li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.sh-key svg {
+    width: 28px;
+    height: 8px;
+    fill: none;
+}
+.sh-key path {
+    stroke: #8a9b94;
+    stroke-width: 1.5;
+}
+.sh-key .in-use {
+    stroke: var(--ship-buff);
+    stroke-width: 3;
+}
+.sh-key .not-in-use {
+    stroke-dasharray: 3 5;
+}
+
+/* The routes: each by its mark, as strait explain prints it, with a word beside it. */
+.sh-routes strong {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 750;
+    color: #f3fbf6;
+}
+.sh-routes svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+}
+.sh-routes .is-confirmed svg {
+    fill: none;
+    stroke: #5cc98d;
+    stroke-width: 2.6;
+}
+.sh-routes .is-kept svg {
+    fill: var(--ship-buff);
+}
+.sh-routes .is-nowhere svg {
+    fill: #ff8a78;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sh-drawing *,
+    .sh-ctl {
+        transition: none !important;
+    }
+}

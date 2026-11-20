@@ -1,6 +1,7 @@
 import { createCssVariablesTheme } from "shiki";
 import { defineConfig, type DefaultTheme } from "vitepress";
 import { Links } from "./links.ts";
+import { Markdown } from "./theme/markdown.ts";
 import { Seo } from "./seo.ts";
 
 const repository = "https://github.com/takodotid/strait";
@@ -98,15 +99,20 @@ export default defineConfig({
             Links.outward(md, repository);
             Links.mermaid(md);
             Links.verbatim(md);
+            Markdown.tables(md);
+            Markdown.chips(md);
+            Markdown.leads(md);
+            Markdown.notes(md);
         },
     },
 
     themeConfig: {
+        // Each item marks every page of its sidebar group, not only the page it links to.
         nav: [
-            { text: "Guide", link: "/guide/introduction" },
-            { text: "Operations", link: "/runbooks/before-production" },
-            { text: "Reference", link: "/reference/cli" },
-            { text: "Limitations", link: "/limitations" },
+            { text: "Guide", link: "/guide/introduction", activeMatch: "^/(guide/|getting-started$)" },
+            { text: "Operations", link: "/runbooks/before-production", activeMatch: "^/(runbooks/|troubleshooting$|failover-time$|sizing$)" },
+            { text: "Reference", link: "/reference/cli", activeMatch: "^/(reference/|metrics$|benchmark$)" },
+            { text: "Limitations", link: "/limitations", activeMatch: "^/limitations$" },
             { text: "Releases", link: `${repository}/releases` },
         ],
 
@@ -121,9 +127,16 @@ export default defineConfig({
         // The outline beside each page lists its second- and third-level headings.
         outline: { level: [2, 3], label: "On this page" },
 
+        // A link in a page that leaves the site, and opens a new tab, carries a mark.
+        externalLinkIcon: true,
+
+        // The month in words, in UTC: the same date for every reader, and never read as day-first or month-first.
+        lastUpdated: { formatOptions: { dateStyle: "medium", timeZone: "UTC" } },
+
         search: {
             provider: "local",
             options: {
+                detailedView: true,
                 translations: { button: { buttonText: "Search docs" } },
             },
         },

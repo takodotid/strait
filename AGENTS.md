@@ -135,6 +135,7 @@ Commit and push only when the operator asks.
 | `make test-race` | Runs the unit tests of `make test` with the race detector. |
 | `make test-envoy` | Runs the xDS configuration in a real Envoy, the chart's image, in docker. |
 | `make test-netns` | Runs the gateway's WireGuard interfaces and their filter in network namespaces, in docker. Needs the `wireguard` module. |
+| `make prose` | Lints the prose of every tracked Markdown file and Vue template with `vale`, by the rules of Writing. The rules are in `hack/vale/Strait/`. |
 | `make docs` | Writes the man pages and the skill document into `bin/`. |
 | `make images` | Builds the container image. |
 | `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |

@@ -1,0 +1,18 @@
+name: setup-vale
+description: Installs vale, which lints the prose, pinned by version and SHA-256 (RFC0007, requirement 24).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        VERSION: v3.28.1
+        SHA256: 068954ad869ebec24b8dec6ebcd1cbb1fd5f5a83e966a35baedfae8b2cdc093a
+      run: |
+        [[ $RUNNER_OS == Linux && $RUNNER_ARCH == X64 ]] || { echo "vale is pinned for Linux on amd64 only" >&2; exit 1; }
+        dir="$RUNNER_TEMP/vale-$VERSION"
+        mkdir -p "$dir"
+        curl -fsSLo "$dir/vale.tar.gz" "https://github.com/errata-ai/vale/releases/download/$VERSION/vale_${VERSION#v}_Linux_64-bit.tar.gz"
+        echo "$SHA256  $dir/vale.tar.gz" | sha256sum -c
+        tar -xzf "$dir/vale.tar.gz" -C "$dir" vale
+        echo "$dir" >> "$GITHUB_PATH"
+        "$dir/vale" --version

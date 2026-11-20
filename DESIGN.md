@@ -115,7 +115,7 @@ components:
 
 The docs read like a paper sea chart spread on a chart table: ink on warm paper, pale sea bands, thin contour lines, and land used sparingly. A strait is the water between two pieces of land, and Strait carries traffic between two sites.
 
-Nothing on the chart decorates. Lines are drawn in ink or in contour blue, corners are square, and the paper is flat: no shadow, no glow, no gradient. One colour, magenta, marks what you can act on: the brand, links and the active place in the navigation. Orange, green and red each mean one state, and always come with a word or an icon.
+Nothing on the chart decorates. Lines are drawn in ink or in contour blue, corners are square, and the paper is flat: no shadow, no glow, no gradient. One colour, magenta, marks what can be acted on: the brand, links and the active place in the navigation. Orange, green and red each mean one state, and always come with a word or an icon.
 
 There is a night chart for dark mode: deep ink paper, slate bands, text in the paper's colour, and the same magenta, lightened so it keeps its contrast.
 

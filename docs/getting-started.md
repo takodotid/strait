@@ -11,17 +11,9 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 | Pod Security level `privileged` | In the gateway's namespace. The gateway agent runs as root with `NET_ADMIN`, to hold the WireGuard interfaces ([RFC0007](../rfcs/RFC0007.md)). |
 | A UDP path from site b to site a | Site b dials a node of site a on UDP port 32100. Here, `203.0.113.10` stands for that node's address. |
 | Socket load balancing for pods | Recommended, where the CNI load-balances Services. For Cilium: socket LB on, with `socketLB.hostNamespaceOnly=false`. Without it, a new connection can still reach the previous member after a route change: [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
-| CloudNativePG | At both sites, installed before Strait. One `Cluster` per site in namespace `app`, in CloudNativePG's distributed topology: `pg-a` at site a, `pg-b` at site b. Strait only reads them. |
+| CloudNativePG | At both sites, installed before Strait. One `Cluster` per site in namespace `app`, in CloudNativePG's distributed topology: `pg-a` at site a, `pg-b` at site b. Strait only reads them. Whether the chart turns the plugin on: [The cnpg plugin switch](#the-cnpg-plugin-switch). |
 | Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](./guide/install.md), [on Windows](./guide/install.md#on-windows)). |
 | A shell | The commands are for bash. On Windows, a line that runs only `strait` or `kubectl strait` works as written in PowerShell. The others need bash, for example in WSL. |
-
-The chart value `cnpg.enabled` turns on the `cnpg` plugin, which is two things: the chart's read-only rule for `postgresql.cnpg.io`, and the controller's flag `--cnpg`. While it is on, the controller watches CloudNativePG's kinds if their CRDs exist when the controller starts ([RFC0003](../rfcs/RFC0003.md#cnpg-on-and-off), requirement 13).
-
-| Cluster | `cnpg.enabled` |
-|---|---|
-| Runs a `SiteService` with the `cnpg` plugin | `true`, the default. With `false`, each of its members at this site is `Unknown`, reason `PluginDisabled`. |
-| Runs no `SiteService` with the `cnpg` plugin | `true` or `false`. |
-| Gets CloudNativePG after Strait | `true`. Install CloudNativePG, then restart the controller, for example `kubectl --context site-a -n strait-system rollout restart deployment/strait-controller`. |
 
 Names used at both sites:
 
@@ -33,22 +25,25 @@ Names used at both sites:
 | WireGuard listen port | 32100 |
 | Tunnel addresses | Site a `100.64.0.1/30`, site b `100.64.0.2/30` |
 
-## 1. Namespace and WireGuard key
+## Steps
+
+### 1. Namespace and WireGuard key
 
 At each site, create the namespace with the Pod Security level `privileged`, and a Secret that holds a new WireGuard private key:
 
 ```sh
 for s in a b; do
   kubectl --context site-$s create namespace strait-system
-  kubectl --context site-$s label namespace strait-system pod-security.kubernetes.io/enforce=privileged
-  wg genkey | kubectl --context site-$s -n strait-system create secret generic strait-wireguard \
-    --from-file=privateKey=/dev/stdin
+  kubectl --context site-$s label namespace strait-system \
+    pod-security.kubernetes.io/enforce=privileged
+  wg genkey | kubectl --context site-$s -n strait-system \
+    create secret generic strait-wireguard --from-file=privateKey=/dev/stdin
 done
 ```
 
 The private key goes from `wg genkey` straight into the Secret, and is never printed or written to a file. Each site has its own key.
 
-## 2. Install the chart
+### 2. Install the chart
 
 `values-a.yaml`:
 
@@ -66,38 +61,50 @@ site:
 | Value | Why |
 |---|---|
 | `site.name` | The site's name. Members and peers refer to it. Required. |
-| `site.spec` | The `Site`'s spec, as in [`api/v1`](../api/v1/site_types.go). The chart renders the `Site` from it. |
+| `site.spec` | The `Site`'s spec, as in [api/v1](../api/v1/site_types.go). The chart renders the `Site` from it. |
 | `site.spec.wireguard.privateKeySecretRef.name` | The Secret from step 1. The chart lets the gateway agent read this Secret and no other. |
 
-Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its node runs short of CPU ([benchmark](benchmark.md#under-cpu-contention)). Every other value is in [`values.yaml`](../deploy/helm/strait/values.yaml).
+Size `gateway.resources.envoy` to the site's traffic: Envoy slows down when its node runs short of CPU ([benchmark](benchmark.md#under-cpu-contention)). Every other value is in the chart's [values.yaml](../deploy/helm/strait/values.yaml).
 
-Check the rendered `Site`, then install at both sites:
+Dry run, which checks the rendered `Site`:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
+helm template strait oci://ghcr.io/takodotid/charts/strait \
+  --version 1.5.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f -
+```
 
+Then install at both sites:
+
+```sh
 for s in a b; do
-  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
+  helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait \
+    --version 1.5.0 \
     --namespace strait-system --values values-$s.yaml --wait
 done
 ```
 
-`strait status` now shows each site, its controller's version, its active gateway pod, and the site's WireGuard public key:
+Then read the state of each site:
 
 ```sh
 strait --context site-a status
 strait --context site-b status
 ```
 
-## 3. Join the sites
+Check: `strait status` shows each site, its controller's version, its active gateway pod, and the site's WireGuard public key.
 
-Read each site's public key. The active gateway agent writes it into the `Site`'s status once it has read the Secret. Both values must be set before the next step.
+### 3. Join the sites
+
+Read each site's public key. The active gateway agent writes it into the `Site`'s status once it has read the Secret.
 
 ```sh
-A_KEY=$(kubectl --context site-a get site a -o jsonpath='{.status.wireGuardPublicKey}')
-B_KEY=$(kubectl --context site-b get site b -o jsonpath='{.status.wireGuardPublicKey}')
+A_KEY=$(kubectl --context site-a get site a \
+  -o jsonpath='{.status.wireGuardPublicKey}')
+B_KEY=$(kubectl --context site-b get site b \
+  -o jsonpath='{.status.wireGuardPublicKey}')
 ```
+
+Check: both values are set before the next step.
 
 Site a declares its peer b and a link that waits for b to dial:
 
@@ -160,23 +167,27 @@ EOF
 | `wireguard.endpoint` | Site b only | Site b dials, and keeps the path open with keepalives. Site a waits. Traffic flows both ways once b has dialed. |
 | `wireguard.address`, `wireguard.peerAddress` | A /30 that no other network at either site uses | The tunnel's addresses. They live in the gateway pods only. |
 
-Check each site's objects together with its `Site`. The output must end with `Errors: 0. Warnings: 0.`:
+Dry run, which checks each site's objects together with its `Site`:
 
 ```sh
 for s in a b; do
-  helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
-    --namespace strait-system --values values-$s.yaml | strait validate -f - -f site-$s.yaml
+  helm template strait oci://ghcr.io/takodotid/charts/strait \
+    --version 1.5.0 \
+    --namespace strait-system --values values-$s.yaml \
+    | strait validate -f - -f site-$s.yaml
 done
 ```
 
-Apply:
+Check: the output ends with `Errors: 0. Warnings: 0.`
+
+Then apply:
 
 ```sh
 kubectl --context site-a apply -f site-a.yaml
 kubectl --context site-b apply -f site-b.yaml
 ```
 
-Check the link and the peer at each site:
+Then read the link and the peer at each site:
 
 ```sh
 strait --context site-a links
@@ -185,6 +196,8 @@ strait --context site-b links
 strait --context site-b peers
 ```
 
+Check:
+
 | Command | Expected |
 |---|---|
 | `strait links` | The link to the peer: `HEALTHY` true, `ACTIVE` true. |
@@ -192,7 +205,7 @@ strait --context site-b peers
 
 If not, see [Troubleshooting](troubleshooting.md#unreachable-peers-and-unhealthy-links).
 
-## 4. Point a name at the database
+### 4. Point a name at the database
 
 `pg.yaml`, the same at both sites:
 
@@ -223,38 +236,60 @@ spec:
     unknownHold: 30s
 ```
 
+Required fields:
+
 | Field | Means |
 |---|---|
 | `metadata.name`, `metadata.namespace` | The application name: Service `pg` in namespace `app`. Strait creates and owns it. |
 | `spec.mode: Single` | Route to the one writable member. |
 | `spec.plugin.cnpg.role: primary` | Observe CloudNativePG `Cluster`s, and route to the primary. |
-| `spec.plugin.cnpg.confirmRole` | Optional, off unless `true`. Also ask each local database `pg_is_in_recovery()`, and count a member as `Unknown` when the answer disagrees with the `Cluster`, or there is none. Needs a role with `LOGIN` and nothing else, and its Secret named in the chart value `cnpg.confirmRole.secretName`. [RFC0003, Confirming the role](../rfcs/RFC0003.md#cnpg-confirming-the-role). |
 | `spec.members` | One member per `Cluster`, with the site that hosts it. Each site observes only its own members. |
+| `spec.port` | The port of the application name: here `postgres`, 5432. |
+
+Optional fields. Each is off unless it is set, except `connections`, which is `Keep`, and `unknownHold`, which is `30s`:
+
+| Field | Means |
+|---|---|
+| `spec.plugin.cnpg.confirmRole` | Also ask each local database whether it is in recovery. |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
-| `spec.policy.startupHold` | Optional, off unless set. After the controller starts, the time it waits to read every other site before it routes to a local member. With it, a site that was lost and comes back still primary does not serve writes until it has seen what the other sites declare. [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold). |
-| `spec.policy.connections` | Optional. `Keep`, the default, keeps every established connection when the route changes. `EndGateway` ends the sessions through this site's gateway to a member that leaves the route, so that remote clients reconnect to the new one. Open transactions on them fail. Local clients keep their sessions. Needs the chart value `envoy.drainTimeSeconds` set to a few seconds. [RFC0002, What `EndGateway` covers and costs](../rfcs/RFC0002.md#what-endgateway-covers-and-costs). |
-| `spec.policy.isolationTimeout` | Optional, off unless set. A site that has read no other site for this long stops routing to its own member, so its clients stop writing to a primary that another site may replace. Turn it on with three or more sites, or when a site that loses the others must stop writing. With two sites, the site that survives a site loss stops too, until the operator sets it to 0s there. [RFC0002, The isolated-site policy](../rfcs/RFC0002.md#the-isolated-site-policy). |
+| `spec.policy.startupHold` | The time, at most, that the controller waits after it starts to read every other site before it routes to a local member. |
+| `spec.policy.connections` | What happens to established connections when the route changes: `Keep` or `EndGateway`. |
+| `spec.policy.isolationTimeout` | A site that has read no other site for this long stops routing to its own member. |
+
+What each optional field does:
+
+- `confirmRole`: off unless `true`. The controller also asks each local database `pg_is_in_recovery()`. It counts a member as `Unknown` when the answer disagrees with the `Cluster`, or there is none. It needs a role with `LOGIN` and nothing else, and its Secret named in the chart value `cnpg.confirmRole.secretName`. See [RFC0003, Confirming the role](../rfcs/RFC0003.md#cnpg-confirming-the-role).
+- `startupHold`: a duration that caps the wait. A site that was lost and comes back still primary does not serve writes until it has seen what the other sites declare, or until this time has passed. See [RFC0002, Startup hold](../rfcs/RFC0002.md#startup-hold).
+- `connections`: `Keep`, the default, keeps every established connection when the route changes. `EndGateway` ends the sessions through this site's gateway to a member that leaves the route, so that remote clients reconnect to the new one. Open transactions on them fail. Local clients keep their sessions. It needs the chart value `envoy.drainTimeSeconds` set to a few seconds. See [RFC0002, what EndGateway covers and costs](../rfcs/RFC0002.md#what-endgateway-covers-and-costs).
+- `isolationTimeout`: it stops a site's clients from writing to a primary that another site may replace. Turn it on with three or more sites, or when a site that loses the others must stop writing. With two sites, the site that survives a site loss stops too, until the operator sets it to `0s` there. See [RFC0002, The isolated-site policy](../rfcs/RFC0002.md#the-isolated-site-policy).
 
 Every field and rule: [RFC0002](../rfcs/RFC0002.md).
 
-Check, then apply at both sites:
+Dry run:
 
 ```sh
 strait validate -f pg.yaml
+```
+
+Then apply at both sites:
+
+```sh
 kubectl --context site-a apply -f pg.yaml
 kubectl --context site-b apply -f pg.yaml
 ```
 
-## 5. Check the route
+### 5. Check the route
+
+Read the route at both sites:
 
 ```sh
 strait --context site-a status -n app
 strait --context site-b explain pg -n app
 ```
 
-While `pg-a` is the primary:
+Check, while `pg-a` is the primary:
 
-| Site | `ROUTE` | `REASON` | `PATH` of `pg-a` in `strait explain` |
+| Site | Route | Reason | Path of pg-a in explain |
 |---|---|---|---|
 | a | `pg-a` | `Active` | `Local`: its own pods. |
 | b | `pg-a` | `Active` | `Gateway`: gateway b, over the link. |
@@ -263,9 +298,13 @@ Applications at both sites connect to `pg.app.svc:5432`. A client that checks th
 
 To move the primary, use CloudNativePG's own procedure for its distributed topology. Strait follows: both sites route nowhere while the primary moves, then route to `pg-b`. The sequence: [RFC0002, why declarations matter](../rfcs/RFC0002.md#why-single-declarations-matter).
 
-## 6. Add a direct link
+### 6. Add a direct link
 
 A private path between the sites, if there is one, can carry the traffic with no tunnel. Give its link a lower cost: it carries the traffic while it is healthy, and the WireGuard link takes over within 5 seconds when it fails.
+
+::: warning Traffic crosses a direct link in clear
+`encryption: None` is required on a `direct` link, and the traffic crosses it in clear.
+:::
 
 At site a:
 
@@ -287,12 +326,34 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 
 | Field or value | Means |
 |---|---|
-| `encryption: None` | Required on a `direct` link. Traffic crosses it in clear. |
+| `encryption: None` | Required on a `direct` link. |
 | `cost: 10` | Lower than the WireGuard link's default, 100. |
 | `direct.address` | The peer gateway's IP address on the private path. |
-| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. It is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then run `helm upgrade`. Expose it on the private path only. `NodePort` suits nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it. The fields that let only them in: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services). |
+| `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. See below. |
+
+The value `site.spec.gateway.directService` is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then run `helm upgrade`. Expose it on the private path only:
+
+- `NodePort` suits nodes that no other network reaches.
+- Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal.
+- Only the peer gateways need to reach it. The fields that let only them in are in [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services).
 
 With `endpointDirect: true` on the direct link, and pod addresses routable between the sites, the name points straight at the remote member's pods, with no gateway hop ([RFC0005](../rfcs/RFC0005.md#endpoint-direct)). In production, set `endpointCIDRs` on that link to the peer's pod CIDRs, so a peer's document cannot point the name anywhere else. Without it, `strait validate` warns, and the link's condition `EndpointsLimited` is `False`.
+
+## The cnpg plugin switch
+
+The chart value `cnpg.enabled` turns on the `cnpg` plugin, which is two things: the chart's read-only rule for `postgresql.cnpg.io`, and the controller's flag `--cnpg`. While it is on, the controller watches CloudNativePG's kinds if their CRDs exist when the controller starts ([RFC0003](../rfcs/RFC0003.md#cnpg-on-and-off), requirement 13).
+
+| Cluster | `cnpg.enabled` |
+|---|---|
+| Runs a `SiteService` with the `cnpg` plugin | `true`, the default. With `false`, each of its members at this site is `Unknown`, reason `PluginDisabled`. |
+| Runs no `SiteService` with the `cnpg` plugin | `true` or `false`. |
+| Gets CloudNativePG after Strait | `true`. Install CloudNativePG, then restart the controller. |
+
+To restart the controller, for example:
+
+```sh
+kubectl --context site-a -n strait-system rollout restart deployment/strait-controller
+```
 
 ## Next
 
@@ -301,4 +362,4 @@ With `endpointDirect: true` on the direct link, and pod addresses routable betwe
 | The checks before production | [Before production](runbooks/before-production.md) |
 | A name routed nowhere, Unknown members, unhealthy links | [Troubleshooting](troubleshooting.md) |
 | Every command and flag | `strait --help`, the man pages |
-| Design and rules | [`rfcs/`](../rfcs/) |
+| Design and rules | [The RFCs](../rfcs/) |

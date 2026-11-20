@@ -52,6 +52,16 @@ jobs:
           go-version-file: go.mod
       - uses: ./.github/actions/setup-helm
       - run: make lint
+  # The prose of the Markdown files and of the Vue templates, by the rules of AGENTS.md, Writing.
+  prose:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-vale
+      - run: make prose
   envoy:
     runs-on: ubuntu-26.04
     timeout-minutes: 15

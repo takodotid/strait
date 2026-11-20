@@ -33,7 +33,10 @@ export default defineLoader({
                 title,
                 link: `${repository}/blob/main/rfcs/${name}#limitations`,
                 html: md.render(
-                    body.replace(/\]\(([^)\s]+)\)/g, (_, href: string) => `](${Links.rewrite(href, file, repository, true)})`),
+                    body
+                        // The RFCs name each other as [RFC#0004], a reference that no line defines. It becomes a link to that RFC.
+                        .replace(/\[RFC#(\d{4})\](?![(:[])/g, (_, number: string) => `[RFC${number}](${repository}/blob/main/rfcs/RFC${number}.md)`)
+                        .replace(/\]\(([^)\s]+)\)/g, (_, href: string) => `](${Links.rewrite(href, file, repository, true)})`),
                     { path: file, relativePath: `../rfcs/${name}`, cleanUrls: true }
                 ),
             });

@@ -1,0 +1,51 @@
+# AGENTS.md, Writing: no intros, no filler.
+extends: existence
+message: "'%s' says nothing. Cut it, or say what is true."
+level: error
+ignorecase: true
+tokens:
+  # Filler.
+  - basically
+  - simply
+  - really
+  - very
+  - actually
+  - obviously
+  - clearly
+  - of course
+  - essentially
+  - literally
+  - quite
+  - note that
+  - please note
+  - it is worth noting
+  - it should be noted
+  - needless to say
+  - in other words
+  # Intros and outros.
+  - as mentioned (?:above|earlier|before)
+  - in this (?:document|section|guide|page|runbook)
+  - this (?:document|section|guide|page|runbook) (?:describes|explains|covers|walks)
+  - welcome to
+  - let's
+  - in (?:summary|conclusion)
+  - to summari[sz]e
+  # Praise in place of a fact.
+  - seamless(?:ly)?
+  - effortless(?:ly)?
+  - robust
+  - powerful
+  - comprehensive
+  - crucial
+  - blazing(?:ly)?
+  - cutting[- ]edge
+  - state[- ]of[- ]the[- ]art
+  - world[- ]class
+  - best[- ]in[- ]class
+  - game[- ]chang(?:er|ing)
+  - revolutionary
+  - delv(?:e|es|ed|ing)
+  - supercharg(?:e|es|ed|ing)
+  - unleash(?:es|ed|ing)?
+  - empower(?:s|ed|ing)?
+  - streamlin(?:e|es|ed|ing)

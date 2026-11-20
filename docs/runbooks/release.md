@@ -2,14 +2,54 @@
 
 The operator's steps to publish a release. What the workflow checks and in which order: [RFC0007, Releases](../../rfcs/RFC0007.md#releases).
 
-| Step | What to do |
-|---|---|
-| 1. Merge | Merge the release's pull request into `main`. It names the new version wherever the docs name the latest release: `git grep -nE -- '--version [0-9]|v=v[0-9]|\$v = "v|latest release' README.md docs` lists each place. [Rebuild a release](./rebuild.md) names v1.4.0 on purpose, the release it was checked on. The site is built from the tag, so it shows what the tag holds. |
-| 2. Wait for CI | Wait until the `ci` run of the merge commit on `main` has finished with every job successful: `gh run list --workflow ci.yaml --branch main`. |
-| 3. Tag | Sign an annotated tag on that commit, and push it: `git tag -s vX.Y.Z COMMIT -m "Strait vX.Y.Z"`, then `git push origin vX.Y.Z`. GitHub must show the tag as Verified: the key must belong to the tagger's GitHub account. |
-| 4. Approve | When the environment `release` has reviewers, approve the run. Nothing runs until then. |
-| 5. Check | Once the run has finished, verify the release as [Verify a release](../guide/install.md#verify-a-release) shows. |
-| 6. Publish the site | The run's job `pages` publishes the documentation site from the tag, once the release is out. If only `pages` failed, re-run that job: the release itself is out. To publish the site from `main` without a release, run the workflow `pages` by hand: `gh workflow run pages.yaml`. |
+## Steps
+
+### 1. Merge
+
+Merge the release's pull request into `main`. It names the new version wherever the docs name the latest release. This command lists each place:
+
+```sh
+git grep -nE -- '--version [0-9]|v=v[0-9]|\$v = "v|latest release' README.md docs
+```
+
+[Rebuild a release](./rebuild.md) names v1.4.0 on purpose, the release it was checked on. The site is built from the tag, so it shows what the tag holds.
+
+### 2. Wait for CI
+
+Wait until the `ci` run of the merge commit on `main` has finished with every job successful.
+
+```sh
+gh run list --workflow ci.yaml --branch main
+```
+
+### 3. Tag
+
+Sign an annotated tag on that commit, and push it. Replace `vX.Y.Z` and `COMMIT`.
+
+```sh
+git tag -s vX.Y.Z COMMIT -m "Strait vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+Check: GitHub shows the tag as Verified. The key must belong to the tagger's GitHub account.
+
+### 4. Approve
+
+When the environment `release` has reviewers, approve the run. Nothing runs until then.
+
+### 5. Check the release
+
+Once the run has finished, verify the release as [Verify a release](../guide/install.md#verify-a-release) shows.
+
+### 6. Publish the site
+
+The run's job `pages` publishes the documentation site from the tag, once the release is out. If only `pages` failed, re-run that job: the release itself is out.
+
+To publish the site from `main` without a release, run the workflow `pages` by hand:
+
+```sh
+gh workflow run pages.yaml
+```
 
 ## When the release stops
 
@@ -18,12 +58,24 @@ The operator's steps to publish a release. What the workflow checks and in which
 | `gate.sh: release refused: tag ... is not vX.Y.Z` | Tag the commit again with a name `vX.Y.Z`. |
 | `is not annotated`, or `does not verify the signature` | Tag again with `git tag -s`, with a key that GitHub has for the tagger's account. |
 | `is not on main`, or `points at ..., not at ...` | Tag the merge commit on `main`. |
-| `has not finished` | Re-run the whole run once the `ci` run has succeeded: `gh run rerun RUN`. Nothing was pushed. |
+| `has not finished` | Re-run the whole run once the `ci` run has succeeded, as the block below shows. Nothing was pushed. |
 | `no ci run of commit ... succeeded` | Fix `main`, and release a later commit. |
 | `published already` | That version exists, and the release never replaces it. Release the next patch version. |
-| `cannot be told` | GitHub or the registry did not answer. Re-run the failed jobs: `gh run rerun RUN --failed`. |
+| `cannot be told` | GitHub or the registry did not answer. Re-run the failed jobs, as the block below shows. |
 
 A tag that the release refused can be deleted and pushed again with the same name, where the repository's tag rules allow it. Otherwise, use the next patch version.
+
+To re-run the whole run, replace `RUN` with the run's ID, the number that `gh run list` prints for it:
+
+```sh
+gh run rerun RUN
+```
+
+To re-run only the failed jobs:
+
+```sh
+gh run rerun RUN --failed
+```
 
 ## A run that fails after a push
 

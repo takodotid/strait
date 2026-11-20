@@ -79,6 +79,10 @@ lint: ## Verify the module's downloads, scan for known vulnerabilities, run stat
 	helm lint --strict deploy/helm/strait --set site.name=a
 	hack/release/pinned.sh
 
+.PHONY: prose
+prose: ## Lint the prose of every tracked Markdown file and Vue template with vale, by the rules of .vale.ini. Needs vale.
+	git ls-files -z '*.md' '*.vue' | xargs -0 vale
+
 # The Kubernetes versions of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test: the oldest that
 # the README supports, and the latest.
 ENVTEST_K8S_VERSIONS ?= 1.31.0 1.37.0
