@@ -12,17 +12,20 @@ export const MOMENTS = [
     {
         primary: "a",
         routed: true,
+        short: "The primary runs at site a",
         line: "The primary runs at site a. At site b the name points at the gateway, which carries each connection over the link.",
     },
     {
         primary: "",
         routed: false,
+        short: "The sites declare different primaries",
         line: "The sites declare different primaries. The name has no endpoints, so a new connection is refused at once and the client retries.",
     },
     {
         primary: "b",
         routed: true,
-        line: "The primary runs at site b. The name followed it, and the application changed nothing.",
+        short: "The primary runs at site b",
+        line: "The primary runs at site b. The name follows it, and the application holds no topology.",
     },
 ] as const;
 
@@ -35,11 +38,14 @@ export const PATH = [
 
 export const ROUTES = [
     { mark: "confirmed", name: "A confirmed member", when: "The name points at a member whose state the site has confirmed." },
-    { mark: "kept", name: "A route kept", when: "A member is Unknown, or the controller awaits its peers. The route stays for now." },
+    { mark: "kept", name: "A route kept", when: "A member is Unknown, or the controller awaits its peers. A route is kept while a member is Unknown or the controller awaits its peers." },
     { mark: "nowhere", name: "Nowhere", when: "Two members are writable, the sites declare different primaries, or a member stays Unknown too long." },
 ] as const;
 
-export const LINKS = [
+/** Said once for both transports, after the table of links in guide/concepts.md. */
+export const LINK_FAILOVER = "When the active link fails, new connections move to the next one within 5 seconds.";
+
+export const LINKS: { name: string; flag: string; is: string; note?: string }[] = [
     {
         name: "Direct",
         flag: "transport: direct",
@@ -50,6 +56,5 @@ export const LINKS = [
         name: "WireGuard",
         flag: "transport: wireguard",
         is: "A kernel WireGuard tunnel between the gateways.",
-        note: "When the active link fails, new connections move to the next one within 5 seconds.",
     },
 ];

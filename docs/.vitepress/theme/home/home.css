@@ -72,6 +72,7 @@
     font-size: clamp(17px, 1.35vw, 20px);
     line-height: 1.55;
     color: var(--ship-on-hull);
+    text-wrap: pretty;
 }
 .sh-actions {
     display: flex;
@@ -130,6 +131,12 @@
     border-radius: var(--ship-radius);
     box-shadow: 0 24px 48px -12px rgb(16 26 23 / 0.55);
 }
+/* The sheet's own width, not the window's, decides which drawing shows. */
+.sh-body {
+    display: flex;
+    flex-direction: column;
+    container-type: inline-size;
+}
 .sh-sheet figcaption {
     padding: 14px 20px;
     border-bottom: 1px solid #2c3a36;
@@ -181,7 +188,13 @@
 /* The waterline: a white stripe, then the boot-top's ink band. */
 .sh-waterline {
     height: 18px;
-    background: linear-gradient(var(--ship-plane) 0 5px, var(--ship-ink) 5px);
+    background: var(--ship-band);
+}
+.sh-waterline::before {
+    content: "";
+    display: block;
+    height: 5px;
+    background: var(--ship-plane);
 }
 
 /* The chapters: a heavy heading at the left, the matter at the right. */
@@ -382,27 +395,32 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px 40px;
+    gap: 12px 24px;
     width: min(100%, 640px);
-    padding: 18px 22px;
+    padding: 12px 12px 12px 22px;
     background: #101a17;
     color: #e8f0ea;
-    border: 0;
     border-radius: var(--ship-radius);
     font-family: var(--ship-font-mono);
     font-size: 15.5px;
-    text-align: left;
-    cursor: pointer;
     overflow-wrap: anywhere;
 }
-.sh-command:hover .sh-copy {
-    color: #f3fbf6;
+.ship-home .sh-command-text {
+    font-size: inherit;
+    background: none;
+    color: inherit;
+    padding: 0;
 }
-.sh-command:focus-visible {
-    outline-color: #101a17 !important;
-    outline-offset: 4px;
+.sh-command-text span:last-child {
+    user-select: all;
 }
-.sh-copy {
+.ship-home .sh-copy {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 16px;
+    background: none;
+    border: 1.5px solid #97a8a1;
+    border-radius: var(--ship-radius);
     font-family: var(--ship-font);
     font-weight: 700;
     font-stretch: 78%;
@@ -410,6 +428,15 @@
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--ship-buff);
+    cursor: pointer;
+}
+.ship-home .sh-copy:hover {
+    border-color: #f3fbf6;
+    color: #f3fbf6;
+}
+.ship-home .sh-copy:focus-visible {
+    outline: 3px solid #f3fbf6;
+    outline-offset: 2px;
 }
 .sh-close p {
     max-width: 38em;
@@ -461,7 +488,9 @@
     color: var(--ship-on-hull-soft);
 }
 
-/* The drawing: two sites on the black hull. The route in use is drawn in the funnel's buff; the rest stays quiet. */
+/* The drawing: two sites on the black hull, drawn twice. The wide drawing puts the sites side by side, and the tall one stacks them for
+   a narrow sheet. The drawing that shows is always scaled so that its labels stay at 11px or more. The route in use is drawn in the
+   funnel's buff; the rest stays quiet. */
 .sh-drawing {
     display: block;
     width: 100%;
@@ -470,6 +499,28 @@
     font-family: var(--ship-font);
     font-size: 13px;
     fill: #e8f0ea;
+}
+.sh-drawing.tall {
+    display: none;
+}
+@container (max-width: 579px) {
+    .sh-drawing.wide {
+        display: none;
+    }
+    .sh-drawing.tall {
+        display: block;
+        max-width: 320px;
+        margin-inline: auto;
+    }
+    /* Stacked, the controls come first and stay in view while the drawing scrolls. */
+    .sh-controls {
+        order: -1;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #101a17;
+        padding-top: 12px;
+    }
 }
 .sh-drawing .frame {
     fill: none;
@@ -499,12 +550,12 @@
 }
 .sh-drawing .soft {
     fill: #c0cdc6;
-    font-size: 12px;
+    font-size: 12.5px;
 }
 .sh-drawing .wire,
 .sh-drawing .route {
     fill: none;
-    stroke: #4f5d58;
+    stroke: #8a9b94;
     stroke-width: 1.5;
 }
 .sh-drawing .route {
@@ -515,6 +566,14 @@
     stroke: var(--ship-buff);
     stroke-width: 3;
     stroke-dasharray: none;
+}
+/* The link is up in every moment: solid, never dotted. */
+.sh-drawing .route.link {
+    stroke-dasharray: none;
+    stroke-width: 2.5;
+}
+.sh-drawing .route.link.is-on {
+    stroke-width: 3;
 }
 .sh-drawing .name {
     stroke: var(--ship-buff);
@@ -541,12 +600,12 @@
 .sh-sheet figcaption {
     color: var(--ship-buff);
 }
+/* The caption holds the room of the longest one, so the sheet keeps its height at every width. */
 .sh-moment {
     display: grid;
     grid-template-columns: 14px minmax(0, 1fr);
     gap: 10px;
     align-items: start;
-    min-height: 5.2em;
     padding-top: 8px !important;
     font-size: 14.5px !important;
     line-height: 1.5;
@@ -562,6 +621,117 @@
     fill: none;
     stroke: #5cc98d;
     stroke-width: 2.6;
+}
+.sh-moment-text {
+    display: grid;
+}
+.sh-moment-text > span {
+    grid-area: 1 / 1;
+}
+.sh-moment-text > span + span {
+    visibility: hidden;
+}
+
+/* What a screen reader hears and the eye does not need. */
+.sh-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* The controls: pause, and a button for each moment. */
+.sh-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding: 6px 20px 12px;
+}
+.sh-ctl-moments {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sh-ctl-label {
+    font-size: 14px;
+    color: #97a8a1;
+}
+.sh-ctl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 14px;
+    background: none;
+    border: 1.5px solid #97a8a1;
+    border-radius: var(--ship-radius);
+    color: #e8f0ea;
+    font-family: var(--ship-font);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    transition:
+        background 0.2s,
+        color 0.2s,
+        border-color 0.2s;
+}
+.sh-ctl svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+.sh-ctl:hover {
+    border-color: #f3fbf6;
+}
+.sh-ctl.is-current {
+    background: var(--ship-buff);
+    border-color: var(--ship-buff);
+    color: #101a17;
+}
+.sh-ctl:focus-visible {
+    outline: 3px solid #f3fbf6;
+    outline-offset: 2px;
+}
+
+/* The key to the drawing's lines. */
+.sh-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 20px;
+    margin: 0;
+    padding: 0 20px 10px;
+    list-style: none;
+    font-size: 13px;
+    color: #c0cdc6;
+}
+.sh-key li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.sh-key svg {
+    width: 28px;
+    height: 8px;
+    fill: none;
+}
+.sh-key path {
+    stroke: #8a9b94;
+    stroke-width: 1.5;
+}
+.sh-key .in-use {
+    stroke: var(--ship-buff);
+    stroke-width: 3;
+}
+.sh-key .not-in-use {
+    stroke-dasharray: 3 5;
 }
 
 /* The routes: each by its mark, as strait explain prints it, with a word beside it. */
@@ -590,7 +760,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .sh-drawing * {
+    .sh-drawing *,
+    .sh-ctl {
         transition: none !important;
     }
 }

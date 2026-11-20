@@ -33,6 +33,16 @@
     --ship-code-accent: #edb23c;
     --ship-code-line: #2c3a36;
 
+    /* The line round a code block: the block's own black by day; by night a grey that shows against the dark plane. */
+    --ship-code-edge: #101a17;
+
+    /* The head band of a table: ink by day; by night the hull's deep colour, so no band is brighter than the page. */
+    --ship-head: var(--ship-ink);
+    --ship-on-head: var(--ship-plane);
+
+    /* The ring round a focused control: the link colour on a plane. A dark surface sets it again, to the light on the hull. */
+    --ship-focus: var(--ship-link);
+
     /* The band: the dark field of the home page. The black hull by day; at night, where the planes are dark, the hull's deep red. */
     --ship-band: #101a17;
     --ship-band-soft: #c0cdc6;
@@ -62,6 +72,10 @@
     --ship-link-hover: #a9e6d6;
 
     --ship-code-bg: #080d0b;
+    --ship-code-edge: #5a6a64;
+
+    --ship-head: var(--ship-hull-deep);
+    --ship-on-head: var(--ship-on-hull);
 
     --ship-band: #073a32;
     --ship-band-soft: #c4e3d9;
