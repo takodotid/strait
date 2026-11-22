@@ -4,9 +4,9 @@
 
 <p align="center">
     <a href="https://github.com/takodotid/strait/actions/workflows/ci.yaml?query=branch%3Amain"><img src="https://github.com/takodotid/strait/actions/workflows/ci.yaml/badge.svg?branch=main" alt="ci"></a>
-    <a href="https://github.com/takodotid/strait/releases"><img src="https://img.shields.io/github/v/release/takodotid/strait?label=release&color=b0127a" alt="release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-16233b" alt="license"></a>
-    <a href="https://strait.tako.id"><img src="https://img.shields.io/badge/docs-strait.tako.id-b0127a" alt="docs"></a>
+    <a href="https://github.com/takodotid/strait/releases"><img src="https://img.shields.io/github/v/release/takodotid/strait?label=release&color=0d5c50" alt="release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-101a17" alt="license"></a>
+    <a href="https://strait.tako.id"><img src="https://img.shields.io/badge/docs-strait.tako.id-0d5c50" alt="docs"></a>
 </p>
 
 <p align="center">
@@ -115,14 +115,9 @@ Strait is built with AI coding agents (Claude Code), and a person directs and ap
 - Before a release, the change is tested on real clusters, not only in CI.
 - Releases are signed, and every release asset can be verified (see [Verify a release](https://strait.tako.id/guide/install#verify-a-release)).
 
-<!-- The maintainers speak for themselves in the next two paragraphs. -->
-<!-- vale Strait.Pronouns = NO -->
+**Why the maintainers trust it in production:** the maintainers run Strait for their own databases. A router that sends writes to the wrong database would hurt them first.
 
-**Why we trust it in production:** we run Strait ourselves, for our own databases. A router that sends writes to the wrong database would hurt us first.
-
-If you find a problem, open an issue. Saying that it looks AI-written is fine, as long as you say what's wrong.
-
-<!-- vale Strait.Pronouns = YES -->
+To report a problem, open an issue. Saying that it looks AI-written is fine, as long as the issue says what is wrong.
 
 ## Contributing
 
