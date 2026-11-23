@@ -76,21 +76,21 @@ func (l *Local) DeleteExport(namespace, name string) {
 // limit when the document was generated.
 const ReasonObservationStale = "ObservationStale"
 
-// MinAgeLimit is the least age limit of an observation. A member is observed again at each decision, at least every
-// 2s, and the decisions of every SiteService share one worker. A shorter limit would age the members of a healthy site.
+// MinAgeLimit is the least age limit of an observation. A member is observed at each decision, at least every 2s,
+// and the decisions of every SiteService share one worker. A shorter limit would age the members of a healthy site.
 const MinAgeLimit = 6 * time.Second
 
-// ExportRefresh is the longest time between two reads of an Export's readiness while nothing changes. The reconcile
-// of an Export also comes at each change of its Service's EndpointSlices.
+// ExportRefresh is the longest time between two reads of an Export's readiness while nothing changes. An Export is
+// also reconciled at each change of its Service's EndpointSlices.
 const ExportRefresh = 30 * time.Second
 
 // Document returns the document of the site, sorted by namespace and name.
 // A SiteService with no member at the site is left out.
 // A member whose last observation is older than maxAge at now, or than MinAgeLimit if that is more, is published as
-// Unknown, with no address, so that a reconcile that hangs does not keep an old observation fresh at the peers
+// Unknown, with no address, so a reconcile that hangs does not keep an old observation fresh at the peers
 // (RFC#0004). Its declaration stays as last observed. An Export whose readiness was last read longer ago than
-// ExportRefresh and that limit is published not ready, with its port. A maxAge of 0 ages nothing. now must come from
-// time.Now, and so must the observation times, so that the age is measured on the monotonic clock.
+// ExportRefresh and that limit is published not ready, with its port. A maxAge of 0 ages nothing. now and the
+// observation times must come from time.Now, so the age is measured on the monotonic clock.
 func (l *Local) Document(site string, now time.Time, maxAge time.Duration) Document {
 	l.mu.Lock()
 	defer l.mu.Unlock()

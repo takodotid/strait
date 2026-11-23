@@ -1,6 +1,6 @@
 # Sizing the controller
 
-The controller's memory grows with the Services and EndpointSlices that its cache holds. By default, that is every one in the cluster.
+The controller's memory grows with the Services and EndpointSlices that its cache holds: all of the cluster's, or only those of `controller.namespaces` with `controller.namespacedReads`.
 
 ## Setting the limit
 
@@ -18,8 +18,8 @@ The values that set it:
 
 | Value | Effect |
 |---|---|
-| `controller.resources.limits.memory` | The container's limit, 256Mi by default. The controller sets the Go runtime's soft memory limit to 90% of it. |
-| `controller.resources.requests.memory` | 64Mi by default. Raise it together with the limit, so that the scheduler finds the room. |
+| `controller.resources.limits.memory` | The container's limit, 256Mi. The controller sets the Go runtime's soft memory limit to 90% of it. |
+| `controller.resources.requests.memory` | 64Mi. Raise it together with the limit, so that the scheduler finds the room. |
 
 A controller that runs out of memory restarts. Until the next one serves, the other sites count this site's members `Unknown` ([RFC0004](../rfcs/RFC0004.md)). The alert `StraitNoController` fires at this site, and `StraitPeerUnreachable` at the others ([Metrics and alerts](metrics.md)).
 

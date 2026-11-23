@@ -87,8 +87,8 @@ spec:
                       type: ClusterIP
                     description: |-
                       DirectService sets how peers reach the control port and the export ports over direct links.
-                      It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
-                      A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
+                      ClusterIP unless set. NodePort and LoadBalancer carry the export ports in clear, so a site with a direct link
+                      sets NodePort or an internal LoadBalancer, exposed on the private link only.
                     properties:
                       allocateLoadBalancerNodePorts:
                         description: AllocateLoadBalancerNodePorts false gives a LoadBalancer
@@ -207,9 +207,9 @@ spec:
                       renewDeadline:
                         default: 4s
                         description: |-
-                          RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A stall of the API
-                          server that lasts longer hands the gateway over to another replica. At least 1s, more than 1.2 times
-                          retryPeriod, and at least 1s shorter than duration.
+                          RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A longer API server
+                          stall hands the gateway to another replica. At least 1s, more than 1.2 times retryPeriod, and at least 1s
+                          shorter than duration.
                         type: string
                       retryPeriod:
                         default: 1s
@@ -498,8 +498,8 @@ spec:
                       type: ClusterIP
                     description: |-
                       DirectService sets how peers reach the control port and the export ports over direct links.
-                      It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
-                      A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
+                      ClusterIP unless set. NodePort and LoadBalancer carry the export ports in clear, so a site with a direct link
+                      sets NodePort or an internal LoadBalancer, exposed on the private link only.
                     properties:
                       allocateLoadBalancerNodePorts:
                         description: AllocateLoadBalancerNodePorts false gives a LoadBalancer
@@ -618,9 +618,9 @@ spec:
                       renewDeadline:
                         default: 4s
                         description: |-
-                          RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A stall of the API
-                          server that lasts longer hands the gateway over to another replica. At least 1s, more than 1.2 times
-                          retryPeriod, and at least 1s shorter than duration.
+                          RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A longer API server
+                          stall hands the gateway to another replica. At least 1s, more than 1.2 times retryPeriod, and at least 1s
+                          shorter than duration.
                         type: string
                       retryPeriod:
                         default: 1s

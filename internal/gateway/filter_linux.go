@@ -13,9 +13,9 @@ import (
 )
 
 // The nftables table of the gateway pod's network namespace that filters what arrives on the WireGuard interfaces.
-// Its input chain admits what is addressed to a tunnel address. Its forward chain drops all of it: a pod's namespace
-// can forward, since IPv4 forwarding starts as the node's. Only the gateway agent may change the namespace's netfilter
-// state: Envoy has no capability.
+// Its input chain admits what is addressed to a tunnel address. Its forward chain drops all of it, because a pod's
+// namespace can forward: IPv4 forwarding starts as the node's. Only the gateway agent may change the namespace's
+// netfilter state; Envoy has no capability.
 var filterTable = &nftables.Table{Name: "strait", Family: nftables.TableFamilyINet}
 
 // filterSet is the set of the tunnel addresses of one family, and where that family's packets hold the destination.

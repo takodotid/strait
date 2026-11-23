@@ -39,7 +39,7 @@ const resync = 2 * time.Second
 // statusRefresh bounds the age of the timestamps in a SiteService's status.
 const statusRefresh = 10 * time.Second
 
-// statusTimeout bounds the status write that follows a decision. It has its own time, apart from the reconcile's.
+// statusTimeout bounds the status write that follows a decision. It is separate from the reconcile's time.
 const statusTimeout = 5 * time.Second
 
 // SiteServiceReconciler decides each SiteService's route and writes its Service and EndpointSlices.
@@ -47,8 +47,8 @@ type SiteServiceReconciler struct {
 	client.Client
 	// Reader is what the controller reads its inputs through. Plugins get it wrapped by plugin.ReadOnly.
 	Reader client.Reader
-	// APIReader reads from the API server, with no cache. A write of an EndpointSlice that finds the cache behind the
-	// controller's own last write of it reads the slice through APIReader, and writes again. Nil writes once.
+	// APIReader reads from the API server, with no cache. When the cache lags the controller's last write of an
+	// EndpointSlice, the write rereads the slice through APIReader and runs again. Nil writes once.
 	APIReader client.Reader
 	Recorder  events.EventRecorder
 	Peers     Peers
@@ -61,8 +61,8 @@ type SiteServiceReconciler struct {
 	confirmed map[types.NamespacedName]map[string]time.Time
 	// written keeps what the last status write of each SiteService returned, until the cache shows it.
 	written written[straitv1.SiteService, *straitv1.SiteService]
-	// inPlace keeps, by SiteService, the EndpointSlices in place after the last apply, so that a slice the cache does
-	// not show yet is still deleted.
+	// inPlace keeps, by SiteService, the EndpointSlices in place after the last apply, so a slice the cache lacks is
+	// still deleted.
 	inPlace map[types.NamespacedName]map[string]discoveryv1.EndpointSlice
 	// decided keeps, by SiteService, the members of the last decision: the next decision's previous route.
 	decided map[types.NamespacedName][]string
@@ -145,7 +145,7 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			confirmed[name] = now
 		}
 	}
-	// The startup hold counts from the first poll. Before it, polling has not begun, and the hold has just begun.
+	// The startup hold counts from the first poll. Before polling begins, the hold has just begun.
 	started := r.Peers.Started()
 	if started.IsZero() {
 		started = now
@@ -167,8 +167,8 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	inPlace, err := r.slicesInPlace(ctx, &svc)
 	if errors.Is(err, ErrNotRead) {
-		// The controller writes no EndpointSlice in a namespace where it reads none. The apply stops at its first read
-		// there, and status says why (RFC#0007, requirement 26).
+		// The controller writes no EndpointSlice in a namespace where it reads none. The apply stops at its first
+		// read there, and status says why (RFC#0007, requirement 26).
 		inPlace, err = map[string]discoveryv1.EndpointSlice{}, nil
 	}
 	if err != nil {
@@ -216,25 +216,24 @@ func (r *SiteServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: r.next(&svc, result, in, confirmed, now)}, nil
 }
 
-// startupStatus returns the result that the status shows. Until the first poll of every peer has ended, read or not,
-// while a site with a member has not been read, the reason is AwaitingPeers and the message gives the decision's
-// reason. With a startup hold, this ends at the latest when the hold ends. The route, and so the endpoints, stay the
-// decision's.
+// startupStatus returns the result that status shows. While a site with a member is unread and the first poll of
+// every peer has not ended, the reason is AwaitingPeers and the message carries the decision's reason. With a startup
+// hold, this ends when the hold ends at the latest. The route and endpoints stay the decision's.
 func startupStatus(result decide.Result, in decide.Input, polled bool) decide.Result {
 	unread := in.Unread()
 	hold := in.Spec.Policy.StartupHold.Duration
 	if polled || len(unread) == 0 || result.Reason == straitv1.ReasonAwaitingPeers || (hold > 0 && in.Now.Sub(in.Started) >= hold) {
 		return result
 	}
-	result.Message = fmt.Sprintf("the first poll of every peer since the controller started has not ended, and site %s is not read yet; the decision is %s: %s",
+	result.Message = fmt.Sprintf("the first poll of every peer has not ended, and site %s is not read yet; the decision is %s: %s",
 		strings.Join(unread, ", "), result.Reason, result.Message)
 	result.Reason = straitv1.ReasonAwaitingPeers
 	return result
 }
 
 // previousRoute returns the members of the last decision. After a start, it returns the members of status.route that
-// have an EndpointSlice in place. Status alone can be older than the last decision, when a status write failed, and the
-// slices alone can hold a member that the last decision dropped, when its delete failed.
+// have an EndpointSlice in place. Status alone can lag the last decision (a status write failed); slices alone can
+// hold a member it dropped (its delete failed).
 func (r *SiteServiceReconciler) previousRoute(svc *straitv1.SiteService, inPlace map[string]discoveryv1.EndpointSlice) []string {
 	if members, ok := r.decided[client.ObjectKeyFromObject(svc)]; ok {
 		return members
@@ -248,9 +247,9 @@ func (r *SiteServiceReconciler) previousRoute(svc *straitv1.SiteService, inPlace
 	return out
 }
 
-// lastConfirmed returns each member's last confirmed time, from memory or else from status. A time in status was
-// written by the controller that ran before, on its own node's clock. One later than now counts as now, so that a hold
-// after a restart lasts at most unknownHold (RFC#0002, requirement 17).
+// lastConfirmed returns each member's last confirmed time, from memory or else from status. A status time came from
+// the previous controller, on its own node's clock. One later than now counts as now, so a hold after a restart lasts
+// at most unknownHold (RFC#0002, requirement 17).
 func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService, now time.Time) map[string]time.Time {
 	if r.confirmed == nil {
 		r.confirmed = map[types.NamespacedName]map[string]time.Time{}
@@ -272,8 +271,8 @@ func (r *SiteServiceReconciler) lastConfirmed(svc *straitv1.SiteService, now tim
 	return m
 }
 
-// next returns when to decide again: at the next resync, or when a hold expires, or when the site would count as
-// isolated, whichever is first.
+// next returns when to decide again: the next resync, a hold's expiry, or the moment the site would count as isolated,
+// whichever is first.
 func (r *SiteServiceReconciler) next(svc *straitv1.SiteService, result decide.Result, in decide.Input, confirmed map[string]time.Time, now time.Time) time.Duration {
 	ends := make([]time.Time, 0, len(result.Held)+2)
 	for _, m := range result.Held {
@@ -404,7 +403,7 @@ type target struct {
 }
 
 // targets returns where each routed member takes traffic. A member with no target is left out. Dropped holds, by
-// member, the addresses from a peer's document that endpoint-direct does not accept, with the reason.
+// member, the peer-document addresses that endpoint-direct rejects, with the reason.
 func (r *SiteServiceReconciler) targets(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation) (out map[string]target, dropped map[string][]string, err error) {
 	direct, err := endpointDirectPeers(ctx, r.Reader)
 	if err != nil {
@@ -460,9 +459,9 @@ type directRanges struct {
 	prefixes []netip.Prefix
 }
 
-// accept returns, in their canonical form, the addresses that endpoint-direct accepts, and each other address with
-// the reason it is dropped. The addresses come from a peer's document, so none is trusted to be an IP address, and a
-// dropped one is cut to 64 bytes: it goes into a condition's message, which the API server limits.
+// accept returns, in canonical form, the addresses that endpoint-direct accepts, and each other address with its
+// drop reason. The addresses come from a peer's document, so none is trusted to be an IP address. A dropped one is
+// cut to 64 bytes: it goes into a condition's message, which the API server limits.
 func (d directRanges) accept(addresses []string) (ok, dropped []string) {
 	for _, a := range addresses {
 		ip, err := netip.ParseAddr(a)
@@ -485,7 +484,7 @@ func (d directRanges) accept(addresses []string) (ok, dropped []string) {
 }
 
 // endpointDirectPeers returns, for each peer whose active link is a healthy direct link with endpointDirect, the
-// ranges that the link accepts member addresses from.
+// ranges the link accepts member addresses from.
 func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]directRanges, error) {
 	var links straitv1.SiteLinkList
 	if err := r.List(ctx, &links); err != nil {
@@ -507,8 +506,8 @@ func endpointDirectPeers(ctx context.Context, r client.Reader) (map[string]direc
 	return out, nil
 }
 
-// slicesInPlace returns the application name's EndpointSlices by name: those that the cache lists, and those that
-// this controller left in place at its last apply, which the cache may not show yet.
+// slicesInPlace returns the application name's EndpointSlices by name: those the cache lists, and those this
+// controller left in place at its last apply, which the cache may not show yet.
 func (r *SiteServiceReconciler) slicesInPlace(ctx context.Context, svc *straitv1.SiteService) (map[string]discoveryv1.EndpointSlice, error) {
 	var list discoveryv1.EndpointSliceList
 	if err := r.List(ctx, &list, client.InNamespace(svc.Namespace), client.MatchingLabels{LabelSiteService: svc.Name, LabelManagedBy: ManagedBy}); err != nil {
@@ -561,8 +560,8 @@ func (a applied) in(svc *straitv1.SiteService, member string) (discoveryv1.Endpo
 //  2. it writes the Exports and Imports, then the Service;
 //  3. it writes the slice of each routed member with a target.
 //
-// A member leaves the route before another joins it, and a failure after step 1 leaves no member that the decision
-// dropped. When the targets cannot be read, step 1 keeps the slices of every routed member.
+// A member leaves the route before another joins, and a failure after step 1 leaves no member the decision dropped.
+// When the targets cannot be read, step 1 keeps the slices of every routed member.
 func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteService, site *straitv1.Site, members []string, observations map[string]observe.Observation, report observe.Report, inPlace map[string]discoveryv1.EndpointSlice) (a applied) {
 	a = applied{slices: inPlace, written: map[string]straitv1.Path{}, owed: map[string]bool{}}
 	if r.inPlace == nil {
@@ -614,8 +613,8 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	}
 	for _, member := range slices.Sorted(maps.Keys(targets)) {
 		t := targets[member]
-		// A slice's address type cannot change. A slice that would hold none of the member's addresses is deleted,
-		// and written again with their address type (issue #38). The cache can still show the deleted slice, so the
+		// A slice's address type cannot change. A slice that would hold none of the member's addresses is deleted
+		// and written again with their address type. The cache may still show the deleted slice, so the
 		// new one is written over what the API server holds.
 		deleted := false
 		if name := memberObjectName(svc, member); !hasFamily(t.addresses, a.slices[name].AddressType) {
@@ -638,12 +637,12 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	return a
 }
 
-// writeSlice writes the EndpointSlice of one routed member. Right after the controller's own last write of the slice,
-// the cache may not show that write yet: a create then finds that the slice exists, and an update finds a newer
-// version, or none after a delete. The slice is then read from the API server, and written once more (issue #38).
-// Live reads it from the API server at once, as after the controller deleted it. So does a cache whose copy is not
-// inPlace, the slice as the controller last wrote or read it: a write that only compared the wanted slice with an
-// older copy in the cache could find them equal, and send nothing over a newer version (issue #45).
+// writeSlice writes the EndpointSlice of one routed member. Right after the controller's own write, the cache may
+// not show it yet: a create finds the slice exists, and an update finds a newer version, or none after a delete. The
+// slice is then read from the API server and written once more.
+// Live reads from the API server at once, as after the controller deleted the slice. So does a cache whose copy is
+// not inPlace, the slice as the controller last wrote or read it: comparing the wanted slice with an older cached
+// copy could find them equal and send nothing over a newer version.
 func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool, inPlace discoveryv1.EndpointSlice) (*discoveryv1.EndpointSlice, error) {
 	if !live && r.APIReader != nil && inPlace.ResourceVersion != "" {
 		var cached discoveryv1.EndpointSlice
@@ -723,8 +722,8 @@ func addressType(addresses []string) discoveryv1.AddressType {
 }
 
 // writeStatus writes the status of a decision and of its apply. The route shows the decision's members, less each
-// member whose EndpointSlice the apply had to write and that is not in place. The endpoints, the paths and the Routed
-// condition show the EndpointSlices in place.
+// member whose slice the apply had to write and that is not in place. The endpoints, paths and Routed condition show
+// the EndpointSlices in place.
 func (r *SiteServiceReconciler) writeStatus(ctx context.Context, svc *straitv1.SiteService, sites map[string]decide.SiteView, observations map[string]observe.Observation, confirmed map[string]time.Time, result decide.Result, a applied, now time.Time) error {
 	old := svc.Status.DeepCopy()
 	st := &svc.Status

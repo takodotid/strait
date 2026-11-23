@@ -17,8 +17,7 @@ import (
 var gatewayLabels = map[string]string{"app.kubernetes.io/name": "strait", "app.kubernetes.io/component": "gateway"}
 
 // The gateway's PodDisruptionBudget lets a drain evict one gateway pod at a time, and a pod that is not ready at any
-// time, so a ready standby stays for the Lease and one replica never blocks a drain. It is on by default
-// (issue #30, row 20).
+// time, so a ready standby stays for the Lease and one replica never blocks a drain. It is on by default.
 func TestGatewayDisruptionBudget(t *testing.T) {
 	r := render(t)
 	pdb, ok := r.disruptionBudgets["strait-gateway"]
@@ -46,8 +45,7 @@ func TestGatewayDisruptionBudget(t *testing.T) {
 }
 
 // Each pod takes its priorityClassName, nodeSelector, tolerations and affinity from the values. With none set, the
-// pods are as before: no priority class, node selector or tolerations, and the gateway's preferred anti-affinity
-// (issue #30, row 20).
+// pods are as before: no priority class, node selector or tolerations, and the gateway's preferred anti-affinity.
 func TestScheduling(t *testing.T) {
 	r := render(t)
 	for name, pod := range r.pods {
@@ -119,7 +117,7 @@ func TestAntiAffinityValue(t *testing.T) {
 
 // The pre-pull Job runs before an upgrade or a rollback, never at install, with the controller's image and its
 // scheduling values. With no controller affinity set, it prefers the node of the running controller pod. It fails
-// within its deadline, and is off with controller.prePull.enabled false (issue #30, row 15).
+// within its deadline, and is off with controller.prePull.enabled false.
 func TestPrePull(t *testing.T) {
 	out, err := helmTemplate(t, "controller.nodeSelector.zone=a", "controller.prePull.deadlineSeconds=120")
 	if err != nil {

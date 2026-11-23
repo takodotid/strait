@@ -577,11 +577,11 @@ func memberReason(ctx context.Context, s *site, member string) (string, error) {
 	return "", fmt.Errorf("no member %s", member)
 }
 
-// roleCheck: with confirmRole on pg at site a, the controller connects to pg-a's database with a role that has
-// LOGIN and nothing else, and pg-a stays routed while pg_is_in_recovery() agrees with the Cluster (RFC0003,
-// requirement 14). When the role's password no longer matches, the check fails, pg-a is Unknown with reason
-// RoleNotConfirmed, and site a stops routing it once unknownHold has passed. With the password back, pg-a is routed
-// again. The policy is off afterwards.
+// roleCheck: with confirmRole on pg at site a, the controller connects to pg-a's database with a role that has LOGIN
+// and nothing else, and pg-a stays routed while pg_is_in_recovery() agrees with the Cluster (RFC0003, requirement 14).
+// When the role's password no longer matches, the check fails, pg-a is Unknown with reason RoleNotConfirmed, and site
+// a stops routing it once unknownHold has passed. With the password back, pg-a is routed again. The policy is off
+// afterwards.
 func (e *env) roleCheck(ctx context.Context, t *testing.T) {
 	a := e.a
 	pgA := []string{memberOf(a)}

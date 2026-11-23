@@ -26,8 +26,8 @@ type RoleChecker interface {
 var ErrNoCredentials = errors.New("the controller has no role check credentials: set the chart value cnpg.confirmRole.secretName")
 
 // PGRoleChecker runs SELECT pg_is_in_recovery() over TLS, with the user name and password in the files username and
-// password of Dir. It reads them at each check, so that a new Secret takes effect without a restart. The role needs
-// LOGIN and nothing else. It never writes.
+// password of Dir. It reads them at each check, so a new Secret takes effect without a restart. The role needs LOGIN
+// and nothing else. It never writes.
 type PGRoleChecker struct {
 	Dir string
 }
@@ -47,8 +47,8 @@ func (c PGRoleChecker) InRecovery(ctx context.Context, address string, port int3
 	}
 	ctx, cancel := context.WithTimeout(ctx, RoleCheckTimeout)
 	defer cancel()
-	// Only the host, the port and the TLS mode come from the string. sslmode=require encrypts and does not fall back
-	// to plain text.
+	// Only the host, the port and the TLS mode come from the string. sslmode=require encrypts, with no fallback to
+	// plain text.
 	cfg, err := pgconn.ParseConfig("dbname=postgres sslmode=require application_name=strait-role-check")
 	if err != nil {
 		return false, err

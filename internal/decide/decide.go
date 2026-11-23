@@ -20,7 +20,7 @@ type SiteView struct {
 	// Declared is the member the site declares primary. Empty when it declares none.
 	Declared string
 	// Conflicting holds the members that the site's workloads declare primary, when they name more than one. Only the
-	// local site's view holds it: the site declares none to its peers then.
+	// local site's view holds it; the site then declares none to its peers.
 	Conflicting []string
 }
 
@@ -41,8 +41,7 @@ type Input struct {
 	Started time.Time
 	// Read holds the peers whose document was read at least once since Started.
 	Read map[string]bool
-	// Peers is the number of peers that the controller polls: the local site's SitePeers, or none while polling is
-	// off.
+	// Peers is the number of peers the controller polls: the local site's SitePeers, or none while polling is off.
 	Peers int
 	// LastPeerRead is the last time a document of any peer was read. Zero when none was. The isolated-site policy
 	// counts from it, or from Started if that is later.
@@ -57,12 +56,12 @@ type Result struct {
 	Message string
 	// Multiple is true when two or more members are writable. Single mode only.
 	Multiple bool
-	// Disagree is true when two known sites declare different primaries, or the workloads of one site do. Single mode only.
+	// Disagree is true when two known sites, or the workloads of one site, declare different primaries. Single mode only.
 	Disagree bool
 	// Held are the routed members kept while Unknown.
 	Held []string
 	// Unmatched holds each declaration of a known site that is no member's name, such as "site a declares pg-east",
-	// in site order. It changes nothing else of the result. Single mode only.
+	// in site order. Nothing else in the result changes. Single mode only.
 	Unmatched []string
 }
 
@@ -188,8 +187,8 @@ func (in Input) awaiting() []string {
 }
 
 // Isolated reports whether the local site counts as isolated (RFC#0002, requirement 45), and for how long no peer
-// has been read: isolationTimeout is set, a member is at another site, the controller polls a peer, no peer is known,
-// and no peer was read for isolationTimeout, counted from Started at the earliest.
+// has been read. It does when isolationTimeout is set, a member is at another site, the controller polls a peer, no
+// peer is known, and no peer was read for isolationTimeout, counted from Started at the earliest.
 func (in Input) Isolated() (time.Duration, bool) {
 	starts := in.IsolationStarts()
 	if starts.IsZero() {
@@ -227,9 +226,8 @@ func (in Input) remoteMember() bool {
 	return false
 }
 
-// decideSingle applies the isolated-site policy and the startup hold to the route that the table picks: it never
-// routes to a local member while the site is isolated or the hold lasts. Isolation comes first (RFC#0002,
-// requirement 47).
+// decideSingle applies the isolated-site policy and the startup hold to the route the table picks: it never routes to
+// a local member while the site is isolated or the hold lasts. Isolation comes first (RFC#0002, requirement 47).
 func decideSingle(in Input) Result {
 	r := singleTable(in)
 	if len(r.Members) != 1 || !in.local(r.Members[0]) {

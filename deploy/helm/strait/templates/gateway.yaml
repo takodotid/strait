@@ -166,8 +166,8 @@ spec:
                       fieldRef: {fieldPath: metadata.namespace}
 {{- if .Values.gateway.podDisruptionBudget.enabled }}
 ---
-# A drain evicts one gateway pod at a time, so a standby is ready to take the Lease. A pod that is not ready can be
-# evicted at any time, so it does not block a drain.
+# A drain evicts one gateway pod at a time, so a standby is ready to take the Lease. A pod that is not ready can be evicted
+# at any time, so it does not block a drain.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

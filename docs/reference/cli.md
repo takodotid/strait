@@ -64,6 +64,6 @@ On Windows, put a copy of `kubectl-strait.exe` named `kubectl_complete-strait.ex
 
 | Difference | Detail |
 |---|---|
-| Exit status of `kubectl strait` | 1 on every failure, and kubectl adds the line `Error: exit status N`, because on Windows kubectl runs a plugin as a child process. `strait.exe` exits with 0, 1 or 2 as on other systems. |
+| Exit status of `kubectl strait` | 1 on every failure. kubectl adds the line `Error: exit status N`, because on Windows it runs a plugin as a child process. `strait.exe` exits as [RFC0006](../../rfcs/RFC0006.md) requirement 11 says. |
 | Man pages | Windows has no `man`. `strait --help` and `strait COMMAND --help` hold the same text. |
 | Skill document | Copy `SKILL.md` from the archive into `<skills dir>\strait\`. In Windows PowerShell 5.1, `strait --skill > SKILL.md` writes UTF-16LE, not the UTF-8 that `strait` prints. |

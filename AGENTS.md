@@ -115,6 +115,29 @@ The resources Strait serves are its contract with its users.
 - **A fact lives in one doc;** link, don't copy.
 - Talk to the operator in their language, just as plain.
 
+### Keeping text lean
+
+- **Search before adding.** Before writing a fact, `rg` for it. If a page owns it, link there.
+- **Never grow prose back.** An edit keeps or lowers the word count of what it touches, unless it adds a new fact. Never restore cut text, or add reasons, examples or restatements to it.
+- **Effect, then action.** A table cell or a comment states the effect and what to do, in one or two sentences, about 30 words at most. The mechanism lives in the requirement or RFC it cites. More becomes a list or a section.
+- **No history anywhere:** no issue, PR or review references such as `(#35)` or `#35 row 47`, no "since v1.3.0" or "used to". Per-release notes live only in the upgrade and rollback guides. `make prose` checks the references.
+- **No line references into other projects' source.** Name the version, link the upstream docs.
+- **No meta lines:** no `This page explains`, no recap, no sentence that repeats a heading, table, code block or link text.
+- **RFC Requirements hold rules only.** Reasons go in Motivation, never deleted; steps go in `docs/runbooks/`.
+- **README is a pitch and links.** It holds no commands or tables from the guides.
+
+|Fact|Owner|
+|---|---|
+|What Strait never does, and routing nowhere rather than to a guess|`docs/limitations.md`|
+|Route outcomes, holds, isolation|RFC0002|
+|Gateway Lease, failover sequence, node ports|RFC0005|
+|A gateway handover resets connections|`docs/runbooks/gateway-handover.md`|
+|The status check after a change|`docs/runbooks/upgrade.md`, step 3|
+|The CloudNativePG replica step|`docs/runbooks/site-loss.md`, step 3|
+|startupHold|`docs/runbooks/site-return.md`|
+|Per-release notes|`docs/runbooks/upgrade.md`, `docs/runbooks/rollback.md`|
+|End-to-end tests and CI timings|`test/e2e/README.md`|
+
 ## Commits
 
 Conventional commits: `type(scope): subject`. The type is one of `feat`, `fix`, `docs`, `chore`, `refactor` or `test`. The scope is an area or an RFC, for example `docs(rfc0002): define the link resource`.
@@ -135,7 +158,7 @@ Commit and push only when the operator asks.
 | `make test-race` | Runs the unit tests of `make test` with the race detector. |
 | `make test-envoy` | Runs the xDS configuration in a real Envoy, the chart's image, in docker. |
 | `make test-netns` | Runs the gateway's WireGuard interfaces and their filter in network namespaces, in docker. Needs the `wireguard` module. |
-| `make prose` | Lints the prose of every tracked Markdown file and Vue template with `vale`, by the rules of Writing. The rules are in `hack/vale/Strait/`. |
+| `make prose` | Lints the prose of every tracked Markdown file and Vue template, and the history references in Go comments, with `vale`, by the rules of Writing. The rules are in `hack/vale/Strait/`. |
 | `make docs` | Writes the man pages and the skill document into `bin/`. |
 | `make images` | Builds the container image. |
 | `make e2e` | Runs the end-to-end tests on kind clusters named `strait-e2e-*`. |

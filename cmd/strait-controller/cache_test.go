@@ -93,7 +93,7 @@ func startCache(t *testing.T, ctx context.Context, cfg *rest.Config, scheme *k8s
 	return c
 }
 
-// TestCacheStripsManagedFields: the controller's cache holds no managedFields (issue #46, row 19). A write from a
+// TestCacheStripsManagedFields: the controller's cache holds no managedFields. A write from a
 // copy read from that cache leaves the API server's managedFields in place.
 func TestCacheStripsManagedFields(t *testing.T) {
 	cfg := apiServer(t)

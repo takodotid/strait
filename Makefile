@@ -43,8 +43,8 @@ GOARCH ?= $(shell go env GOARCH)
 DIST := dist/strait_$(VERSION)_$(GOOS)_$(GOARCH)
 EXE := $(if $(filter windows,$(GOOS)),.exe)
 ARCHIVE := $(DIST)$(if $(filter windows,$(GOOS)),.zip,.tar.gz)
-# The time of every entry of the CLI archive, and the date of its man pages: the commit's time, read once, so that two
-# builds of one commit give the same archive (RFC0006 requirement 17). Without git, the current time.
+# The time of every entry of the CLI archive and the date of its man pages: the commit's time, read once, so two builds
+# of one commit give the same archive (RFC0006 requirement 17). Without git, the current time.
 ifndef SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH := $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
 endif
@@ -80,8 +80,8 @@ lint: ## Verify the module's downloads, scan for known vulnerabilities, run stat
 	hack/release/pinned.sh
 
 .PHONY: prose
-prose: ## Lint the prose of every tracked Markdown file and Vue template with vale, by the rules of .vale.ini. Needs vale.
-	git ls-files -z '*.md' '*.vue' | xargs -0 vale
+prose: ## Lint the prose of every tracked Markdown file, Vue template and Go comment with vale, by the rules of .vale.ini. Needs vale.
+	git ls-files -z '*.md' '*.vue' '*.go' | xargs -0 vale
 
 # The Kubernetes versions of envtest's kube-apiserver and etcd, which run the CRDs' rules in make test: the oldest that
 # the README supports, and the latest.

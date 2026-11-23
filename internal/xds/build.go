@@ -338,8 +338,8 @@ func baseCluster(name string) *cluster.Cluster {
 }
 
 // exportCheck checks an import's export at the peer, on a new connection each time. The peer replaces its control
-// listener whenever its exports change, and Envoy serves a connection opened before that with the old listener until
-// it drains it. A reused connection opened before the peer had the export's health filter would keep failing.
+// listener whenever its exports change, and Envoy serves an older connection with the old listener until it drains.
+// A reused connection opened before the peer had the export's health filter would keep failing.
 func exportCheck(namespace, export string) *core.HealthCheck {
 	c := httpCheck(ExportHealthPath(namespace, export))
 	c.ReuseConnection = wrapperspb.Bool(false)

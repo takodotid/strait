@@ -125,11 +125,11 @@ func status(w http.ResponseWriter, code int, reason metav1.StatusReason, msg str
 	})
 }
 
-// A request on the gateway Lease that the API server never answers does not hold a standby's takeover: the request ends
-// at its timeout, half the renew deadline, and the standby tries again. Another replica, gw-1, holds the Lease and has
-// stopped renewing it. The standby takes it within lease.duration + 4.4 x lease.retryPeriod + that timeout of when it
-// joins the election (RFC0005, requirements 49 and 50; issue #61). The cases hang the standby's first read of the
-// Lease, and its first write that takes it.
+// A request on the gateway Lease that the API server never answers does not hold a standby's takeover: it ends at its
+// timeout, half the renew deadline, and the standby tries again. Another replica, gw-1, holds the Lease and has
+// stopped renewing it. The standby takes it within lease.duration + 4.4 x lease.retryPeriod + that timeout of joining
+// the election (RFC0005, requirements 49 and 50). The cases hang the standby's first read of the Lease,
+// and its first write that takes it.
 func TestStandbyTakesTheLeaseWhileARequestHangs(t *testing.T) {
 	timing := straitv1.GatewayLease{
 		Duration:      metav1.Duration{Duration: 2 * time.Second},

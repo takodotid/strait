@@ -38,7 +38,7 @@ export const PATH = [
 
 export const ROUTES = [
     { mark: "confirmed", name: "A confirmed member", when: "The name points at a member whose state the site has confirmed." },
-    { mark: "kept", name: "A route kept", when: "A member is Unknown, or the controller awaits its peers. A route is kept while a member is Unknown or the controller awaits its peers." },
+    { mark: "kept", name: "A route kept", when: "A member is Unknown, or the controller awaits its peers." },
     { mark: "nowhere", name: "Nowhere", when: "Two members are writable, the sites declare different primaries, or a member stays Unknown too long." },
 ] as const;
 

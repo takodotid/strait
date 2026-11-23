@@ -160,7 +160,7 @@ func TestLinkStatus(t *testing.T) {
 
 // A direct link with endpointDirect has the condition EndpointsLimited, False while it sets no endpointCIDRs. Other
 // links lose it. A status that an earlier release wrote, with Healthy only, gains it, and keeps Healthy as it was
-// (RFC0005, requirement 48; issue #60).
+// (RFC0005, requirement 48).
 func TestEndpointsLimitedCondition(t *testing.T) {
 	t0 := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	ok := Observation{Healthy: true, Active: true, Reason: "HealthCheckPassed", Message: "ok"}

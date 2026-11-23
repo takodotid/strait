@@ -138,9 +138,9 @@ func (s *Server) Start(ctx context.Context) error {
 var LoopGrace = 30 * time.Second
 
 // Alive returns an error once the rebuild loop is overdue: more than twice the resync period, plus 30s, after its
-// last turn began. A rebuild reads only the controller's cache, and hands each node's configuration to its stream
-// without waiting for the node, so neither a slow API server nor a gateway that does not answer delays it. Before
-// Start, it returns nil. now must come from time.Now.
+// last turn began. A rebuild reads only the controller's cache and hands each node's configuration to its stream
+// without waiting for the node, so a slow API server or an unresponsive gateway cannot delay it. Before Start, it
+// returns nil. now must come from time.Now.
 func (s *Server) Alive(now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -223,9 +223,9 @@ type response struct{ nonce, version string }
 // older nonce.
 //
 // A request that rejects a response names the version that the node accepted last. go-control-plane would answer it
-// at once with the version in the cache, the one rejected, and the node would reject it again, in a loop with no
-// pause. So answered sets the request's version to the rejected one: the cache then answers when the node's
-// configuration changes.
+// at once with the rejected version in the cache, and the node would reject it again, in a loop with no pause. So
+// answered sets the request's version to the rejected one: the cache then answers when the node's configuration
+// changes.
 func (s *Server) answered(id int64, req *discovery.DiscoveryRequest) {
 	typ := req.GetTypeUrl()
 	s.mu.Lock()

@@ -69,8 +69,8 @@ type GatewaySpec struct {
 	PeerPort int32 `json:"peerPort,omitempty"`
 
 	// DirectService sets how peers reach the control port and the export ports over direct links.
-	// It is ClusterIP unless set: a NodePort or LoadBalancer Service carries the export ports in clear.
-	// A site with a direct link sets NodePort or an internal LoadBalancer, exposed on the private link only.
+	// ClusterIP unless set. NodePort and LoadBalancer carry the export ports in clear, so a site with a direct link
+	// sets NodePort or an internal LoadBalancer, exposed on the private link only.
 	// +kubebuilder:default={type: ClusterIP}
 	// +optional
 	DirectService ServiceExposure `json:"directService,omitzero"`
@@ -87,8 +87,7 @@ type GatewaySpec struct {
 }
 
 // GatewayLease sets the timing of the gateway Lease. A gateway replica reads it each time it joins the election.
-// Longer timings let the active replica ride out a longer stall of the API server, and keep a replica that failed
-// active for longer.
+// Longer timings ride out a longer API server stall, and keep a failed replica active for longer.
 // +kubebuilder:validation:XValidation:rule="!has(self.duration) || (duration(self.duration) >= duration('2s') && duration(self.duration) <= duration('5m'))",message="duration must be from 2s to 5m"
 // +kubebuilder:validation:XValidation:rule="!has(self.duration) || duration(self.duration).getMilliseconds() % 1000 == 0",message="duration must be a whole number of seconds"
 // +kubebuilder:validation:XValidation:rule="!has(self.renewDeadline) || duration(self.renewDeadline) >= duration('1s')",message="renewDeadline must be at least 1s"
@@ -102,9 +101,9 @@ type GatewayLease struct {
 	// +optional
 	Duration metav1.Duration `json:"duration,omitzero"`
 
-	// RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A stall of the API
-	// server that lasts longer hands the gateway over to another replica. At least 1s, more than 1.2 times
-	// retryPeriod, and at least 1s shorter than duration.
+	// RenewDeadline is how long the active replica tries to renew the Lease before it steps down. A longer API server
+	// stall hands the gateway to another replica. At least 1s, more than 1.2 times retryPeriod, and at least 1s
+	// shorter than duration.
 	// +kubebuilder:default="4s"
 	// +optional
 	RenewDeadline metav1.Duration `json:"renewDeadline,omitzero"`

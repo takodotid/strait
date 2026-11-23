@@ -9,7 +9,7 @@ import (
 // reasons gives the meaning of each route reason. explain and the skill document both use it.
 var reasons = map[string]string{
 	straitv1.ReasonActive:               "Single mode. Exactly one member is writable, and no known site declares another. The name points at it.",
-	straitv1.ReasonPreferDeclared:       "Single mode. Two or more members are writable. The policy PreferDeclaredIfConsistent is set, every site with a member declares the same primary, and that member is writable. The name points at it.",
+	straitv1.ReasonPreferDeclared:       "Single mode. Two or more members are writable, the policy PreferDeclaredIfConsistent is set, every site with a member declares the same primary, and that member is writable. The name points at it.",
 	straitv1.ReasonMultipleWritable:     "Single mode. Two or more members are writable. Routed nowhere.",
 	straitv1.ReasonDeclarationsDisagree: "Single mode. Two known sites declare different primaries, or the workloads of this site do. Routed nowhere. No policy relaxes this.",
 	straitv1.ReasonNotDeclared:          "Single mode. Exactly one member is writable, but a known site declares another member. Routed nowhere.",
@@ -19,8 +19,8 @@ var reasons = map[string]string{
 	straitv1.ReasonMemberUnknown:        "No member is writable and a member cannot be read. It may be writable. Routed nowhere.",
 	straitv1.ReasonNoEligibleMember:     "No member is writable in Single mode, or eligible for the locality in Set mode. Routed nowhere.",
 	straitv1.ReasonEligible:             "Set mode. The name points at every Stable and eligible member that the locality allows. Members of the previous route that are Transitioning, or Unknown within policy.unknownHold, stay.",
-	straitv1.ReasonSiteIsolated:         "Single mode with policy.isolationTimeout. The decision picks a local member, but this site has read no peer's document for isolationTimeout and sees no peer now. Routed nowhere, so that a cut-off site's clients stop writing. A peer read again ends it.",
-	straitv1.ReasonAwaitingPeers:        "The controller started, and its first poll of every peer has not ended yet. The route and the endpoints are what it decided before reading any peer, and the message gives that decision's reason. Or, in Single mode with policy.startupHold, the decision picks a local member, but the controller has not yet read every site with a member: routed nowhere until it has, or until the hold ends.",
+	straitv1.ReasonSiteIsolated:         "Single mode with policy.isolationTimeout. The decision picks a local member, but this site has read no peer's document for isolationTimeout and sees no peer now. Routed nowhere, so a cut-off site's clients stop writing. A peer read again ends it.",
+	straitv1.ReasonAwaitingPeers:        "The controller's first poll of every peer has not ended. The route and endpoints are what it decided before reading any peer; the message gives that decision's reason. Or, in Single mode with policy.startupHold, the decision picks a local member but the controller has not read every site with a member: routed nowhere until it has, or the hold ends.",
 }
 
 type reason struct {

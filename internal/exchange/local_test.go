@@ -127,7 +127,7 @@ func TestDocumentAgesObservations(t *testing.T) {
 
 // An Export whose readiness was last read longer ago than ExportRefresh and the age limit is published not ready, with
 // its port, so that a reconcile that hangs does not keep it ready at the peers. The limit is that of the members,
-// past the Export's own refresh. A peerTimeout of 0s ages nothing (RFC#0004 requirement 15; issue #64).
+// past the Export's own refresh. A peerTimeout of 0s ages nothing (RFC#0004 requirement 15).
 func TestDocumentAgesExports(t *testing.T) {
 	l := &Local{}
 	l.SetExport("app", "old", 30901, true, at)

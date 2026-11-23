@@ -173,7 +173,7 @@ spec:
     lease:
       duration: 6m
 ---
-# An explicit 0s is a value, not a missing field: the API server does not default it (issue #64).
+# An explicit 0s is a value, not a missing field: the API server does not default it.
 # want: spec.gateway.lease: Invalid value: "object": duration must be from 2s to 5m
 # want: spec.gateway.lease: Invalid value: "object": renewDeadline must be at least 1s shorter than duration
 apiVersion: strait.tako.id/v1
@@ -276,7 +276,7 @@ spec:
       first: 8091
       last: 8091
 ---
-# An explicit empty type is a value, not a missing field (issue #64).
+# An explicit empty type is a value, not a missing field.
 # want: spec.gateway.directService.type: Unsupported value: "": supported values: "ClusterIP", "NodePort", "LoadBalancer"
 apiVersion: strait.tako.id/v1
 kind: Site

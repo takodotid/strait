@@ -108,9 +108,9 @@ func newRoot(name string, o *options) *cobra.Command {
 		Short: "Read and explain the state of Strait at one site",
 		Long: `strait reads the state of Strait at one site and explains it.
 
-Strait is a virtual service between Kubernetes clusters at different sites. It points one local name per dependency at the member that is active now, in its own site or another one, and carries TCP between sites.
+Strait is a virtual service between Kubernetes clusters at different sites. It points one local name per dependency at the member that is active now, in its own site or another, and carries TCP between sites.
 
-strait is read-only. It never creates, updates, patches or deletes an object. Each site is read with its own kubeconfig context.`,
+strait is read-only. It never creates, updates, patches or deletes an object. It reads each site with its own kubeconfig context.`,
 		Example: `  # Show the site, its peers and every application name.
   strait status --context site-a
 
@@ -170,7 +170,7 @@ strait is read-only. It never creates, updates, patches or deletes an object. Ea
 	return root
 }
 
-// read returns a reader of the cluster and the namespace to read namespaced objects in. An empty namespace means every namespace.
+// read returns a reader of the cluster and the namespace to read namespaced objects in. An empty namespace means all.
 func (o *options) read() (client.Reader, string, error) {
 	r, contextNamespace, err := o.connect(o)
 	if err != nil {
@@ -185,7 +185,7 @@ func (o *options) read() (client.Reader, string, error) {
 	return r, contextNamespace, nil
 }
 
-// restConfig loads the kubeconfig and the exact context given. A context that does not exist is an error.
+// restConfig loads the kubeconfig and the exact context given. A missing context is an error.
 func restConfig(o *options) (*rest.Config, string, error) {
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	rules.ExplicitPath = o.kubeconfig

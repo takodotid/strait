@@ -82,8 +82,10 @@ What the release does not check, and what to do about it ([RFC0007, Releases](..
 
 | Gap | What to do |
 |---|---|
-| `gate` runs from the workflow of the tag's commit, so a tag on a commit whose `release.yaml` lacks it publishes anyway. GitHub verifies a tag's signature against the keys of the tagger's GitHub account, so any account that may push tags passes with its own key. | Only people trusted to release may push `v*` tags: a tag ruleset in the repository's settings. |
+| `gate` runs from the tag's commit, so a tag on a commit whose `release.yaml` lacks it publishes anyway. Any account that may push tags also passes the signature check. | Only people trusted to release may push `v*` tags: a tag ruleset in the repository's settings. |
 | The `ci` run that `gate` requires builds and tests the image from the same commit, but not the image that the release pushes. | Verify the release as [Verify a release](../guide/install.md#verify-a-release) shows. A rebuild that differs shows there: [Rebuild](rebuild.md). |
 | A run that fails after its chart's push cannot go on: a re-run stops with the version published. | Release the next patch version, as [A run that fails after a push](#a-run-that-fails-after-a-push) says. |
 | Renovate proposes a new helm or bun version without its SHA-256, so CI fails at the check of `setup-helm` or `setup-bun`. | Set the SHA-256 by hand in the same pull request: helm's from `helm-<version>-linux-amd64.tar.gz.sha256sum` on `get.helm.sh`, bun's from the `bun-linux-x64.zip` line of its release's `SHASUMS256.txt`. |
 | kind and kubectl come from `helm/kind-action`, Go from `actions/setup-go`, and envtest from `setup-envtest`. | Review those actions' updates as carefully as the tools' own. |
+
+- `gate`: it runs from the workflow of the tag's commit. GitHub verifies a tag's signature against the keys of the tagger's GitHub account, so any account that may push tags passes with its own key.

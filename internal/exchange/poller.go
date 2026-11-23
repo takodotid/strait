@@ -28,12 +28,12 @@ type PeerState struct {
 	LastError string
 	// LastErrorTime is when the last poll failed.
 	LastErrorTime time.Time
-	// Mismatch is true while the last answer came from another site. The peer is unreachable until a good document arrives.
+	// Mismatch is true while the last answer came from another site. The peer is unreachable until a good document comes.
 	Mismatch bool
 }
 
 // Fresh reports whether the last good document is at most timeout old at now.
-// now must come from time.Now, so that the age is measured on the monotonic clock.
+// now must come from time.Now, so the age is measured on the monotonic clock.
 func (s PeerState) Fresh(now time.Time, timeout time.Duration) bool {
 	return !s.LastSuccess.IsZero() && !s.Mismatch && now.Sub(s.LastSuccess) <= timeout
 }
@@ -55,7 +55,7 @@ type Poller struct {
 	URL func(peer string) (string, error)
 	// Exchange returns the poll interval and the peer timeout. Read every round.
 	Exchange func() straitv1.ExchangeSpec
-	// Changed is called when a peer's document changes, apart from generatedAt and the members' observedAt, or its
+	// Changed is called when a peer's document changes (apart from generatedAt and the members' observedAt), when its
 	// freshness flips, and for every peer when the first round since Start ends. It runs on the poller's goroutine and
 	// must not block.
 	Changed func(peer string)
@@ -71,8 +71,7 @@ type Poller struct {
 	due time.Time
 }
 
-// LoopGrace is how much longer than its own timing a round may take before the poller counts as stuck. Tests shorten
-// it.
+// LoopGrace is how much longer than its own timing a round may take before the poller counts as stuck. Tests shorten it.
 var LoopGrace = 30 * time.Second
 
 // Start polls every peer until ctx is cancelled.
@@ -120,8 +119,8 @@ func (p *Poller) Start(ctx context.Context) error {
 	}
 }
 
-// newClient returns a client that ignores proxy settings, opens a connection per poll, so that each poll follows the
-// gateway's current link choice, and never follows a redirect.
+// newClient returns a client that ignores proxy settings, opens a connection per poll (so each poll follows the
+// gateway's current link choice), and never follows a redirect.
 func newClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true},
@@ -283,7 +282,7 @@ func (p *Poller) fetch(ctx context.Context, peer string, interval time.Duration)
 }
 
 // changeKey is the document less what changes at every poll of a peer whose state does not: generatedAt, and each
-// member's observedAt, which the publisher sets at each of its decisions. No decision reads either. The reader's
+// member's observedAt, which the publisher sets at each of its decisions. No decision reads either: the reader's
 // decisions come at least every 2s whether Changed is called or not, and read the stored document with both
 // (RFC0004). The document itself is left as it came.
 func changeKey(doc Document) ([]byte, error) {
@@ -301,8 +300,8 @@ func changeKey(doc Document) ([]byte, error) {
 }
 
 // Alive returns an error once a round is overdue: more than twice the poll interval, plus LoopGrace, after the last
-// round began. A round reads only the controller's cache, and each poll times out within the interval, so neither a
-// slow API server nor a link that is down delays it. Before Start, it returns nil. now must come from time.Now.
+// round began. A round reads only the controller's cache, and each poll times out within the interval, so a slow API
+// server or a down link does not delay it. Before Start, it returns nil. now must come from time.Now.
 func (p *Poller) Alive(now time.Time) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

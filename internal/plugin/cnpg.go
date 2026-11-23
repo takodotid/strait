@@ -43,7 +43,7 @@ const ReasonPluginDisabled = "PluginDisabled"
 // CNPG observes CloudNativePG clusters. It reads only the fields that RFC#0003 names.
 type CNPG struct {
 	// Off reports every member Unknown and reads nothing: the controller may not read CloudNativePG's kinds, and a
-	// cached read of a kind it may not list waits for the reconcile's whole time limit (RFC#0003, requirement 13).
+	// cached read of a kind it may not list waits out the reconcile's whole time limit (RFC#0003, requirement 13).
 	Off bool
 	// Roles confirms a member's role with its database, for spec.plugin.cnpg.confirmRole (RFC#0003, requirement 14).
 	Roles RoleChecker
@@ -223,7 +223,7 @@ func observeCluster(ctx context.Context, r client.Reader, namespace string, m st
 }
 
 // confirm checks a Stable member's role with its database: each ready address of the Cluster's -rw Service must be in
-// recovery exactly when the member's role is replica. A member whose database disagrees, or does not answer, is
+// recovery exactly when the member's role is replica. A member whose database disagrees or does not answer is
 // Unknown. A member that is not Stable, or whose role is unknown, is left as it is.
 func (p CNPG) confirm(ctx context.Context, r client.Reader, namespace string, m straitv1.Member, o observe.Observation, now time.Time) observe.Observation {
 	if o.State != straitv1.StateStable || o.Role == straitv1.RoleUnknown {

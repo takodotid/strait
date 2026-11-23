@@ -1,6 +1,6 @@
-# The documentation site in docs/, served at strait.tako.id by GitHub Pages. On a pull request or a push it only builds, to check
-# that the site still builds and has no dead link. It publishes only when run by hand, or when the release workflow calls it with
-# publish, so the live site changes with a release.
+# The documentation site in docs/, served at strait.tako.id by GitHub Pages. On a pull request or a push it only builds,
+# to check that the site builds and has no dead link. It publishes only when run by hand or when the release workflow
+# calls it with publish, so the live site changes with a release.
 name: pages
 on:
   workflow_dispatch:

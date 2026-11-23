@@ -12,9 +12,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// written keeps, for each object, what the controller's last status write returned, and the resourceVersions that its
-// writes replaced, until the cache shows that write. Each write replaces the version just before it, so a cached object
-// with one of those versions predates the last write, and any other version is the last write or newer.
+// written keeps, for each object, what the controller's last status write returned, and the resourceVersions its
+// writes replaced, until the cache shows that write. Each write replaces the version just before it, so a cached
+// object with one of those versions predates the last write, and any other version is the last write or newer.
 // The zero value is ready to use.
 type written[T any, P interface {
 	*T
@@ -30,8 +30,8 @@ type write[P client.Object] struct {
 }
 
 // latest replaces a cached object that predates the controller's last status write with what that write returned.
-// The reconcile then compares with, and writes over, the status last written. A cache that lags behind the
-// controller's own writes would otherwise make the next write conflict.
+// The reconcile then compares with, and writes over, the status last written. Otherwise a cache that lags behind the
+// controller's own writes would make the next write conflict.
 func (w *written[T, P]) latest(obj P) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -85,8 +85,8 @@ func (w *written[T, P]) remember(replaced string, obj P) {
 }
 
 // updateStatus writes obj's status over the resourceVersion that obj holds, and reports whether it wrote.
-// A conflict means that another writer changed the object after it was read. It is logged at info level and not
-// returned: the cache shows that change soon, and the next reconcile writes again from it.
+// A conflict means another writer changed the object after it was read. It is logged at info level, not returned:
+// the cache shows that change soon, and the next reconcile writes again from it.
 func (w *written[T, P]) updateStatus(ctx context.Context, c client.Client, obj P) (bool, error) {
 	replaced := obj.GetResourceVersion()
 	if err := c.Status().Update(ctx, obj); err != nil {

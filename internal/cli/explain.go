@@ -52,11 +52,11 @@ func newExplain(o *options) *cobra.Command {
 		Short: "Explain why one application name points where it does",
 		Long: `explain shows one SiteService as its controller last saw it: the route, its reason and what the reason means, every member's observation, every site's declared primary, the policy, and the conditions.
 
-explain reads the SiteService's status. It never decides the route itself, so it shows the controller's view and not a second opinion.
+explain reads the SiteService's status. It never decides the route itself, so it shows the controller's view, not a second opinion.
 
 In the members table, ROUTED is true for the members the name points at. PATH is how a routed member with endpoints takes traffic: Local is its own pods at this site, Gateway is the local gateway over the active link, EndpointDirect is its own pods at its site over a direct link, with no gateway. A member with STATE - is in the spec but not in the status yet. OBSERVED is the age of the member's last observation. CONFIRMED is how long ago it was last seen Stable and eligible.
 
-With -A, explain looks for the name in every namespace. It fails if more than one namespace holds it.
+With -A, explain looks for the name in every namespace. It fails if more than one holds it.
 
 On a terminal, a symbol marks the route: ✔ a route to a confirmed member, ▲ a route kept while a member is Unknown or the controller awaits its peers, ■ a route to nowhere. Colours show what works in green, a warning in yellow and what stops traffic in red, and the tables have box lines. Colours are off when NO_COLOR is set. Piped or redirected, the output is plain text, and -o json and -o yaml never change.`,
 		Example: `  # Explain the application name pg in namespace app at site a.
@@ -168,9 +168,9 @@ func pluginText(p straitv1.PluginSpec) string {
 	return "-"
 }
 
-// routeLook returns the symbol and the paint of a route on a terminal: a check mark in green for a route to a confirmed
-// member, a triangle in yellow for a route kept while a member is Unknown or the controller awaits its peers, and a
-// square in red for a route to nowhere.
+// routeLook returns the symbol and paint of a route on a terminal: a green check mark for a route to a confirmed
+// member, a yellow triangle for a route kept while a member is Unknown or the controller awaits its peers, and a red
+// square for a route to nowhere.
 func routeLook(st style, members []string, reason string) (string, func(string) string) {
 	switch {
 	case len(members) == 0 && reason == "":
@@ -217,8 +217,7 @@ func statePaint(st style, state straitv1.State) func(string) string {
 	return func(s string) string { return s }
 }
 
-// explainTable prints the view as text. Piped, the text is plain. On a terminal, it has colours, symbols and box
-// tables (style).
+// explainTable prints the view as text: plain when piped, with colours, symbols and box tables (style) on a terminal.
 func (o *options) explainTable(w io.Writer, v explainView) {
 	st := o.styleFor(w)
 	printFields := fields

@@ -91,10 +91,10 @@ func celMessages(t *testing.T) map[string]bool {
 }
 
 // The CRDs' schemas and validation rules run on a real API server (RFC0002 requirement 8, RFC0006 requirement 6).
-// It accepts every good fixture and rejects every bad one. For each error that strait validate gives, the API server
-// names the same field, and for a validation rule it gives the rule's message, unless it ran no rule because the
-// object breaks its schema. Every validation rule of the CRDs is produced by the API server for some bad fixture.
-// The API server words schema errors in its own way, so only the field is compared for them.
+// It accepts every good fixture and rejects every bad one. For each error strait validate gives, the API server names
+// the same field, and for a validation rule gives the rule's message, unless the object breaks its schema and no rule
+// ran. The API server produces every validation rule of the CRDs for some bad fixture. It words schema errors in its
+// own way, so only the field is compared for them.
 // make test sets KUBEBUILDER_ASSETS to envtest's kube-apiserver and etcd.
 func TestFixturesOnAPIServer(t *testing.T) {
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
@@ -206,10 +206,10 @@ func withoutReservedPortRules(s *apiextensionsv1.JSONSchemaProps) int {
 	return n
 }
 
-// A Site that the API server stored before the CRD refused the reserved ports keeps them. Once the CRD refuses them,
-// a write of another field of its spec passes, and a new reserved port is refused. A write of its status is refused
-// before Kubernetes 1.33, and passes from 1.33 (README, Upgrade; issue #64). make test runs this on the oldest
-// Kubernetes that the README supports and on the latest.
+// A Site stored before the CRD refused the reserved ports keeps them. Once the CRD refuses them, a write of another
+// field of its spec passes, and a new reserved port is refused. A write of its status is refused before Kubernetes
+// 1.33 and passes from 1.33 (README, Upgrade). make test runs this on the oldest Kubernetes the README
+// supports and on the latest.
 func TestStoredSiteWithReservedPort(t *testing.T) {
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		if os.Getenv("CI") != "" {

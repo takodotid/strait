@@ -63,7 +63,7 @@ echo "published sha256:$(sha256sum <published.json | cut -d' ' -f1)"
 echo "rebuilt   $(jq -r '.manifests[0].digest' rebuild/index.json)"
 ```
 
-For versions before 1.5.0, the published index holds the build's provenance and SBOM, with the build's times and random identifiers, so its digest differs. Compare each platform's digest instead; the two lists are equal:
+If the published index holds the build's provenance and SBOM, with the build's times and random identifiers, its digest differs. Compare each platform's digest instead; the two lists are equal. Which releases: [Notes by version](upgrade.md#notes-by-version).
 
 ```sh
 jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"' published.json

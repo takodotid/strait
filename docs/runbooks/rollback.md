@@ -12,9 +12,11 @@ A rollback across a release changes what the site does. Each table applies when 
 
 | Change | Action |
 |---|---|
-| A peer of a `wireguard` link can reach the gateway pod's own address through its tunnel again: the import, peer, probe and metrics ports. Where the pod's network namespace forwards, it can reach other addresses through the pod too. | |
+| A peer of a `wireguard` link can reach the gateway pod's own address through its tunnel again: the import, peer, probe and metrics ports. | |
 | With `networkPolicy.gateway.enabled`, the gateway's policy admits every pod of the cluster, and `peerCIDRs`, to every port again, and the chart ignores `networkPolicy.gateway.ports` and `wireGuardPorts`. | |
 | The `DeclarationUnmatched` condition of each `SiteService` keeps what 1.5 last wrote: the older controller does not update it. | Read a declaration that names no member from the route's message and `Declarations:` of `strait explain`. |
+
+- A `wireguard` peer: where the pod's network namespace forwards, it can reach other addresses through the pod too.
 
 #### Before 1.4.0
 
@@ -94,11 +96,13 @@ The chart renders the cluster-scoped `Site` when `site.create` is true, the defa
 
 | Action | Effect |
 |---|---|
-| `helm uninstall` | Keeps the `Site`, and deletes the controller and the gateway. The CRDs and the `SiteService`s stay, and so do the Services and EndpointSlices that Strait wrote. Each application name keeps the endpoints written last, and nothing updates them: they no longer follow the primary. |
+| `helm uninstall` | Keeps the `Site`, and deletes the controller and the gateway. The CRDs, the `SiteService`s, and the Services and EndpointSlices that Strait wrote stay. Names stop following the primary. |
 | `helm upgrade` with `site.create: false` | Keeps the `Site`. In one upgrade from a release before 1.3.0, it deletes the `Site`: upgrade to 1.3.0 with `site.create: true` first. |
 | `helm install` again, after `helm uninstall` | With the same release name and namespace: takes the kept `Site` back. With another one, Helm refuses the install with `invalid ownership metadata`. |
 | `helm rollback`, or `helm upgrade`, to a release before 1.3.0 | Removes the annotation. A later `helm uninstall`, or `site.create: false`, deletes the `Site`. |
 | `helm upgrade` with `site.create: true` | Keeps the `Site`, or writes it again. |
+
+- `helm uninstall`: each application name keeps the endpoints written last, and nothing updates them: they no longer follow the primary.
 
 Without its `Site`, the controller decides no route, and its names keep the endpoints written last. The gateway agent removes its WireGuard interfaces. The site's observation document names no site, so its peers reject it and count its members `Unknown`.
 

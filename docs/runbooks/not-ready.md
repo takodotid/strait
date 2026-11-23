@@ -65,7 +65,7 @@ Next step: raise the limit, or set `controller.namespacedReads`: [Sizing](../siz
 
 The pod restarts, and the events have `Liveness probe failed`.
 
-Cause: the elected controller's poll round or xDS rebuild loop stopped for longer than twice its period plus 30s, 34s by default ([RFC0004](../../rfcs/RFC0004.md#requirements), requirement 18).
+Cause: the elected controller's poll round or xDS rebuild loop stopped for longer than twice its period plus 30s, 34s at the default `pollInterval` ([RFC0004](../../rfcs/RFC0004.md#requirements), requirement 18).
 
 Next step: read the log of the run before the restart (`--previous`), and `strait_peer_last_seen_timestamp_seconds` ([Metrics](../metrics.md)).
 

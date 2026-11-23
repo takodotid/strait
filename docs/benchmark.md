@@ -139,22 +139,27 @@ A pooled PostgreSQL or Valkey connection pays the request/response cost once per
 | What does the gateway add per round trip? | 225 µs with Envoy, 156 µs with HAProxy, over the two hops. Endpoint-direct avoids both. |
 | What does Envoy add over HAProxy per round trip? | 50 µs at p50 and 63 µs at p99 on one connection. 66 µs at p50 and 137 µs at p99 under load. |
 | What does a real link add? | At least 1 ms per round trip for a 100 km fibre path. Against a cross-site round trip of 1 ms or more, 50 µs is 5% or less. |
-| What does Envoy add per new connection? | 212 µs. A new PostgreSQL connection already needs at least one more round trip across the link for its startup, and more for password authentication or TLS. A pool pays it once per connection. |
+| What does Envoy add per new connection? | 212 µs. A new PostgreSQL connection already needs at least one more round trip across the link. A pool pays it once per connection. |
 | Which moves more data? | Envoy, at defaults: 2.6 times HAProxy on one stream, 1.7 times on four. |
 | Which uses less CPU? | HAProxy, by 1.5 millicores per connection, about 7%. |
 | What does WireGuard add? | 142 µs at p50 and 1.8 ms at p99 over the direct link, and one stream tops out near 0.75 Gbit/s on this host. |
-| What happens when CPU runs short? | Both proxies slow down 35 to 40 times at p50, from about 0.3 ms to about 11 ms. Within each A B B A block, Envoy's p99 is 1.1 to 1.5 times HAProxy's, with and without the neighbour, and its p50 is higher too. That gap is small next to the slowdown. |
+| What happens when CPU runs short? | Both proxies slow down 35 to 40 times at p50, from about 0.3 ms to about 11 ms. Envoy's p99 is 1.1 to 1.5 times HAProxy's, small next to that. |
+
+- New connection: the startup of a PostgreSQL connection needs at least one round trip across the link, and more for password authentication or TLS.
+- CPU runs short: the p99 ratio holds within each A B B A block, with and without the neighbour. Envoy's p50 is higher too.
 
 ## Limits
 
 | Limit | Effect |
 |---|---|
 | Both sites, the client and the server share one host and one kernel. The link is a Linux bridge. | Absolute numbers compare only within one run. The fixture's round trip is far shorter than a real link's. |
-| The host is shared, and no core is reserved. | Scheduling delays add to every proxy hop. In `make bench`, Envoy always runs just before HAProxy, so a host whose load falls during a round favours HAProxy. The contention check alternates them. |
+| The host is shared, and no core is reserved. | Scheduling delays add to every proxy hop. In `make bench`, Envoy always runs just before HAProxy, so a host whose load falls during a round favours HAProxy. |
 | Kernel work is charged to no container: iptables, conntrack, softirq, WireGuard encryption in kernel workers. | The CPU columns cover the proxy processes only. The WireGuard row understates the tunnel's CPU. |
 | One client, one server, 64-byte messages, an echo with no server time. | Real replies are larger and servers take time, which shrinks the proxy's share. |
 | Both proxies run at their defaults. | HAProxy offers splice and larger buffers, which this run does not use. The throughput gap is at defaults only. |
 | One node and one gateway replica per site. | Scaling is not measured. |
+
+- The host is shared: the contention check alternates the two proxies.
 
 ## Fixture
 
@@ -166,7 +171,9 @@ A pooled PostgreSQL or Valkey connection pays the request/response cost once per
 | Application name | SiteService `bench`, plugin `declared`, active member `srv-a` at a. Member `srv-b` at b has no pod. |
 | Server | One pod at a. Its Service maps port 7000 to target port 7001, so endpoint-direct must carry the target port. |
 | Client | One pod at b. |
-| Node routes | Each node routes the other site's pod subnet over `strait-direct`, without masquerade. Endpoint-direct needs this. It stands in for a network that makes pod addresses routable between sites. Strait does not set it up. |
+| Node routes | Each node routes the other site's pod subnet over `strait-direct`, without masquerade, as endpoint-direct needs. It stands in for a network that makes pod addresses routable between sites. |
+
+- Node routes: Strait does not set them up.
 
 Files: [`bench/`](../bench). The runner is [`bench/run.sh`](../bench/run.sh). The client and server are one Go program, [`bench/tcpbench`](../bench/tcpbench).
 
@@ -177,10 +184,13 @@ Every message is 64 bytes. The server echoes each request.
 | Metric | How |
 |---|---|
 | Request/response latency | One open connection, 1000 requests per second for 10 s after 1 s of warmup. p50, p90 and p99 of the round trip. |
-| Connection setup | 500 new connections, one after another, after 20 unmeasured. Time from dial to the first echoed response. A bare connect would end at the local proxy, so the time includes one round trip through the whole path. |
+| Connection setup | 500 new connections, one after another, after 20 unmeasured. Time from dial to the first echoed response, so it includes one round trip through the whole path. |
 | Throughput | The server sends as fast as it can. Bytes the client receives over 10 s, after 1 s of warmup, on 1 and on 4 connections. |
-| CPU per connection | 50 connections, each 100 requests per second, 5000 per second in all. Proxy container CPU from its cgroup's `cpu.stat`, over 16 s from second 4 of the load. Minus the same container's CPU over 16 s with no traffic, in the same round. Divided by 50. Envoy container only: the gateway agent is not on the data path. Endpoint-direct has no proxy and counts 0. |
+| CPU per connection | 50 connections of 100 requests per second. Envoy container CPU from `cpu.stat`, 16 s from second 4 of the load, minus idle CPU in the same round, divided by 50. |
 | Latency under load | p50 and p99 of the round trips of those 50 connections. |
+
+- Connection setup: a bare connect would end at the local proxy.
+- CPU per connection: 5000 requests per second in all. The CPU is read from the container's cgroup. The idle CPU is the same container's over 16 s with no traffic. Only the Envoy container counts: the gateway agent is not on the data path. Endpoint-direct has no proxy and counts 0.
 
 ## Fair comparison
 

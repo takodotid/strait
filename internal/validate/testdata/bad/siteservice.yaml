@@ -512,7 +512,7 @@ spec:
   policy:
     isolationTimeout: 30s
 ---
-# An explicit empty policy is a value, not a missing field (issue #64).
+# An explicit empty policy is a value, not a missing field.
 # want: spec.policy.multiple: Unsupported value: "": supported values: "RouteNowhere", "PreferDeclaredIfConsistent"
 apiVersion: strait.tako.id/v1
 kind: SiteService

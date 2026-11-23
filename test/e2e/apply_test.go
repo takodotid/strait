@@ -60,7 +60,7 @@ func distinct(m map[string]string) []string {
 }
 
 // switchThroughNowhere: the SiteService local moves from one to two in one decision, at site a. A watch of its
-// EndpointSlices sees every change in order, and never sees both members at once (issue #29).
+// EndpointSlices sees every change in order, and never sees both members at once.
 func (e *env) switchThroughNowhere(ctx context.Context, t *testing.T) {
 	a := e.a
 	if err := a.c.Create(ctx, localService(e, "one")); err != nil {
@@ -125,7 +125,7 @@ func (e *env) switchThroughNowhere(ctx context.Context, t *testing.T) {
 
 // serviceConflict: Strait's Service local at site a loses its owner, as when another owner creates a Service of that
 // name. Strait deletes local's EndpointSlices, so none feeds that Service. Once it is gone, Strait writes its own again.
-// The step then deletes local (issue #33).
+// The step then deletes local.
 func (e *env) serviceConflict(ctx context.Context, t *testing.T) {
 	a := e.a
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "local", Namespace: webNamespace}}

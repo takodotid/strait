@@ -109,7 +109,7 @@ func run(args []string, stdout io.Writer) error {
 		epoch := os.Getenv("SOURCE_DATE_EPOCH")
 		secs, err := strconv.ParseInt(epoch, 10, 64)
 		if err != nil || secs < 0 {
-			return fmt.Errorf("SOURCE_DATE_EPOCH %q is not a number of seconds: it is the time of every entry of the archives", epoch)
+			return fmt.Errorf("SOURCE_DATE_EPOCH %q is not a number of seconds: it sets the time of every archive entry", epoch)
 		}
 		c.epoch = time.Unix(secs, 0).UTC()
 		errs = c.archives(rest[1])
@@ -216,10 +216,10 @@ func (c check) archive(dir, goos, goarch string, files map[string][]byte) []erro
 	return errs
 }
 
-// entries checks what make dist fixes in each entry of an archive, so that two builds of one commit give the same bytes
-// (requirement 17): the entries sorted by name, each with the time SOURCE_DATE_EPOCH, and the mode 0755 for a directory
-// or a binary, 0644 otherwise. A .tar.gz must have owner 0 with no names in each entry and no name or time in its gzip
-// header. A .zip must store its times in UTC. Each error names the entry.
+// entries checks what make dist fixes in each entry, so two builds of one commit give the same bytes (requirement 17):
+// sorted by name, time SOURCE_DATE_EPOCH, mode 0755 for a directory or a binary and 0644 otherwise. A .tar.gz needs
+// owner 0 with no names in each entry, and no name or time in its gzip header. A .zip must store its times in UTC.
+// Each error names the entry.
 func (c check) entries(file string, binaries []string) []error {
 	var errs []error
 	fail := func(name, format string, args ...any) {
@@ -390,7 +390,7 @@ func (c check) index(digest, file string) []error {
 	for _, m := range idx.Manifests {
 		p := path.Join(m.Platform.OS, m.Platform.Architecture, m.Platform.Variant)
 		if t := m.Annotations["vnd.docker.reference.type"]; t != "" {
-			errs = append(errs, fmt.Errorf("index: lists %s, platform %s, an %s: the provenance and the SBOM are attested apart from the index", m.Digest, p, t))
+			errs = append(errs, fmt.Errorf("index: lists %s, platform %s, an %s: provenance and SBOM are attested apart from the index", m.Digest, p, t))
 			continue
 		}
 		if want := "application/vnd.oci.image.manifest.v1+json"; m.MediaType != want {
@@ -413,11 +413,11 @@ func (c check) index(digest, file string) []error {
 	return errs
 }
 
-// binary checks that a binary was built for its platform, and that it carries the version and the commit. The binary
-// of the host's platform is also run: `strait version` must print them (requirement 13). The others are searched for
-// both strings, which only the build's -X flags put there when it ran with no .git, as the image's build does. It
-// must be built with -trimpath, and a VCS stamp, which a build in a git checkout adds, must name the commit with no
-// change (requirement 21). The image's build has no .git, so its binaries carry no VCS stamp.
+// binary checks that a binary was built for its platform and carries the version and the commit. The host platform's
+// binary is also run: `strait version` must print them (requirement 13). The others are searched for both strings,
+// which only the build's -X flags put there when it ran with no .git, as the image's build does. It must be built
+// with -trimpath, and a VCS stamp, which a build in a git checkout adds, must name the commit with no change
+// (requirement 21). The image's build has no .git, so its binaries carry no VCS stamp.
 func (c check) binary(name, goos, goarch string, data []byte) error {
 	p, err := os.CreateTemp(c.tmp, name+"-")
 	if err != nil {
@@ -438,7 +438,7 @@ func (c check) binary(name, goos, goarch string, data []byte) error {
 		return fmt.Errorf("%s: built for %s/%s, want %s/%s", name, settings["GOOS"], settings["GOARCH"], goos, goarch)
 	}
 	if settings["-trimpath"] != "true" {
-		return fmt.Errorf("%s: built without -trimpath, so it holds the build machine's paths (RFC0006 requirement 21)", name)
+		return fmt.Errorf("%s: built without -trimpath, so it holds build machine paths (RFC0006 requirement 21)", name)
 	}
 	if rev, ok := settings["vcs.revision"]; ok && (rev != c.commit || settings["vcs.modified"] != "false") {
 		return fmt.Errorf("%s: stamped with commit %s, modified %s; want commit %s, not modified (RFC0006 requirement 21)",

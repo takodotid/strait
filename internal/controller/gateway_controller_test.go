@@ -218,7 +218,7 @@ func gatewayNotReady(t *testing.T, c client.Client) {
 }
 
 // A cache that has not yet seen the controller's last write of the Site's status does not make the next write
-// conflict (issue #23).
+// conflict.
 func TestSiteStatusWriteOnLaggingCache(t *testing.T) {
 	r, cache, c := laggingGateway(t)
 	// The first reconcile after a start writes the version. The second has nothing new to write.
@@ -304,7 +304,7 @@ func gatewayAddress(t *testing.T, r *GatewayReconciler, c client.Client) (string
 }
 
 // The gateway Lease expires by the controller's clock, counted from when the controller saw it renewed. A holder whose
-// clock is behind keeps the Lease while it renews, and one whose clock is ahead loses it once it stops (issue #34).
+// clock is behind keeps the Lease while it renews, and one whose clock is ahead loses it once it stops.
 func TestGatewayLeaseOnTheControllersClock(t *testing.T) {
 	t.Run("holder an hour behind", func(t *testing.T) {
 		r, c, clock := skewedLease(t, -time.Hour)
@@ -340,7 +340,7 @@ func TestGatewayLeaseOnTheControllersClock(t *testing.T) {
 
 // The direct Service lists each port once, also when two Exports hold one port, as a hand edit or a deposed leader can
 // leave them, and when an Export holds the control port. The API server refuses a Service that lists a port twice, and
-// the Service would then take no new export (issue #30, row 35).
+// the Service would then take no new export.
 func TestDirectServiceListsEachPortOnce(t *testing.T) {
 	export := func(ns, name string, port int32) *straitv1.Export {
 		e := &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}}
@@ -444,7 +444,7 @@ func TestDeletionCostOnTheActivePod(t *testing.T) {
 }
 
 // The gateway Services' EndpointSlice has the address type of the active pod's address. An EndpointSlice's address
-// type cannot change, so a slice of the other family is replaced (issue #45).
+// type cannot change, so a slice of the other family is replaced.
 func TestGatewaySliceFollowsTheAddressFamily(t *testing.T) {
 	objs := activeGatewayPod()
 	pod := objs[1].(*corev1.Pod)
@@ -579,7 +579,7 @@ func TestGatewayHandoverEvents(t *testing.T) {
 // After the active pod's address changes family, the controller deletes the gateway slice and writes it again. While
 // its cache still shows the slice before, the next reconcile's delete fails its UID precondition. The controller then
 // reads the slice from the API server and keeps the one it wrote: GatewayServices stays True, and the slice is not
-// replaced a second time (RFC#0005 requirement 24; issue #64).
+// replaced a second time (RFC#0005 requirement 24).
 func TestGatewaySliceUnderCacheLag(t *testing.T) {
 	objs := activeGatewayPod()
 	pod := objs[1].(*corev1.Pod)

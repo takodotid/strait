@@ -11,12 +11,12 @@ import (
 // StaleSession is how long a dialing link may send while its peer sends nothing before the agent drops the link's
 // WireGuard session. The peer's health checks reach every live link at least once a second.
 //
-// After a handover at the peer's site, the peer's new gateway holds no session, and when its link waits for this side to
-// dial, it cannot start one. WireGuard itself starts a new handshake only after 15s of sending with no answer.
+// After a handover at the peer's site, the peer's new gateway holds no session. If its link waits for this side to
+// dial, it cannot start one, and WireGuard itself starts a handshake only after 15s of sending with no answer.
 const StaleSession = 2 * time.Second
 
 // StaleRetry is how often the agent drops the session again while the peer stays silent. A handshake sent before the
-// peer's site points its WireGuard Service at its new gateway is lost. A link whose round trip exceeds the health
+// peer's site points its WireGuard Service at its new gateway is lost. A link with a round trip over the health
 // check's timeout of 500ms is never healthy, so a handshake's answer comes well within StaleRetry.
 const StaleRetry = time.Second
 
@@ -122,7 +122,7 @@ func (s sessions) dropped(name string, now time.Time) {
 	st.rx, st.tx, st.heard, st.sent = 0, 0, now, false
 }
 
-// renewConfig replaces the link's peer with its wanted settings in one change. The kernel drops the peer's session, and
+// renewConfig replaces the link's peer with its wanted settings in one change. The kernel drops the peer's session, so
 // the next packet to the peer starts a handshake at once.
 func renewConfig(w Interface) wgtypes.Config {
 	ka := w.Keepalive
@@ -139,7 +139,7 @@ func renewConfig(w Interface) wgtypes.Config {
 }
 
 // Poke sends one empty UDP datagram to a peer's tunnel address, on the discard port. WireGuard holds it and sends a
-// handshake at once, rather than at the next packet that a health check sends. The peer drops the datagram.
+// handshake at once, not at the next health-check packet. The peer drops the datagram.
 func Poke(peer netip.Addr) error {
 	c, err := net.DialUDP("udp", nil, net.UDPAddrFromAddrPort(netip.AddrPortFrom(peer, 9)))
 	if err != nil {

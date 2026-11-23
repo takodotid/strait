@@ -46,7 +46,9 @@ Check: every name routes to the new primary, reason `Active`.
 | Case | Route | Reason, conditions |
 |---|---|---|
 | The returning site reads the other sites. | Nowhere, at every site that reads both primaries. | `DeclarationsDisagree` when the sites declare different primaries, else `MultipleWritable`. The `Multiple` condition is True, and a Warning event fires. Strait never picks one primary. |
-| The returning site cannot read the other sites, and its hold has ended or is not set. Without a hold, this is also the case from its controller's first decision until it reads the other sites. | Its own primary, at the returning site. | `Active`. Its clients write to the old primary. |
+| The returning site cannot read the other sites, and its hold has ended or is not set. | Its own primary, at the returning site. | `Active`. Its clients write to the old primary. |
+
+- The returning site cannot read the other sites: without a hold, this is also the case from its controller's first decision until it reads the other sites.
 
 ## A partition that heals
 
@@ -62,7 +64,7 @@ Set `spec.policy.startupHold` on every `Single` mode `SiteService`, at every sit
 | Item | Value |
 |---|---|
 | Field | `spec.policy.startupHold`, 0s to 10m, `Single` mode only. |
-| Effect | After the controller starts, it does not route to a local member until it has read every other site with a member, or until the hold ends. The route is nowhere meanwhile, with reason `AwaitingPeers` ([RFC0002, Startup hold](../../rfcs/RFC0002.md#startup-hold)). |
+| Effect | No local member is routed until every other site with a member has been read, or the hold ends. Reason `AwaitingPeers` ([RFC0002, Startup hold](../../rfcs/RFC0002.md#startup-hold), requirements 30 and 31). |
 | Suggested value | 30s. The hold ends once every other site with a member has been read, so it costs time only when a controller starts while cut off from those sites. |
 | Cost | A controller that starts during a real partition, for example after an upgrade or a crash, keeps its local primary unrouted for up to `startupHold`. |
 | Not covered | A controller that kept running through the loss. It is not held ([RFC0002, Limitations](../../rfcs/RFC0002.md#limitations)): [A partition that heals](#a-partition-that-heals). |

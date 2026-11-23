@@ -326,7 +326,7 @@ func renewing(t *testing.T, l *lease) {
 }
 
 // The active replica steps down once Envoy has not been ready for EnvoyNotReady, so that a ready standby can take the
-// Lease, and not while Envoy is ready (issue #35).
+// Lease, and not while Envoy is ready.
 func TestStepDownWhenEnvoyNotReady(t *testing.T) {
 	key := newKey(t)
 	wl := wgLink("to-b", "b", 100, 51820, "", "100.64.0.1/32", "100.64.0.2")
@@ -364,7 +364,7 @@ func TestStepDownWhenEnvoyNotReady(t *testing.T) {
 	waitForInterfaces(t, k, 0)
 }
 
-// A replica joins the gateway election only while its Envoy is ready (issue #35).
+// A replica joins the gateway election only while its Envoy is ready.
 func TestJoinOnlyWhenEnvoyReady(t *testing.T) {
 	a, _, _ := newAgent(t, testSite())
 	up := &atomic.Bool{}
@@ -401,7 +401,7 @@ func TestJoinOnlyWhenEnvoyReady(t *testing.T) {
 }
 
 // A standby that joined the election while its Envoy was ready does not take the Lease once Envoy is not ready, and
-// takes it once Envoy is ready again (RFC0005, requirement 33; issue #38).
+// takes it once Envoy is ready again (RFC0005, requirement 33).
 func TestNoTakeoverWhileEnvoyNotReady(t *testing.T) {
 	a, _, _ := newAgent(t, testSite())
 	up := &atomic.Bool{}
@@ -734,7 +734,7 @@ func TestLinkChangesLogAtInfo(t *testing.T) {
 
 // Each request of the agent to the API server ends within APITimeout, so one that the API server never answers does not
 // hold its loop: the WireGuard sync's read of the Secret and its write of the Site's status, and the health report's
-// write of each SiteLink's status. The test shortens APITimeout from 5s to 200ms (RFC0005, requirement 49; issue #61).
+// write of each SiteLink's status. The test shortens APITimeout from 5s to 200ms (RFC0005, requirement 49).
 func TestAgentRequestsEnd(t *testing.T) {
 	APITimeout = 200 * time.Millisecond
 	t.Cleanup(func() { APITimeout = 5 * time.Second })

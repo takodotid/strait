@@ -11,7 +11,7 @@ import (
 )
 
 // The agent's requests to the API server end within gateway.APITimeout, 5s. Its cache's config keeps no timeout,
-// which would end its watches (RFC0005, requirement 49; issue #61).
+// which would end its watches (RFC0005, requirement 49).
 func TestAPIConfig(t *testing.T) {
 	cfg := &rest.Config{Host: "https://192.0.2.1:6443"}
 	api := apiConfig(cfg)

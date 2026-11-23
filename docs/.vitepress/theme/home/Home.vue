@@ -39,9 +39,8 @@ function role(site: Site) {
 }
 
 /**
- * Where the parts of a site sit, in the drawing's units. The wide layout puts the sites side by side, and site b is site a
- * mirrored, so the two gateways face each other across the link. The tall layout stacks them for a narrow sheet: site b is
- * site a turned upside down, so the gateways face each other across the link there too.
+ * Where the parts of a site sit, in the drawing's units. The wide layout puts the sites side by side, site b mirroring site a. The
+ * tall layout stacks them for a narrow sheet, site b turned upside down. Either way the gateways face each other across the link.
  */
 function parts(layout: Layout, site: Site) {
     const member = { x: 24, width: 120, height: 44 };

@@ -246,7 +246,7 @@ spec:
 }
 
 // A List document, as kubectl get -o yaml writes, counts as each of its items, a List in it too. Each problem names
-// its item. A list kind of Strait's API group is read the same way (issue #64).
+// its item. A list kind of Strait's API group is read the same way.
 func TestValidateList(t *testing.T) {
 	list := `apiVersion: v1
 kind: List
@@ -296,7 +296,7 @@ items:
 }
 
 // A field that a document sets keeps its value, also 0 or 0s: the API server sets a default only where a field is
-// left out, and refuses a lease duration of 0s (issue #64).
+// left out, and refuses a lease duration of 0s.
 func TestValidateExplicitZero(t *testing.T) {
 	v, r := validateJSON(t, `apiVersion: strait.tako.id/v1
 kind: Site

@@ -19,7 +19,7 @@ import (
 // EnvoyStats is the regular expression of the Envoy stats that the agent serves at /stats/prometheus: per cluster
 // and per TCP proxy, connections, bytes, health and rejected updates; per HTTP listener of the gateway, requests;
 // Envoy's state and its connection to the controller. Listener stats are left out: Envoy tags them with an address
-// and a port. The names of clusters and TCP proxies hold no dot (xds.StatName), so [^.]+ is the whole name.
+// and a port. Cluster and TCP proxy names hold no dot (xds.StatName), so [^.]+ is the whole name.
 const EnvoyStats = `^(` +
 	`cluster\.[^.]+\.(upstream_cx_(total|active|connect_fail|connect_timeout|none_healthy|rx_bytes_total|tx_bytes_total)|membership_(healthy|total)|health_check\.(success|failure|network_failure)|update_rejected)` +
 	`|tcp\.[^.]+\.downstream_cx_(total|rx_bytes_total|tx_bytes_total|no_route)` +

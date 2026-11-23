@@ -30,7 +30,7 @@ export class Seo {
         });
     }
 
-    /** Markdown as the plain text a reader sees, with each code span left as a numbered mark, so its dots and angle brackets are not read as prose. */
+    /** Markdown as the plain text a reader sees. Each code span becomes a numbered mark, so its dots and angle brackets are not read as prose. */
     private static plain(markdown: string, code: string[]): string {
         return markdown
             .replace(/`([^`]*)`/g, (_, span: string) => `@@${code.push(span) - 1}@@`)
@@ -58,7 +58,7 @@ export class Seo {
             const text = Seo.plain(block, code);
             const restore = (part: string) => part.replace(/@@(\d+)@@/g, (_, index: string) => code[Number(index)] ?? "").trim();
 
-            // A sentence that leads into what follows it, ending in a colon, is left out.
+            // A sentence that ends in a colon and leads into what follows is left out.
             const sentences = text.match(/.+?[.!?](?=\s|$)/g);
             if (!sentences) continue;
 
