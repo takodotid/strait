@@ -41,13 +41,13 @@ const (
 	WireGuardInterval = 2 * time.Second
 	HealthInterval    = time.Second
 	// EnvoyNotReady is how long Envoy may be not ready before the active replica steps down. It matches the chart's
-	// readiness probe of the Envoy container, 3 failures 2s apart: the Lease moves only once the pod is not ready and
-	// the controller has stopped publishing it, so a shorter stall moves nothing.
+	// readiness probe of the Envoy container (3 failures 2s apart): the Lease moves only after the pod is not ready
+	// and the controller stops publishing it, so a shorter stall moves nothing.
 	EnvoyNotReady = 6 * time.Second
 )
 
-// APITimeout bounds each request of the agent to the API server, apart from its cache's lists and watches. A request on
-// the gateway Lease ends sooner: within half the election round's renew deadline (RFC#0005, requirement 49). Tests
+// APITimeout bounds each agent request to the API server, except its cache's lists and watches. A request on the
+// gateway Lease ends sooner: within half the election round's renew deadline (RFC#0005, requirement 49). Tests
 // shorten it.
 var APITimeout = 5 * time.Second
 
@@ -90,7 +90,7 @@ var SessionGrace = 30 * time.Second
 
 // Alive returns an error while this replica leads and its session loop has not finished a turn for SessionGrace. The
 // loop reads the WireGuard interfaces through netlink, under the lock that every change of an interface holds, and
-// makes no request to the API server or Envoy. So it fails when a change of the interfaces hangs, and never for a
+// makes no request to the API server or Envoy. So it fails only when a change of the interfaces hangs, never for a
 // slow API server or a link that is down. A standby replica always passes. now must come from time.Now.
 func (a *Agent) Alive(now time.Time) error {
 	a.mu.Lock()
@@ -234,9 +234,9 @@ func (l *lease) reset() {
 	l.holding = false
 }
 
-// timeout bounds each request on the Lease: half the round's renew deadline, so that a renewal whose request hangs is
-// tried again before the deadline, and at most APITimeout. client-go bounds no request of a replica that waits to take
-// the Lease, so without it one request that hangs would hold the takeover (RFC#0005, requirement 49).
+// timeout bounds each request on the Lease: half the round's renew deadline, so a hung renewal is retried before the
+// deadline, and at most APITimeout. client-go bounds no request of a replica waiting to take the Lease, so one hung
+// request would hold the takeover (RFC#0005, requirement 49).
 func (l *lease) timeout() time.Duration {
 	return min(l.deadline()/2, APITimeout)
 }
@@ -334,9 +334,9 @@ func (l *lease) deadline() time.Duration {
 }
 
 // lead runs the WireGuard and health loops until lctx ends, then removes every interface.
-// It steps down when the Lease goes unrenewed for the round's renew deadline, so the interfaces are gone
-// before the Lease can expire and another replica take it. It also steps down when Envoy has not been ready for
-// EnvoyNotReady, so that a ready standby can take the Lease.
+// It steps down when the Lease goes unrenewed for the round's renew deadline, so the interfaces are gone before
+// another replica can take the Lease. It also steps down when Envoy has not been ready for EnvoyNotReady, so that a
+// ready standby can take the Lease.
 func (a *Agent) lead(lctx context.Context, l *lease, stepDown func()) {
 	ctx, cancel := context.WithCancel(lctx)
 	done := make(chan struct{})
@@ -448,8 +448,7 @@ func (a *Agent) removeAll() {
 }
 
 // renewStale drops the WireGuard session of each dialing link whose peer sent nothing for StaleSession while this side
-// sent, and sends a packet through the link so that WireGuard starts a handshake. A peer that stays silent is dropped
-// again every StaleRetry.
+// sent, and sends a packet through the link to start a handshake. A silent peer is dropped again every StaleRetry.
 func (a *Agent) renewStale(ctx context.Context, s sessions, now func() time.Time) {
 	a.kernel.Lock()
 	defer a.kernel.Unlock()
@@ -659,8 +658,8 @@ func (a *Agent) reportHealth(ctx context.Context) {
 	}
 }
 
-// statusPatch is a merge patch from old to l that always carries status.healthy and status.active.
-// A patch computed from two structs leaves out a false that both hold, and the stored object may lack it.
+// statusPatch is a merge patch from old to l that always carries status.healthy and status.active: a patch from two
+// structs omits a false that both hold, which the stored object may lack.
 func statusPatch(old, l *straitv1.SiteLink) (client.Patch, error) {
 	data, err := client.MergeFrom(old).Data(l)
 	if err != nil {

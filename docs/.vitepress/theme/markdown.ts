@@ -1,22 +1,22 @@
 // How the pages' markdown reads on the site: what a table, a word of code and a note carry in their markup, so the theme's CSS can set
-// them for a narrow screen and for a close read. The rules are the site's own; the words of a page are never changed.
+// them for a narrow screen and a close read. The words of a page are never changed.
 
 import type Token from "markdown-it/lib/token.mjs";
 import type { MarkdownRenderer } from "vitepress";
 
-/** A word of code of up to this many characters is never broken across lines: the longest alert name, `StraitGatewayConfigRejected`, is 27. One of more breaks, after `_ . / , = :` first. */
+/** A word of code of up to this many characters is never broken across lines: the longest alert name, `StraitGatewayConfigRejected`, is 27. A longer one breaks after `_ . / , = :` first. */
 const SHORT_CODE = 28;
 
-/** Of these, a word of more than this many characters is marked `mid`: the CSS lets it break again, at its `_ . /` first, in a table that has no room for it whole. */
+/** Of these, a word of code longer than this is marked `mid`: the CSS lets it break again, at `_ . /` first, in a table with no room for it whole. */
 const FIRM_CODE = 20;
 
-/** In the first column of a table, a command of several words, of up to this many characters, is never broken either. */
+/** In a table's first column, a multi-word command of up to this many characters is never broken either. */
 const COMMAND_CODE = 28;
 
-/** A number and its range, `1141 (1100 to 1227)`, and a range of ports, `30086-32767`, in a cell of a table, are kept on one line. */
+/** A number with its range, `1141 (1100 to 1227)`, and a port range, `30086-32767`, stay on one line in a table cell. */
 const FIGURES = /(?<![\w-])(?:\d[\d.,]*\s\(\d[\d.,]*\sto\s\d[\d.,]*\)|\d+-\d+)(?![\w-])/g;
 
-/** A table's first column is set in bold only when every one of its cells is a short label, of up to this many characters. */
+/** A table's first column is bold only when every cell is a short label of up to this many characters. */
 const SHORT_LABEL = 36;
 
 export class Markdown {
@@ -69,10 +69,10 @@ export class Markdown {
     }
 
     /**
-     * A table sits in a wrapper that scrolls if its content cannot fit. Each cell of its body carries the text of its column's head as
-     * `data-label`, so the CSS can stack the cells of a row on a phone and name each one; each part of the table carries its role, so a
-     * screen reader still reads a table when the CSS no longer sets it as one. A table whose first column holds only short labels is
-     * marked `labels` (the CSS sets that column in bold), and one whose head is empty is marked `headless` (the CSS shows no head).
+     * A table sits in a wrapper that scrolls if it cannot fit. Each body cell carries its column's head text as `data-label`, so the CSS
+     * can stack a row's cells on a phone and name each; each table part carries its role, so a screen reader still reads a table when the
+     * CSS no longer sets it as one. A table whose first column holds only short labels is marked `labels` (bold column); one with an
+     * empty head is marked `headless` (no head shown).
      */
     static tables(md: MarkdownRenderer): void {
         md.renderer.rules.table_open = (tokens, index, options, _env, self) => `<div class="table-wrap">${self.renderToken(tokens, index, options).trimEnd()}\n`;
@@ -131,8 +131,8 @@ export class Markdown {
 
     /**
      * A short word of code is marked `nb`, so the CSS keeps it on one line: a flag, a name or `-o yaml` never splits at a hyphen. A long
-     * one is marked `long`, and gets a break after each `_ . / , = :`, so it breaks there before it breaks anywhere. A word that a plural
-     * `s` or `'s` follows is marked `sx`, so the CSS closes the gap between the chip and the letter.
+     * one is marked `long` and gets a break after each `_ . / , = :`, so it breaks there first. A word followed by a plural `s` or `'s`
+     * is marked `sx`, so the CSS closes the gap between the chip and the letter.
      */
     static chips(md: MarkdownRenderer): void {
         md.core.ruler.push("strait_code_chips", (state) => {
@@ -166,8 +166,8 @@ export class Markdown {
     }
 
     /**
-     * A line that opens with `Check:` is hard to find when skimming a procedure: the word is wrapped in a span, `lead-check`, for the CSS
-     * to set as a label. `Dry run:` and `Then apply:` get `lead-in`, which is weight only. The words of the line are never changed.
+     * A line that opens with `Check:` is hard to find when skimming a procedure: the word is wrapped in a `lead-check` span for the CSS
+     * to set as a label. `Dry run:` and `Then apply:` get `lead-in`, which is weight only. The line's words are never changed.
      */
     static leads(md: MarkdownRenderer): void {
         md.core.ruler.push("strait_leads", (state) => {

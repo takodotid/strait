@@ -120,8 +120,8 @@ func exportPort(e *straitv1.Export) int32 { return e.Status.GatewayPort }
 func importPort(i *straitv1.Import) int32 { return i.Status.GatewayPort }
 
 // otherPorts returns the gateway port of each listed object but self: as the cache shows it or, while the cache
-// predates this controller's last status write of that object, as that write set it. So a port that this controller
-// allocated counts as taken before the cache shows it. That holds because the reconciles of one kind run one at a time.
+// predates this controller's last status write of that object, as that write set it. So a port this controller
+// allocated counts as taken before the cache shows it. This holds because reconciles of one kind run one at a time.
 func otherPorts[T any, P interface {
 	*T
 	client.Object
@@ -157,9 +157,9 @@ func gatewayPortIndex(o client.Object) []string {
 }
 
 // nextPort returns the port that obj holds next, as gatewayPort does. While obj's port is in rng, it first reads only
-// the other objects that hold that port: through the cache's index, and, while the cache predates this controller's
+// the other objects that hold that port: through the cache's index and, while the cache predates this controller's
 // last status write of an object, as that write set it. Only when obj does not keep its port does it list every
-// object of its kind, so that a reconcile that keeps a port costs no list of the kind (issue #46, row 37).
+// object of its kind, so a reconcile that keeps a port costs no list (issue #46, row 37).
 func nextPort[T any, P interface {
 	*T
 	client.Object
@@ -282,8 +282,8 @@ type ImportReconciler struct {
 	Reader client.Reader
 	Peers  Peers
 	Now    func() time.Time
-	// Retry is the time between two tries to write the Service and the EndpointSlice of an Import whose last try
-	// failed: resync when zero (RFC#0005, requirement 51).
+	// Retry is the time between tries to write the Service and EndpointSlice of an Import whose last try failed:
+	// resync when zero (RFC#0005, requirement 51).
 	Retry time.Duration
 
 	// written keeps what the last status write of each Import returned, until the cache shows it.
@@ -456,7 +456,7 @@ func (r *ImportReconciler) syncService(ctx context.Context, imp *straitv1.Import
 }
 
 // deleteOwned deletes the objects named after the Import that the Import owns, and leaves the others. In a namespace
-// where the controller reads no Services and EndpointSlices, it writes none either, so there is none to delete.
+// where the controller reads no Services and EndpointSlices, it writes none, so there is none to delete.
 func (r *ImportReconciler) deleteOwned(ctx context.Context, imp *straitv1.Import, objs ...client.Object) error {
 	for _, o := range objs {
 		if err := r.Get(ctx, client.ObjectKeyFromObject(imp), o); err != nil {
@@ -476,7 +476,7 @@ func (r *ImportReconciler) deleteOwned(ctx context.Context, imp *straitv1.Import
 }
 
 // SetupWithManager registers the reconciler. Any value on changes, and any change of the Site, requeues every Import.
-// The Site's status names the active gateway, which an Import's Service points at.
+// The Site's status names the active gateway that an Import's Service points at.
 func (r *ImportReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan event.GenericEvent) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &straitv1.Import{}, IndexGatewayPort, gatewayPortIndex); err != nil {
 		return err

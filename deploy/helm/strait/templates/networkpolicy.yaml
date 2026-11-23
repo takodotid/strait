@@ -35,8 +35,8 @@ spec:
 {{- end }}
 {{- if .Values.networkPolicy.gateway.enabled }}
 ---
-# The gateway pods admit the pods of this cluster to the import and export ports, the controller to the peer port,
-# through which it polls peers, and the peer gateways to the control and export ports and the WireGuard listen ports.
+# The gateway pods admit: the pods of this cluster to the import and export ports; the controller to the peer port, through which it
+# polls peers; the peer gateways to the control and export ports and the WireGuard listen ports.
 # The probe port admits every source, as the controller's does: some CNIs enforce policies on host traffic.
 {{- $ports := include "strait.gatewayPorts" . | fromJson }}
 {{- $gw := .Values.networkPolicy.gateway }}

@@ -230,7 +230,7 @@ func TestRemoteActiveMemberThroughGateway(t *testing.T) {
 
 // A gateway handover leaves a member reached through the gateway with no endpoint, from when the active replica stops
 // being active until a standby holds the Lease and is ready: the Site has no gateway address (RFC0005, requirement
-// 11, and its failover sequence). The route and its reason stay, since the decision has not changed, and the Routed
+// 11, and its failover sequence). The route and its reason stay, since the decision has not changed. The Routed
 // condition is False with reason NoEndpoints, since the Service has none (RFC0002, requirement 27). Then the endpoint
 // is the new replica's address.
 func TestGatewayHandoverLeavesNoEndpoint(t *testing.T) {
@@ -1103,9 +1103,9 @@ func TestDecisionsRecordTheirTime(t *testing.T) {
 }
 
 // A CloudNativePG Cluster whose .spec.replica.self is not its own name declares a primary that is no member's name.
-// The route stays as the decision gives it, nowhere with NotDeclared. The condition DeclarationUnmatched is True,
-// says which site declares what, and what the Cluster must set, and a Warning event fires once. Once the Cluster
-// leaves self unset, the condition is False (RFC#0002 requirement 42, RFC#0003 requirement 7; issue #64).
+// The route stays as the decision gives it, nowhere with NotDeclared. The condition DeclarationUnmatched is True, says
+// which site declares what and what the Cluster must set, and a Warning event fires once. Once the Cluster leaves
+// self unset, the condition is False (RFC#0002 requirement 42, RFC#0003 requirement 7; issue #64).
 func TestDeclarationUnmatchedCondition(t *testing.T) {
 	svc := &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web", UID: "uid-web"},

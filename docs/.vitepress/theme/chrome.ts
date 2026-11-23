@@ -1,6 +1,5 @@
-// The parts of the page that VitePress's theme leaves to the browser, set here once the page is up: the sidebar shows the current page,
-// the group titles are not controls, a table is a stop for the Tab key only if it scrolls, the phone menu marks the section, and the
-// search gives the keyboard back to where it came from.
+// What VitePress's theme leaves to the browser, set once the page is up: the sidebar shows the current page, group titles are not
+// controls, a table is a Tab stop only if it scrolls, the phone menu marks the section, and search returns the keyboard to where it came from.
 
 import { useData, useRoute } from "vitepress";
 import { nextTick, onBeforeUnmount, onMounted, watch } from "vue";
@@ -33,7 +32,7 @@ export function useChrome(): void {
         if (box.top < frame.top + 96 || box.bottom > frame.bottom - 48) sidebar.scrollTop += box.top - frame.top - frame.height / 3;
     }
 
-    /** A table that scrolls sideways is a stop for Tab, so the keyboard can scroll it. One that fits is not. A block of code is the same. A table that would scroll with its words of code whole is `tight`: they may break. */
+    /** A table or code block that scrolls sideways is a Tab stop, so the keyboard can scroll it. One that fits is not. A table that would scroll with its code words whole is `tight`: they may break. */
     function settleTables(): void {
         for (const wrap of document.querySelectorAll<HTMLElement>(".vp-doc .table-wrap")) {
             wrap.classList.remove("tight");
@@ -55,7 +54,7 @@ export function useChrome(): void {
         }
     }
 
-    /** A link in a page that leaves the site opens a new tab, as the mark beside it says: the few made by a template are set here. */
+    /** A link that leaves the site opens a new tab, as its mark says. Links made by a template are set here. */
     function settleLinks(): void {
         for (const link of document.querySelectorAll<HTMLAnchorElement>(".vp-doc a[href^='http']:not([target])")) {
             if (new URL(link.href).origin === location.origin) continue;
@@ -110,7 +109,7 @@ export function useChrome(): void {
         frame = requestAnimationFrame(settleTables);
     }
 
-    /** A heading reached by its address clears the bars. The faces load after the browser has scrolled, and move it up: set it again, unless the reader has moved on. */
+    /** A heading reached by its address clears the bars. The faces load after the browser scrolls and move it up: set it again, unless the reader has moved on. */
     function settleHash(): void {
         if (!location.hash) return;
 
@@ -125,7 +124,7 @@ export function useChrome(): void {
         );
     }
 
-    /** The outline marks its current entry by a class, which the theme's script moves as the page scrolls: look at it as it moves. */
+    /** The theme's script moves a class on the outline's current entry as the page scrolls: watch it. */
     let outline: MutationObserver | undefined;
     function watchOutline(): void {
         outline?.disconnect();

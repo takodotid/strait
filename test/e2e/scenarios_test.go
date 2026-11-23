@@ -120,9 +120,9 @@ func gatewayPolicy(ctx context.Context, t *testing.T, s *site, importName string
 	t.Logf("site %s: a pod reaches the gateway's import port %d, and not its metrics port 8091", s.name, port)
 }
 
-// portsTogether: Exports created at the same moment at site a, and Imports at site b, each get a gateway port that no
-// other one holds, at every moment (issue #26). The creates run in parallel, so the controller reconciles the objects
-// back to back, likely before its cache shows the port it gave the one before. Timing decides, so a pass on a build
+// portsTogether: Exports created at the same moment at site a, and Imports at site b, each get a gateway port no other
+// one holds, at every moment (issue #26). The creates run in parallel, so the controller reconciles the objects back
+// to back, likely before its cache shows the port it gave the one before. Timing decides, so a pass on a build
 // without the fix is possible.
 func (e *env) portsTogether(ctx context.Context, t *testing.T) {
 	const n = 8
@@ -609,8 +609,8 @@ func setIsolation(ctx context.Context, e *env, s *site, d time.Duration) error {
 
 // isolated: the partition again, with pg's isolationTimeout set at both sites (RFC0002, requirements 44 to 47). Site
 // b, cut off from every peer, routes pg-b until isolationTimeout has passed since it last read site a, then nowhere
-// with SiteIsolated, and a connection from b is refused. Setting the field to 0s routes pg-b again: the site-loss
-// runbook's way out. After the heal, b routes pg-b with the policy on. Step 4 is the same partition with the policy
+// with SiteIsolated, and a connection from b is refused. Setting the field to 0s routes pg-b again (the site-loss
+// runbook's way out). After the heal, b routes pg-b with the policy on. Step 4 is the same partition with the policy
 // off: b keeps pg-b throughout.
 func (e *env) isolated(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b

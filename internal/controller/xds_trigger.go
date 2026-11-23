@@ -29,10 +29,9 @@ func exportService(o client.Object) []string {
 	return []string{e.Spec.Service.Name}
 }
 
-// XDSTrigger asks the xDS server to rebuild when an input of the gateway's configuration changes. The configuration
-// is built from the Site, the SitePeers, the SiteLinks, the Exports with the EndpointSlices of their Services, the
-// Imports, and the gateway pods' addresses (xds.Collect). A change of anything else waits for the server's own
-// rebuild, every 2s.
+// XDSTrigger asks the xDS server to rebuild when an input of the gateway's configuration changes: the Site, the
+// SitePeers, the SiteLinks, the Exports with the EndpointSlices of their Services, the Imports, and the gateway pods'
+// addresses (xds.Collect). A change of anything else waits for the server's own rebuild, every 2s.
 type XDSTrigger struct {
 	Trigger   func()
 	Namespace string

@@ -46,11 +46,10 @@ const (
 	ComponentGateway        = "gateway"
 	// LabelName names the application of the chart's pods.
 	LabelName = "app.kubernetes.io/name"
-	// AnnotationDeletionCost ranks the pods of a ReplicaSet for deletion: a ReplicaSet deletes a pod of lower cost
-	// first, among pods that are equally ready. The controller sets it on the active gateway pod only.
+	// AnnotationDeletionCost ranks the pods of a ReplicaSet for deletion: lower cost goes first among equally ready
+	// pods. The controller sets it on the active gateway pod only.
 	AnnotationDeletionCost = "controller.kubernetes.io/pod-deletion-cost"
-	// activeDeletionCost is the deletion cost of the active gateway pod. Every other gateway pod has none, which
-	// counts as 0.
+	// activeDeletionCost is the deletion cost of the active gateway pod. Every other gateway pod has none, which is 0.
 	activeDeletionCost = "1"
 )
 
@@ -58,9 +57,9 @@ const (
 type GatewayReconciler struct {
 	client.Client
 	Reader client.Reader
-	// APIReader reads from the API server, with no cache. A write of a gateway EndpointSlice that finds the cache
-	// behind the controller's own last write of it, as right after an address family change, reads the slice through
-	// APIReader, and writes again. Nil writes once.
+	// APIReader reads from the API server, with no cache. When the cache lags the controller's last write of a
+	// gateway EndpointSlice (as after an address family change), the write rereads the slice through APIReader and
+	// runs again. Nil writes once.
 	APIReader client.Reader
 	// Namespace is the gateway's namespace.
 	Namespace string
@@ -99,8 +98,8 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 	if err := r.List(ctx, &exports); err != nil {
 		return ctrl.Result{}, err
 	}
-	// Each port once: the API server refuses a Service that lists a port twice. Of two Exports that hold one port, the
-	// first by namespace, then name, keeps it, as the gateway serves it (RFC#0005, requirement 31).
+	// Each port once: the API server refuses a Service that lists a port twice. Of two Exports with one port, the first
+	// by namespace, then name, keeps it, as the gateway serves it (RFC#0005, requirement 31).
 	slices.SortFunc(exports.Items, func(a, b straitv1.Export) int {
 		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
 	})
@@ -152,11 +151,11 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 		}
 		r.handover(ctx, site, old.Gateway.ActivePod, pod)
 	}
-	// A failure here does not end the reconcile: the requeue below must stay, since no event marks the Lease's expiry.
+	// A failure here does not end the reconcile: the requeue below must stay, as no event marks the Lease's expiry.
 	if err := r.syncDeletionCost(ctx, pod); err != nil {
 		log.FromContext(ctx).Error(err, "set the deletion cost of the gateway pods")
 	}
-	// The Lease expires on the controller's clock, and no event marks it, so look again when it would.
+	// The Lease expires on the controller's clock and no event marks it, so look again when it would.
 	next := 10 * time.Second
 	if left > 0 && left < next {
 		next = left + 10*time.Millisecond
@@ -168,8 +167,8 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl
 const ReasonGatewayHandover = "GatewayHandover"
 
 // handover records an event and logs when the pod that holds the gateway Lease changed, as the Site's status shows
-// it. A handover resets every connection across the site's gateway (RFC#0005). A Lease that a pod releases and
-// another takes shows as two events: one with no holder, a Warning, then one with the new holder.
+// it. A handover resets every connection across the site's gateway (RFC#0005). A Lease that one pod releases and
+// another takes gives two events: a Warning with no holder, then one with the new holder.
 func (r *GatewayReconciler) handover(ctx context.Context, site *straitv1.Site, before, after string) {
 	if before == after {
 		return
@@ -247,8 +246,8 @@ func (r *GatewayReconciler) activeGateway(ctx context.Context) (name, addr, node
 }
 
 // syncDeletionCost sets the deletion cost of the gateway pod that holds the gateway Lease, and removes it from every
-// other gateway pod, so that a rollout or a scale-down of the gateway deletes the standbys first, and moves the Lease
-// once (RFC#0005, requirement 39). It changes nothing else on a pod. A pod being deleted is left alone.
+// other gateway pod, so a rollout or scale-down deletes the standbys first and moves the Lease once (RFC#0005,
+// requirement 39). It changes nothing else on a pod. A pod being deleted is left alone.
 func (r *GatewayReconciler) syncDeletionCost(ctx context.Context, holder string) error {
 	var pods corev1.PodList
 	if err := r.List(ctx, &pods, client.InNamespace(r.Namespace), client.MatchingLabels{LabelName: "strait", LabelComponent: ComponentGateway}); err != nil {
@@ -282,8 +281,8 @@ func (r *GatewayReconciler) syncDeletionCost(ctx context.Context, holder string)
 
 // leaseLeft returns how long the gateway lease stays valid unless its spec changes: its duration, counted on the
 // controller's clock from when the controller saw the spec change, as client-go's leader election counts it. The
-// holder sets renewTime on its own node's clock, so renewTime is never compared with the controller's clock.
-// It returns a negative duration once the lease has expired, and 0 when the lease names no duration.
+// holder's renewTime is on its own node's clock and is never compared with the controller's. It returns a negative
+// duration once the lease has expired, and 0 when the lease names no duration.
 func (r *GatewayReconciler) leaseLeft(spec coordinationv1.LeaseSpec) time.Duration {
 	now := time.Now()
 	if r.Now != nil {
@@ -365,9 +364,9 @@ func (r *GatewayReconciler) syncService(ctx context.Context, name string, exp st
 }
 
 // syncSlice writes a gateway Service's EndpointSlice, with the slice that c reads as its base. An EndpointSlice's
-// address type cannot change. A slice of the other family than the active pod's address is deleted, and written again
-// (RFC#0005, requirement 24). The precondition keeps a delete from reaching a slice already written again, while the
-// cache still shows the one before: the delete then fails with a conflict, and syncService reads the slice live.
+// address type cannot change, so a slice of the other family than the active pod's address is deleted and written
+// again (RFC#0005, requirement 24). The precondition keeps the delete off a slice already rewritten while the cache
+// still shows the old one: the delete fails with a conflict, and syncService reads the slice live.
 func (r *GatewayReconciler) syncSlice(ctx context.Context, c client.Client, name string, ports []corev1.ServicePort, addr, node string) error {
 	es := &discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: r.Namespace}}
 	at := addressType([]string{addr})
@@ -416,7 +415,7 @@ func setGatewaySlice(es *discoveryv1.EndpointSlice, name string, ports []corev1.
 
 // setExposure sets the fields of a Service's spec that depend on its type, from exp.
 // A field that exp leaves unset gets the API server's default, so a field set once and then unset does not stay.
-// A field that does not apply to the type is cleared, since the API server would reject or keep it.
+// A field that does not apply to the type is cleared: the API server would reject or keep it.
 func setExposure(spec *corev1.ServiceSpec, exp straitv1.ServiceExposure) {
 	lb := spec.Type == corev1.ServiceTypeLoadBalancer
 	spec.LoadBalancerSourceRanges = nil
@@ -444,8 +443,8 @@ func setExposure(spec *corev1.ServiceSpec, exp straitv1.ServiceExposure) {
 	}
 }
 
-// SetupWithManager registers the reconciler. Every event maps to one request, since the reconciler handles the one Site.
-// Any value on changes, such as a change of ConfigRejections, also requeues it. Changes may be nil.
+// SetupWithManager registers the reconciler. Every event maps to one request: the reconciler handles the one Site.
+// Any value on changes (such as a change of ConfigRejections) also requeues it. Changes may be nil.
 func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager, changes <-chan event.GenericEvent) error {
 	one := handler.EnqueueRequestsFromMapFunc(func(context.Context, client.Object) []reconcile.Request {
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "gateway"}}}

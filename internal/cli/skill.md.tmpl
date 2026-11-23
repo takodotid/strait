@@ -10,19 +10,19 @@ description: Read the state of Strait, the virtual service that points one local
 Strait is a virtual service between Kubernetes clusters at different sites. Each cluster is one site, and every site serves traffic.
 
 - An application connects to one local name per dependency, such as `pg.app.svc` for a PostgreSQL primary. Each name is a `SiteService`.
-- Plugins observe each member of the dependency: its role, whether it is eligible, and its state. Each site shares what it observes with its peers.
+- Plugins observe each member of the dependency: its role, eligibility and state. Each site shares what it observes with its peers.
 - Strait points the name at the member that is active now. A local member gets its own pods as endpoints. A member at another site gets the local gateway, which carries the TCP traffic to that site over a link.
-- When Strait cannot tell which member is active, it routes nowhere: the name has no endpoints, and a new connection is refused at once. This is deliberate. A refused connection is retried, while a connection to the wrong primary can lose writes.
+- When Strait cannot tell which member is active, it routes nowhere: the name has no endpoints, and a new connection is refused at once. This is deliberate. A refused connection is retried; a connection to the wrong primary can lose writes.
 
 Each site runs its own Strait and has its own view. Read each site with its own kubeconfig context.
 
 ## Rules
 
 - Strait never changes a workload. It never fails over, switches over, promotes, demotes or fences anything. It observes, and it follows.
-- Failover, switchover and promotion belong to the workload's own controller, such as CloudNativePG, or to the operator. Once the workload has moved, Strait follows on its own.
+- Failover, switchover and promotion belong to the workload's own controller, such as CloudNativePG, or to the operator. Strait then follows on its own.
 - The `strait` CLI is read-only. It never creates, updates, patches or deletes an object.
 - A route to nowhere is a safe state, not a fault to work around. Find its cause with `strait explain` and report it to the operator. Do not edit Strait's resources to force a route.
-- Pass `--context` on every call. The CLI reads exactly that context and no other.
+- Pass `--context` on every call. The CLI reads that context only.
 
 ## How to read the state
 

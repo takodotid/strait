@@ -18,10 +18,10 @@
 
 ## What it does
 
-- **One name at every site.** The application connects to `pg.app.svc:5432` everywhere. It holds no host lists, no address maps and no failover logic. When the PostgreSQL primary moves to another site, the name follows.
-- **Routes, never acts.** Strait never fails over, promotes or demotes a workload. The workload's own controller, such as CloudNativePG, or the operator moves the primary, and Strait follows. Plugins read a workload's state with read-only permissions.
+- **One name at every site.** The application connects to `pg.app.svc:5432` everywhere. It holds no host lists, address maps or failover logic. When the PostgreSQL primary moves to another site, the name follows.
+- **Routes, never acts.** Strait never fails over, promotes or demotes a workload. The workload's own controller (such as CloudNativePG) or the operator moves the primary. Strait follows. Plugins read a workload's state with read-only permissions.
 - **Routes nowhere rather than to a guess.** When Strait can't tell which member is active, the name has no endpoints. A new connection is refused at once, and the client retries.
-- **Each site decides its own route.** A site is one Kubernetes cluster. Its controller reads its own members, and polls what the other sites observe over a `direct` private path or a `wireguard` tunnel between the gateways. When the active link fails, new connections move to the next one within 5 seconds.
+- **Each site decides its own route.** Its controller reads its own members and polls what the other sites observe, over a `direct` private path or a `wireguard` tunnel between the gateways. When the active link fails, new connections move to the next one within 5 seconds.
 - **A read-only CLI.** `strait explain` says why a name points where it does. `strait --skill` prints a skill document for AI agents.
 
 ## How it works
@@ -80,7 +80,7 @@ helm --kube-context site-a install strait oci://ghcr.io/takodotid/charts/strait 
   --namespace strait-system --values values-a.yaml --wait
 ```
 
-Then install the `strait` CLI from the [release archives](https://github.com/takodotid/strait/releases). [Install](https://strait.tako.id/guide/install) has the CLI on Linux, macOS and Windows, and how to verify a release. [Getting started](https://strait.tako.id/getting-started) sets up two clusters step by step, from the WireGuard key to a routed name.
+Then install the `strait` CLI from the [release archives](https://github.com/takodotid/strait/releases). [Install](https://strait.tako.id/guide/install) covers Linux, macOS, Windows and release verification. [Getting started](https://strait.tako.id/getting-started) sets up two clusters step by step, from the WireGuard key to a routed name.
 
 ## Commands
 
@@ -96,11 +96,11 @@ Each command reads one site: pass `--context`. Installed as `kubectl-strait`, th
 
 ## Docs
 
-The [documentation site](https://strait.tako.id), whose pages are in [`docs/`](docs/): the [guide](https://strait.tako.id/guide/introduction), the [operations runbooks](https://strait.tako.id/runbooks/before-production), the [reference](https://strait.tako.id/reference/cli) and the [limitations](https://strait.tako.id/limitations). Design decisions live in the [RFCs](rfcs/), which every change follows.
+The [documentation site](https://strait.tako.id), with pages in [`docs/`](docs/): the [guide](https://strait.tako.id/guide/introduction), the [operations runbooks](https://strait.tako.id/runbooks/before-production), the [reference](https://strait.tako.id/reference/cli) and the [limitations](https://strait.tako.id/limitations). Design decisions live in the [RFCs](rfcs/), which every change follows.
 
 ## How this project is built
 
-Strait is built with AI coding agents (Claude Code), and a person directs and approves the work.
+Strait is built with AI coding agents (Claude Code). A person directs and approves the work.
 
 **What the agents do:** write code, tests and docs, review each other's changes, and look for bugs and gaps.
 
@@ -115,19 +115,19 @@ Strait is built with AI coding agents (Claude Code), and a person directs and ap
 - Before a release, the change is tested on real clusters, not only in CI.
 - Releases are signed, and every release asset can be verified (see [Verify a release](https://strait.tako.id/guide/install#verify-a-release)).
 
-**Why the maintainers trust it in production:** the maintainers run Strait for their own databases. A router that sends writes to the wrong database would hurt them first.
+**Why the maintainers trust it in production:** they run Strait for their own databases. A router that sends writes to the wrong database would hurt them first.
 
-To report a problem, open an issue. Saying that it looks AI-written is fine, as long as the issue says what is wrong.
+To report a problem, open an issue. Saying that it looks AI-written is fine if the issue says what is wrong.
 
 ## Contributing
 
-Design decisions live in [`rfcs/`](rfcs/). Before changing a subject, read the RFC that covers it.
+Design decisions live in [`rfcs/`](rfcs/). Read the RFC for a subject before changing it.
 
 | Change | Process |
 |---|---|
 | Code that conforms to an Active RFC | A pull request. CI runs `make verify`, `make test`, `make test-race`, `make lint`, `make prose`, `make test-envoy`, `make test-netns`, `make build` and `make e2e` on it, and builds the docs site. |
-| Code that departs from an RFC | Amend the RFC first, in the same pull request or an earlier one. When the code and an RFC disagree, the RFC wins. |
-| A new subject | A new RFC with the status Draft. It becomes Active with the maintainers' approval, once its open questions are resolved. |
+| Code that departs from an RFC | Amend the RFC first, in the same or an earlier pull request. When the code and an RFC disagree, the RFC wins. |
+| A new subject | A new RFC with the status Draft. It becomes Active when its open questions are resolved and the maintainers approve. |
 | A change that breaks a user of the API | A new API version. |
 
 The rules, the RFC format, the writing style and the `make` targets: [AGENTS.md](AGENTS.md). The docs' look: [DESIGN.md](DESIGN.md). Commits follow Conventional Commits, for example `docs(rfc0002): define the link resource`.

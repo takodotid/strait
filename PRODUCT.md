@@ -8,13 +8,13 @@ web
 
 ## Users
 
-Primary: platform and database operators who run an application at two or more sites, each one Kubernetes cluster, with a stateful dependency that has one leader, such as a PostgreSQL primary under CloudNativePG. They know Kubernetes well. They install the chart with Helm, write `SiteService`s in YAML, and read the state with `strait` from a terminal.
+Primary: platform and database operators who run an application at two or more sites (each one Kubernetes cluster) with a stateful dependency that has one leader, such as a PostgreSQL primary under CloudNativePG. They know Kubernetes well. They install the chart with Helm, write `SiteService`s in YAML, and read state with `strait` in a terminal.
 
-Secondary: the operator on call during an incident, who needs to know at once why a name points where it does; application developers, who only need the one name to connect to; AI agents, which read Strait's state through the `strait` skill.
+Secondary: the operator on call in an incident, who needs to know at once why a name points where it does; application developers, who need only the one name; AI agents, which read Strait's state through the `strait` skill.
 
 ## Product Purpose
 
-Strait is a virtual service between Kubernetes clusters at different sites. It gives an application one stable local name per dependency, at every site, points that name at the member that is active now, and carries the TCP traffic between sites. Success: an application holds no topology, a move of the leader is followed within seconds, and a name never points at a guess.
+Strait is a virtual service between Kubernetes clusters at different sites. It gives an application one stable local name per dependency, at every site, points it at the member that is active now, and carries the TCP traffic between sites. Success: an application holds no topology, a move of the leader is followed within seconds, and a name never points at a guess.
 
 One web surface:
 
@@ -22,7 +22,7 @@ One web surface:
 
 ## Positioning
 
-Strait routes. It never fails over, promotes, demotes or fences a workload: the workload's own controller, or the operator, does that, and Strait follows. When it can't tell which member is active, the name routes nowhere rather than to a guess. Plugins read a workload's state with read-only permissions. Each site decides its own route from what it sees and what its peers publish.
+Strait routes. It never fails over, promotes, demotes or fences a workload. The workload's own controller, or the operator, does that, and Strait follows. When it can't tell which member is active, the name routes nowhere. Plugins read a workload's state with read-only permissions. Each site decides its own route from what it sees and what its peers publish.
 
 ## Operating Context
 
@@ -48,7 +48,7 @@ Strait routes. It never fails over, promotes, demotes or fences a workload: the 
 ## Evidence on Hand
 
 - The maintainers run Strait in production for their own databases. No other confirmed users.
-- Measured numbers: the gateway benchmark (`docs/benchmark.md`) and the controller's memory per Service (`docs/sizing.md`), each with how it was measured.
+- Measured numbers: the gateway benchmark (`docs/benchmark.md`) and the controller's memory per Service (`docs/sizing.md`), each with its method.
 - The end-to-end scenarios on kind (`test/e2e/README.md`), run by CI on every pull request.
 - No testimonials, no adoption figures, no failover times from real clusters yet. Never invent them.
 

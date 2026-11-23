@@ -188,9 +188,9 @@ type Device struct {
 
 // Apply makes the kernel hold exactly the wanted interfaces, and changes only what differs.
 // Failed holds the error of each link whose interface could not be brought to its desired state.
-// Before it creates or changes an interface, the filter must admit the wanted tunnel addresses only, so that a peer
-// reaches nothing on the pod's own address through its tunnel (RFC0007 requirement 12). While the filter cannot be
-// put in place, every wanted link fails, and Apply creates and changes no interface.
+// Before it creates or changes an interface, the filter must admit the wanted tunnel addresses only, so a peer reaches
+// nothing on the pod's own address through its tunnel (RFC0007 requirement 12). While the filter cannot be put in
+// place, every wanted link fails and Apply creates and changes no interface.
 func Apply(k Kernel, want []Interface) (failed map[string]error, err error) {
 	have, err := k.Devices()
 	if err != nil {

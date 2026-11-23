@@ -217,8 +217,8 @@ type Policy struct {
 	IsolationTimeout metav1.Duration `json:"isolationTimeout,omitzero"`
 
 	// Connections is what a route change does to established connections. Keep, the default, keeps them all.
-	// EndGateway closes this site's Imports of the members that are not routed, which ends the connections through
-	// this site's gateway to them. Connections that do not pass through the gateway are kept.
+	// EndGateway closes this site's Imports of the members that are not routed, ending connections through this
+	// site's gateway to them. Connections that bypass the gateway are kept.
 	// +optional
 	Connections ConnectionsPolicy `json:"connections,omitempty"`
 }

@@ -80,7 +80,7 @@ export default defineConfig({
         ["meta", { name: "robots", content: "index, follow, max-image-preview:large, max-snippet:-1" }],
     ],
 
-    // A page without a description of its own is described by its first paragraph, so each page shows its own words in search results.
+    // A page without its own description is described by its first paragraph, so search results show the page's own words.
     transformPageData(pageData, { siteConfig }) {
         if (pageData.frontmatter.description || pageData.isNotFound) return;
 
@@ -130,7 +130,7 @@ export default defineConfig({
         // A link in a page that leaves the site, and opens a new tab, carries a mark.
         externalLinkIcon: true,
 
-        // The month in words, in UTC: the same date for every reader, and never read as day-first or month-first.
+        // The month in words, in UTC: the same date for every reader, never read as day-first or month-first.
         lastUpdated: { formatOptions: { dateStyle: "medium", timeZone: "UTC" } },
 
         search: {

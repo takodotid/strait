@@ -61,9 +61,9 @@ func in(t *testing.T, ns netns.NsHandle, f func()) {
 	f()
 }
 
-// family holds the addresses of the test in one IP family. The gateway's pod address and the address that peers dial
-// for WireGuard are apart, as a pod address and a node address are, so that the peer can route the pod address into
-// its tunnel. The neighbour stands for another pod of the cluster, which the gateway reaches on its own network, at
+// family holds the addresses of the test in one IP family. The gateway's pod address and the address peers dial for
+// WireGuard are apart, as a pod address and a node address are, so the peer can route the pod address into its
+// tunnel. The neighbour stands for another pod of the cluster, which the gateway reaches on its own network, at
 // gatewaySide. WireGuard itself runs over IPv4 in both.
 type family struct {
 	name                   string
@@ -166,8 +166,8 @@ func up(t *testing.T, l netlink.Link) {
 	}
 }
 
-// A peer of a wireguard link that widens its own allowed IPs, and routes the gateway pod's address and another pod's
-// into its tunnel, reaches only the gateway's control and export ports, in both IP families, though the gateway's
+// A peer of a wireguard link that widens its own allowed IPs and routes the gateway pod's address and another pod's
+// into its tunnel reaches only the gateway's control and export ports, in both IP families, though the gateway's
 // namespace forwards (RFC0007 requirement 12; issue #64). The gateway side runs the agent's own Netlink kernel and
 // Apply.
 func TestWireGuardPeerReachesOnlyControlAndExportPorts(t *testing.T) {

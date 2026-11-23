@@ -113,6 +113,21 @@ The resources Strait serves are its contract with its users.
 - **Dead simple.** Short sentences, everyday words. No intros, no filler, no em-dashes.
 - **Tables over prose for facts.** Each table row is one record.
 - **A fact lives in one doc;** link, don't copy.
+- **Effect, then action.** A table cell or a comment states the effect and what to do, in one or two sentences. The mechanism lives in the requirement or RFC it cites.
+- **Never grow prose back.** An edit keeps or lowers the word count of what it touches, unless it adds a new fact. Don't add reasons, examples or restatements to text that was cut.
+- **Link the owner.** A doc links an RFC rule, and a runbook links a shared step, instead of restating it:
+
+  |Fact|Owner|
+  |---|---|
+  |What Strait never does, and routing nowhere rather than to a guess|`docs/limitations.md`|
+  |Route outcomes, holds, isolation|RFC0002|
+  |Gateway Lease, failover sequence, node ports|RFC0005|
+  |A gateway handover resets connections|`docs/runbooks/gateway-handover.md`|
+  |The status check after a change|`docs/runbooks/upgrade.md`, step 3|
+  |The CloudNativePG replica step|`docs/runbooks/site-loss.md`, step 3|
+  |startupHold|`docs/runbooks/site-return.md`|
+  |End-to-end tests and CI timings|`test/e2e/README.md`|
+
 - Talk to the operator in their language, just as plain.
 
 ## Commits

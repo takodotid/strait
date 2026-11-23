@@ -666,7 +666,7 @@ func TestImportSyncFailureRequeuesAfterAFixedDelay(t *testing.T) {
 
 // The controller tries a failed sync again after the same delay, however often it fails. The test runs the reconciler
 // in a controller with controller-runtime's default queue, as the manager builds it, with the delay shortened from 2s
-// to 50ms. Its backoff starts at 5ms and doubles, so a count of tries would not tell: the test checks the longest wait
+// to 50ms. Its backoff starts at 5ms and doubles, so a count of tries would not tell. The test checks the longest wait
 // between two tries, and since the last one.
 func TestImportSyncRetriesWithNoBackoff(t *testing.T) {
 	r, _, tries := failingImport(t)
@@ -739,8 +739,8 @@ func (l *logLines) take(msg string) []string {
 // A failed sync of an Import logs at error level only when its error is new: the first failure after a success, a
 // change of the error, and the first failure of an Import created again. Every other try logs at V(1), with the error.
 // The Import's SyncFailed condition holds the message. A permanent error, such as a namespace outside
-// controller.namespaces, would otherwise log an error every 2s: about 43,000 a day per Import (RFC0005,
-// requirement 51; issue #62).
+// controller.namespaces, would otherwise log an error every 2s, about 43,000 a day per Import (RFC0005, requirement
+// 51; issue #62).
 func TestImportSyncErrorLoggedWhenItChanges(t *testing.T) {
 	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
 	// fail is the error of the next read of the Import's Service; nil reads it.

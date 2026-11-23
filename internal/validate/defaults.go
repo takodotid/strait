@@ -11,9 +11,8 @@ import (
 )
 
 // Fields holds the paths of the fields that an object's source sets to a value other than null, such as
-// "spec.gateway.lease.duration". The defaults leave such a field as written, also when it holds a zero value, as the
-// API server does. Nil Fields count every zero value as unset: a typed object cannot tell an explicit zero from a
-// missing field.
+// "spec.gateway.lease.duration". The defaults leave such a field as written, even a zero value, as the API server
+// does. Nil Fields count every zero value as unset: a typed object cannot tell an explicit zero from a missing field.
 type Fields map[string]bool
 
 // FieldsOf returns the fields that a JSON object sets. It looks into objects, not into lists.
@@ -40,7 +39,7 @@ func FieldsOf(data []byte) (Fields, error) {
 }
 
 // Default sets the defaults of the kubebuilder default markers on obj, as the API server does.
-// A zero value counts as unset: a typed object cannot tell an explicit zero from a missing field.
+// A zero value counts as unset.
 func Default(obj runtime.Object) { defaults(obj, nil) }
 
 // defaults is Default, which leaves alone the fields that f holds.

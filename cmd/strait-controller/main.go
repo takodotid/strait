@@ -196,12 +196,12 @@ func run(metricsAddr, probeAddr, observationsAddr, xdsAddr, gatewayNamespace, ob
 	return start(ctrl.SetupSignalHandler(), mgr, lock, leaderElect)
 }
 
-// start runs the manager until ctx ends or the manager fails. The manager returns nil only once it stopped on ctx and
-// every runnable has returned: it waits for them with no timeout. start then releases the Lease if this controller
-// still holds it, so the next controller takes it at once instead of after the lease duration (RFC0004, requirement
-// 14). On a failure, as when the Lease could not be renewed, the manager does not wait for its runnables, so the Lease
-// stays held until it expires (requirement 16). client-go's own release on cancel would come before the runnables
-// stop on that path. The release is safe only because the process exits right after: main returns once run does.
+// start runs the manager until ctx ends or the manager fails. On ctx ending, the manager returns nil only once every
+// runnable has returned, with no timeout. start then releases the Lease if this controller still holds it, so the next
+// controller takes it at once (RFC0004, requirement 14). On a failure, as when the Lease could not be renewed, the
+// manager does not wait for its runnables, so the Lease stays held until it expires (requirement 16). client-go's own
+// release on cancel would come before the runnables stop on that path. The release is safe only because the process
+// exits right after.
 func start(ctx context.Context, mgr manager.Manager, lock resourcelock.Interface, leaderElect bool) error {
 	if err := mgr.Start(ctx); err != nil {
 		return err
@@ -277,8 +277,8 @@ func newPoller(r client.Reader, changed func(peer string)) *exchange.Poller {
 
 // loopsAlive is the liveness check: it fails while the poller's round or the xDS rebuild loop is overdue. Both run on
 // the elected controller only, and pass before they start. Neither waits for the API server or a link, so a slow API
-// server or a link that is down cannot fail it (RFC0004). Work that does wait for them, such as decisions and status
-// writes, shows in metrics instead (docs/metrics.md).
+// server or a down link cannot fail it (RFC0004). Work that waits for them, such as decisions and status writes,
+// shows in metrics (docs/metrics.md).
 func loopsAlive(loops ...interface{ Alive(time.Time) error }) healthz.Checker {
 	return func(*http.Request) error {
 		now := time.Now()
@@ -352,9 +352,8 @@ const reconcileTimeout = 10 * time.Second
 
 // managerOptions are the manager's options. The manager never releases the Lease itself: client-go would release it
 // on a failed renewal too, before the manager stops its runnables. start releases it once they have stopped.
-// The manager waits for every runnable to stop, with no timeout: a release while one still runs would let the next
-// controller overlap with it. A runnable that hangs is ended by the pod's termination grace period, and the Lease
-// then expires.
+// The manager waits for every runnable, with no timeout: an earlier release would let the next controller overlap
+// with a running one. The pod's termination grace period ends a runnable that hangs, and the Lease then expires.
 func managerOptions(scheme *runtime.Scheme, lock resourcelock.Interface, namespace, metricsAddr, probeAddr string, leaderElect bool) ctrl.Options {
 	inGateway := cache.ByObject{Namespaces: map[string]cache.Config{namespace: {}}}
 	return ctrl.Options{
@@ -424,9 +423,8 @@ func readsIn(opts *cache.Options, namespaces []string, cnpg bool) {
 }
 
 // memoryLimit returns the Go runtime's soft memory limit: 90% of limit, a byte count, so that the garbage collector
-// keeps the heap under the container's memory limit instead of letting it grow to twice the live heap. The chart sets
-// limit from the container's limits.memory. A GOMEMLIMIT that is set, or a limit that is not a positive byte count,
-// sets none.
+// keeps the heap under the container's memory limit. The chart sets limit from the container's limits.memory. A
+// GOMEMLIMIT that is set, or a limit that is not a positive byte count, sets none.
 func memoryLimit(limit, gomemlimit string) (int64, bool) {
 	n, err := strconv.ParseInt(limit, 10, 64)
 	if gomemlimit != "" || err != nil || n <= 0 {

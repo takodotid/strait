@@ -86,10 +86,10 @@ func (e *env) installStrait(ctx context.Context, s *site) error {
 		return fmt.Errorf("STRAIT_IMAGE %q has no tag", e.image)
 	}
 	// With externalTrafficPolicy Local, kube-proxy serves the direct Service only from an endpoint that names its node.
-	// The peer dials the one node of the site, which hosts the gateway.
+	// The peer dials the site's one node, which hosts the gateway.
 	// The gateway's policy admits the peer's node, on both networks, to the control and export ports and the
-	// WireGuard listen port. kindnet enforces it. The metrics admit a namespace that holds no pod, so no pod of the
-	// cluster reaches them (RFC0007 requirement 28).
+	// WireGuard listen port. kindnet enforces it. The metrics admit a namespace with no pod, so no pod of the cluster
+	// reaches them (RFC0007 requirement 28).
 	p := e.peer(s)
 	values := fmt.Sprintf(`image: {repository: %q, tag: %q, pullPolicy: Never}
 envoy: {image: {repository: %q, tag: %q, pullPolicy: Never}, drainTimeSeconds: %d}

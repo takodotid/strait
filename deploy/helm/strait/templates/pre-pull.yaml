@@ -1,7 +1,7 @@
 {{- if .Values.controller.prePull.enabled }}
-# Runs the release's image once, on the controller's node when a controller pod runs, before an upgrade or a rollback
-# changes anything. Helm waits for it: when the image cannot be pulled, the upgrade fails before the old controller
-# stops. The new controller pod lands on that node only by chance.
+# Runs the release's image once, before an upgrade or rollback changes anything: on the controller's node when a controller pod runs.
+# Helm waits for it, so an image that cannot be pulled fails the upgrade before the old controller stops. The new controller pod
+# lands on that node only by chance.
 apiVersion: batch/v1
 kind: Job
 metadata:

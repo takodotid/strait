@@ -135,7 +135,7 @@ install_strait() { # site
   ks "$s" create namespace strait-system --dry-run=client -o yaml | ks "$s" apply -f - >/dev/null
   ks "$s" label namespace strait-system pod-security.kubernetes.io/enforce=privileged --overwrite >/dev/null
   if ! ks "$s" -n strait-system get secret strait-wireguard >/dev/null 2>&1; then
-    # The private key lives in a file that only this user reads, and only until the Secret holds it.
+    # The private key sits in a file only this user reads, until the Secret holds it.
     mkdir -p -m 700 "$TMP/keys"
     "$TMP/tcpbench" wgkey "$TMP/keys/$s" >/dev/null
     ks "$s" -n strait-system create secret generic strait-wireguard --from-file=privateKey="$TMP/keys/$s" >/dev/null
@@ -256,7 +256,7 @@ cpu_read() { # phase file
     docker exec "${CPU_NODE[$p]}" sh -c 'echo "$(date +%s%N) $(sed -n "s/^usage_usec //p" "$1/cpu.stat")"' sh "${CPU_CG[$p]}" |
       sed "s/^/$1 $p /" >>"$2"
   done
-  # The whole host's busy time, in the same unit, to show how busy the host was in the window.
+  # The whole host's busy time, in the same unit, to show how busy the host was.
   echo "$1 host $(date +%s%N) $(awk -v hz="$(getconf CLK_TCK)" '/^cpu / {printf "%.0f", ($2 + $3 + $4 + $7 + $8 + $9) * 1e6 / hz}' /proc/stat)" >>"$2"
 }
 
@@ -307,7 +307,7 @@ result() { # what got want
 }
 
 # The checks run to the end before their output is read. A pipe into grep -q would cut them short,
-# and under pipefail the cut would count as a pass.
+# and under pipefail the cut counts as a pass.
 checks_pass() {
   local out
   out=$(check "$1" now)

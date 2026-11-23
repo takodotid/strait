@@ -216,10 +216,10 @@ func (c check) archive(dir, goos, goarch string, files map[string][]byte) []erro
 	return errs
 }
 
-// entries checks what make dist fixes in each entry of an archive, so that two builds of one commit give the same bytes
-// (requirement 17): the entries sorted by name, each with the time SOURCE_DATE_EPOCH, and the mode 0755 for a directory
-// or a binary, 0644 otherwise. A .tar.gz must have owner 0 with no names in each entry and no name or time in its gzip
-// header. A .zip must store its times in UTC. Each error names the entry.
+// entries checks what make dist fixes in each entry, so two builds of one commit give the same bytes (requirement 17):
+// sorted by name, time SOURCE_DATE_EPOCH, mode 0755 for a directory or a binary and 0644 otherwise. A .tar.gz needs
+// owner 0 with no names in each entry, and no name or time in its gzip header. A .zip must store its times in UTC.
+// Each error names the entry.
 func (c check) entries(file string, binaries []string) []error {
 	var errs []error
 	fail := func(name, format string, args ...any) {
@@ -413,11 +413,11 @@ func (c check) index(digest, file string) []error {
 	return errs
 }
 
-// binary checks that a binary was built for its platform, and that it carries the version and the commit. The binary
-// of the host's platform is also run: `strait version` must print them (requirement 13). The others are searched for
-// both strings, which only the build's -X flags put there when it ran with no .git, as the image's build does. It
-// must be built with -trimpath, and a VCS stamp, which a build in a git checkout adds, must name the commit with no
-// change (requirement 21). The image's build has no .git, so its binaries carry no VCS stamp.
+// binary checks that a binary was built for its platform and carries the version and the commit. The host platform's
+// binary is also run: `strait version` must print them (requirement 13). The others are searched for both strings,
+// which only the build's -X flags put there when it ran with no .git, as the image's build does. It must be built
+// with -trimpath, and a VCS stamp, which a build in a git checkout adds, must name the commit with no change
+// (requirement 21). The image's build has no .git, so its binaries carry no VCS stamp.
 func (c check) binary(name, goos, goarch string, data []byte) error {
 	p, err := os.CreateTemp(c.tmp, name+"-")
 	if err != nil {

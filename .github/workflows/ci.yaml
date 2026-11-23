@@ -5,8 +5,8 @@ on:
     branches: [main]
 permissions:
   contents: read
-# A new push to a pull request cancels its older run. Each commit of main runs in a group of its own, so that no later
-# commit cancels its run, pending or in progress: a release requires it (RFC0007, requirement 17).
+# A new push to a pull request cancels its older run. Each commit of main runs in its own group, so no later commit
+# cancels its run: a release requires it (RFC0007, requirement 17).
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

@@ -15,7 +15,7 @@ make e2e
 | `STRAIT_IMAGE` | `ghcr.io/takodotid/strait:dev` | The Strait image under test. It must be in the local docker image store. |
 | `STRAIT_E2E_KEEP` | unset | `1` keeps the clusters and the kubeconfigs after the run. |
 
-The test prints each site's kubeconfig path and context at start. It never reads or writes `~/.kube/config`.
+The test prints each site's kubeconfig path and context at start. It never touches `~/.kube/config`.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ The test prints each site's kubeconfig path and context at start. It never reads
 | `wireguard` kernel module | loaded on the host (`sudo modprobe wireguard`) |
 | `nf_tables` | in the host's kernel: the gateway agent filters its WireGuard interfaces' traffic with it ([RFC0005](../../rfcs/RFC0005.md#wireguard)) |
 
-The host needs network access to pull the images and the CloudNativePG manifest. CloudNativePG's operator Deployment pulls with `imagePullPolicy: Always`, so its node checks the registry even though the image is loaded.
+The host needs network access to pull the images and the CloudNativePG manifest. CloudNativePG's operator Deployment pulls with `imagePullPolicy: Always`, so its node checks the registry even with the image loaded.
 
 ## Fixture
 
@@ -51,9 +51,9 @@ The host needs network access to pull the images and the CloudNativePG manifest.
 | `strait-net` | `172.30.0.0/24` | Each node's primary network, and the wireguard links. |
 | `strait-direct` | `172.31.0.0/24`, internal | The direct links. |
 
-The test creates both networks when they are absent and never deletes them: other `strait-*` clusters share them.
+The test creates both networks when absent and never deletes them: other `strait-*` clusters share them.
 
-The test makes faults with nftables tables inside the node containers: `strait-cut-direct`, `strait-cut-wan`, and `strait-cut-site` with `docker pause` for a lost site.
+Faults are nftables tables inside the node containers: `strait-cut-direct`, `strait-cut-wan`, and `strait-cut-site` with `docker pause` for a lost site.
 
 ## Scenarios
 
@@ -63,7 +63,7 @@ They run in this order on one fixture and stop at the first failure.
 |---|---|---|
 | 1 | Baseline | Both sites route `pg` to `pg-a`. A write from each site lands on `cluster-a`. |
 | role-check | Role confirmed with the database | `confirmRole` on `pg` at site a, with the role `strait_role_check` (`LOGIN` only) created on `cluster-a`. `pg-a` stays routed. With the role's password changed, `pg-a` is `Unknown` with `RoleNotConfirmed`, and site a routes nowhere once `unknownHold` has passed. With the password back, both sites route `pg-a`. `confirmRole` is off afterwards. |
-| import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from site b to `web-a.web.svc` reaches `web-a`. Under the gateway's policy, a pod of site b reaches the active gateway pod's import port on the pod's address, and times out on 8091. Without `port`, site b deletes the Service. |
+| import | Import Service | An `Export` of `web-a` at site a and an `Import` of it with `port` at site b. A request from b to `web-a.web.svc` reaches `web-a`. Under the gateway's policy, a pod of b reaches the active gateway pod's import port on the pod's address, and times out on 8091. Without `port`, b deletes the Service. |
 | switch | A route change through nowhere | At site a, the `declared` SiteService `local` has two members on `web-a`, and its route moves from `one` to `two` in one decision. A watch of its EndpointSlices never sees both members at once. |
 | conflict | A Service-name conflict | Strait's Service `local` at site a loses its owner. Strait deletes `local`'s EndpointSlices, and `Routed` is False with `ServiceConflict`. Once that Service is deleted, Strait writes its own and the slice of `two` again. Then `local` is deleted. |
 | ports | Ports of objects created together | 8 `Export`s at site a and 8 `Import`s at site b, created in parallel, each get a gateway port. No two hold one port at any read, every 100ms. The race needs a reconcile before the cache shows the last port, so a build without the fix can pass. |
@@ -73,7 +73,7 @@ They run in this order on one fixture and stop at the first failure.
 | 2 | Link failover | Cutting the direct link makes `a-wan` active at site b within 10s. Writes from b keep succeeding. A new connection from b every 250ms: each one that starts 5s or more after the cut reaches `cluster-a` (RFC0005 requirement 4). |
 | 3 | Switchover with tokens | Site a stops naming `pg-a` within one 500ms sample of the demotion patch, site b within `peerTimeout`. `pg-b` never shows before the promotion patch. Both sites pass through nowhere, then route `pg-b`. |
 | 4 | Partition | Site b keeps `pg-b` with reason `Active`. Site a holds `pg-b` (`HeldUnknown`), then routes nowhere once `unknownHold` has passed. A connection at a is refused in under 2s. After the heal, a routes `pg-b` within 15s. |
-| 4b | Isolated site | The partition again, with `isolationTimeout: 8s` on `pg` at both sites. Site b routes `pg-b`, then nowhere with `SiteIsolated` no sooner than `isolationTimeout` after the cut, minus one poll, and a connection at b is refused. Site a routes nowhere as in step 4. Setting the field to 0s at b routes `pg-b` again, and setting it back isolates b again. After the heal, both sites route `pg-b`. The field is removed afterwards. Step 4 is the same partition with the policy off. |
+| 4b | Isolated site | The partition again, with `isolationTimeout: 8s` on `pg` at both sites. Site b routes `pg-b`, then nowhere with `SiteIsolated` no sooner than `isolationTimeout` after the cut, minus one poll, and a connection at b is refused. Site a routes nowhere as in step 4. At b, `0s` routes `pg-b` again, and setting it back isolates b again. After the heal, both sites route `pg-b`. The field is removed afterwards. Step 4 is the same partition with the policy off. |
 | 5 | Disagreeing declarations | Two `declared` SiteServices that name different members route nowhere at both sites. Once they agree, a request from each site reaches the declared member. |
 | 5b | Ending gateway sessions | At site b, `web` routes to `web-a` through the gateway, and the client pod holds an idle TCP session to it. With `policy.connections` unset, moving the route to `web-b` keeps the session for 20s. With `EndGateway` at site b, the move ends it within 20s, and a new request from b reaches `web-b`. `web-a` stays up throughout. The policy is removed afterwards. |
 | 6 | Site loss | Site a holds `pg-b`, then routes nowhere. After the operator promotes `cluster-a` without a token, a routes `pg-a`. |

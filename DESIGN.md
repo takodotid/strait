@@ -166,7 +166,7 @@ The docs wear a ship's livery. The hull's colour fills the masthead and the home
 
 Colour comes in whole planes, not in accents. Type is one family, Archivo, used across its width axis: wide for the name, a little wide for headings, normal for reading, narrow for markings. Code sits on the black hull in both themes.
 
-At night the planes turn dark and the ink turns light. The hull and the funnel's buff stay as they are.
+At night the planes turn dark and the ink turns light. The hull and the buff stay.
 
 **Key Characteristics:**
 
@@ -219,7 +219,7 @@ The masthead's band and text on buff are `#101a17` in both themes.
 
 ## Typography
 
-**Family:** Archivo Variable, with its width axis, for everything but code. **Mono:** IBM Plex Mono, 400 and 600. Both are open-licensed and self-hosted with the site, from the `@fontsource` packages: no font is fetched from another host.
+**Family:** Archivo Variable, with its width axis, for everything but code. **Mono:** IBM Plex Mono, 400 and 600. Both are open-licensed and self-hosted from the `@fontsource` packages: no font is fetched from another host.
 
 | Role | Weight | Width | Size | Used for |
 |---|---|---|---|---|
@@ -238,13 +238,13 @@ The masthead's band and text on buff are `#101a17` in both themes.
 
 ### Named Rules
 
-**The Markings Rule.** Capitals are only for short labels, set narrow and tracked 0.07em. Headings and reading text stay in sentence case. A table's head is never set in capitals: a unit such as µs and a case-sensitive name must read as written.
+**The Markings Rule.** Capitals are only for short labels, set narrow and tracked 0.07em. Headings and reading text stay in sentence case. A table's head is never in capitals: a unit such as µs and a case-sensitive name must read as written.
 
 **The Width Rule.** Hierarchy comes from width and weight within the one family: wide for the name, narrow for markings and numerals. No second family is added for display.
 
 ## Layout
 
-VitePress's documentation layout: the masthead, the sidebar, the page, and its outline.
+VitePress's layout: the masthead, the sidebar, the page, and its outline.
 
 | Part | Rule |
 |---|---|
@@ -340,7 +340,7 @@ Two sites on the black hull, with the link between their gateways. The route in 
 
 ## Contrast
 
-Every text pair meets WCAG AA at rest: 4.5:1 for text, 3:1 for a mark that is not text. Computed with the WCAG 2 formula from the tokens.
+Every text pair meets WCAG AA at rest: 4.5:1 for text, 3:1 for a mark that is not text, by the WCAG 2 formula from the tokens.
 
 | Use | Pair | Needs | Day | Night |
 |---|---|---|---|---|

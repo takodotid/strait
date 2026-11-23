@@ -803,7 +803,7 @@ func TestLastChangeTimeOfAFailover(t *testing.T) {
 	want(straitv1.ReasonHeldUnknown, []string{"web-b"}, 9*time.Second)
 }
 
-// With EndGateway, a decision that routes a gateway member nowhere because its hold ran out closes its Import, also
+// With EndGateway, a decision that routes a gateway member nowhere because its hold ran out closes its Import. So does
 // the first decision after a controller start that took longer than unknownHold, before the first poll of the peers.
 // The sessions through the gateway to that member then end. This is a cost of the policy (RFC0002, What EndGateway
 // covers and costs).

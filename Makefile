@@ -43,8 +43,8 @@ GOARCH ?= $(shell go env GOARCH)
 DIST := dist/strait_$(VERSION)_$(GOOS)_$(GOARCH)
 EXE := $(if $(filter windows,$(GOOS)),.exe)
 ARCHIVE := $(DIST)$(if $(filter windows,$(GOOS)),.zip,.tar.gz)
-# The time of every entry of the CLI archive, and the date of its man pages: the commit's time, read once, so that two
-# builds of one commit give the same archive (RFC0006 requirement 17). Without git, the current time.
+# The time of every entry of the CLI archive and the date of its man pages: the commit's time, read once, so two builds
+# of one commit give the same archive (RFC0006 requirement 17). Without git, the current time.
 ifndef SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH := $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
 endif
