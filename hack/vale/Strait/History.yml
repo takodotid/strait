@@ -4,6 +4,7 @@ message: "'%s' is history. Remove the reference; git holds it."
 level: error
 nonword: true
 tokens:
-  - '\(#\d+\)'
-  - '#\d+,? (?:row|item) \d+'
+  # Issue and PR numbers. RFC numbers have four digits ([RFC#0002]), so they don't match.
+  - '\(#\d{1,3}\)'
+  - '#\d{1,3},? (?:row|item) \d+'
   - 'found in (?:a )?review'
