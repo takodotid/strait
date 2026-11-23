@@ -16,7 +16,7 @@ The rule: leave twice the measured heap ([Measured](#measured)), and a margin of
 
 ```
 limits.memory >= 128Mi
-+ 2 x 5.6 KiB x (Services of the cluster)
++ 2 x 5.5 KiB x (Services of the cluster)
 ```
 
 The values that set it:
