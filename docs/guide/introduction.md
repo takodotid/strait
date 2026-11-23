@@ -4,7 +4,7 @@ Strait gives an application one stable local name per dependency, at every site,
 
 The application holds no topology: no host lists, no address maps, no failover logic. It connects to `pg.app.svc:5432` at every site. When the PostgreSQL primary moves to another site, the name follows.
 
-Strait routes. It never fails over, promotes or demotes a workload. The workload's own controller, such as CloudNativePG, or the operator moves the primary, and Strait follows.
+The workload's own controller moves the primary. See [Limitations](../limitations.md#what-strait-doesn-t-do).
 
 ## How it works
 
@@ -30,31 +30,7 @@ block-beta
 - At site a, the primary `pg-a` is local. `pg.app.svc` points at its pods.
 - At site b, the primary is remote. `pg.app.svc` points at gateway b, which carries each connection over the link to gateway a, and on to `pg-a`.
 
-The route comes from the controller at each site:
-
-```mermaid
-block-beta
-  %% accTitle: How each site's controller sets the route and watches the other site
-  columns 5
-  clA["Cluster pg-a<br/>primary"] space ctrlA["controller a"] space nameA["site a<br/>pg.app.svc"]
-  space space space space space
-  space space space space gwA["gateway a"]
-  space space space space space
-  space space space space gwB["gateway b"]
-  space space space space space
-  clB["Cluster pg-b<br/>replica"] space ctrlB["controller b"] space nameB["site b<br/>pg.app.svc"]
-  clA -- "read-only" --> ctrlA
-  ctrlA -- "endpoints" --> nameA
-  ctrlA -- "xDS" --> gwA
-  gwA == "link" === gwB
-  ctrlA -. "observations" .-> gwB
-  clB -- "read-only" --> ctrlB
-  ctrlB -- "endpoints" --> nameB
-  ctrlB -- "xDS" --> gwB
-  ctrlB -. "observations" .-> gwA
-```
-
-Each controller reads only the members at its own site. It polls the other site's observations through the gateways, over the same link. The pieces, the resources and what each one guarantees are in [Concepts](./concepts.md).
+Each site's controller reads only its own members and polls the other site's observations over the same link. The pieces and the resources are in [Concepts](./concepts.md).
 
 ## What it looks like
 
@@ -77,46 +53,12 @@ Members:
 NAME  SITE  ROUTED  PATH     ROLE     ELIGIBLE  STATE   REASON          OBSERVED  CONFIRMED
 pg-a  a     true    Gateway  primary  true      Stable  PrimaryCluster  1s        1s
 pg-b  b     false   -        replica  false     Stable  ReplicaCluster  1s        -
-
-Declarations:
-SITE  PRIMARY
-a     pg-a
-b     pg-a
-
-Conditions:
-TYPE                  STATUS  REASON                  SINCE  MESSAGE
-Routed                True    Active                  12m    pg-a is the only writable member
-Multiple              False   NoMultipleWritable      12m    -
-DeclarationsDisagree  False   NoDeclarationsDisagree  12m    -
-Held                  False   NoHeldUnknown           12m    -
-Applied               True    Synced                  12m    -
-DeclarationUnmatched  False   NoDeclarationUnmatched  12m    -
 ```
 
 Every command of `strait` is in [The strait command](../reference/cli.md).
 
 ## Try it on kind
 
-`make e2e` builds two sites on kind, with CloudNativePG in its distributed topology, and runs every scenario: link failover, switchover, a partition, disagreeing declarations, site loss, and two writable members.
-
-```sh
-make e2e
-```
-
-It builds the image, creates the kind clusters `strait-e2e-a` and `strait-e2e-b`, runs the scenarios, and deletes the clusters. To keep them:
-
-```sh
-STRAIT_E2E_KEEP=1 make e2e
-```
-
-The test prints where it wrote the kubeconfigs. To look around, build the CLI and run it against site b. Replace `PATH_TO_KUBECONFIG_B` with the kubeconfig of site b:
-
-```sh
-make build
-bin/strait --kubeconfig PATH_TO_KUBECONFIG_B \
-  --context kind-strait-e2e-b -n db explain pg
-```
-
-The prerequisites, the fixture and the scenarios are in [the e2e README](../../test/e2e/README.md).
+`make e2e` runs every scenario on kind: see [the e2e README](../../test/e2e/README.md).
 
 To set up two real clusters, start with [Install](./install.md), then [Getting started](../getting-started.md).

@@ -16,44 +16,9 @@ Each site has one `Site`, one `SitePeer` per peer and one `SiteLink` per path. E
 
 ## A SiteService
 
-Apply the same object at every site:
+Apply the same object at every site. The full example is in [Getting started](../getting-started.md).
 
-```yaml
-apiVersion: strait.tako.id/v1
-kind: SiteService
-metadata:
-  name: pg
-  namespace: app
-spec:
-  mode: Single
-  port:
-    name: postgres
-    port: 5432
-  plugin:
-    cnpg:
-      role: primary
-  members:
-    - name: pg-a
-      site: a
-      cnpg:
-        cluster: pg-a
-    - name: pg-b
-      site: b
-      cnpg:
-        cluster: pg-b
-  policy:
-    unknownHold: 30s
-```
-
-Applications at both sites connect to `pg.app.svc:5432`. Each site's controller writes that Service's endpoints: the primary's pods when it is local, the local gateway when it is remote, and nothing when it can't tell which member is writable.
-
-## Routes nowhere rather than to a guess
-
-When Strait can't tell which member is active, the name has no endpoints. A new connection is refused at once, and the client retries. The name routes nowhere when two members are writable, when sites declare different primaries, or when a member stays `Unknown` for too long. See [RFC0002](../../rfcs/RFC0002.md).
-
-## Observes, never acts
-
-Plugins get read-only permissions and no workload credentials. Strait never promotes, demotes, fences or reconfigures a workload. See [RFC0003](../../rfcs/RFC0003.md) and [RFC0007](../../rfcs/RFC0007.md).
+Applications at both sites connect to `pg.app.svc:5432`. Each site's controller writes that Service's endpoints: the primary's pods when it is local, the local gateway when it is remote, and nothing when it can't tell which member is writable. What Strait does and doesn't do is in [Limitations](../limitations.md#what-strait-doesn-t-do).
 
 ## Modes
 
@@ -82,10 +47,7 @@ See [RFC0003](../../rfcs/RFC0003.md).
 
 When the active link fails, new connections move to the next one within 5 seconds. See [RFC0005](../../rfcs/RFC0005.md).
 
-### Endpoint-direct
-
-On a `direct` link where pod addresses are routable between sites, the name points straight at the remote pods, with no gateway hop. In production, set the link's `endpointCIDRs` to the peer's pod CIDRs, so that a peer's document can't point the name at another address. See [RFC0005](../../rfcs/RFC0005.md) and the [Gateway benchmark](../benchmark.md).
-
-### Envoy over xDS
-
-The controller configures Envoy with no reload. A route change never closes an established connection, unless the `SiteService` asks for it with `policy.connections: EndGateway`. See [RFC0005](../../rfcs/RFC0005.md) and [RFC0002](../../rfcs/RFC0002.md#ending-connections-through-the-gateway).
+| Feature | Is |
+|---|---|
+| Endpoint-direct | On a `direct` link with routable pod addresses, the name points straight at the remote pods, with no gateway hop. Set the link's `endpointCIDRs` to the peer's pod CIDRs. See [RFC0005](../../rfcs/RFC0005.md) and the [Gateway benchmark](../benchmark.md). |
+| Envoy over xDS | The controller configures Envoy with no reload. A route change never closes an established connection, unless `policy.connections: EndGateway` asks for it. See [RFC0002](../../rfcs/RFC0002.md#ending-connections-through-the-gateway). |

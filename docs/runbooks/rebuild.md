@@ -1,6 +1,6 @@
 # Rebuild a release
 
-Anyone can rebuild a release from its tag and compare it with what the release published. What is reproducible, and why: [RFC0006](../../rfcs/RFC0006.md) requirement 17 for the CLI archives, [RFC0007](../../rfcs/RFC0007.md) requirement 30 for the image.
+Anyone can rebuild a release from its tag and compare it with what the release published. What is reproducible: [RFC0006](../../rfcs/RFC0006.md) requirement 17 for the CLI archives, [RFC0007](../../rfcs/RFC0007.md) requirement 30 for the image.
 
 ## Steps
 
@@ -52,11 +52,9 @@ docker buildx build --builder strait-rebuild --platform linux/amd64,linux/arm64 
 mkdir rebuild && tar -xf rebuild.tar -C rebuild
 ```
 
-The labels and annotations hold the release's time, `org.opencontainers.image.created`, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does. The release attests each platform image separately from the index ([Verify a release](../guide/install.md#verify-a-release)).
+The labels and annotations hold the release's time, so the build takes them from the published image. `--provenance=false --sbom=false` leaves out the attestations, as the release's index does.
 
 ### 3. Compare the digests
-
-Which comparison applies depends on the version. For 1.5.0 and later, compare the index digest. For versions before 1.5.0, such as v1.4.0 here, compare each platform's digest.
 
 For 1.5.0 and later, the two digests are equal:
 
@@ -65,7 +63,7 @@ echo "published sha256:$(sha256sum <published.json | cut -d' ' -f1)"
 echo "rebuilt   $(jq -r '.manifests[0].digest' rebuild/index.json)"
 ```
 
-For versions before 1.5.0, the two lists are equal:
+For versions before 1.5.0, the published index holds the build's provenance and SBOM, with the build's times and random identifiers, so its digest differs. Compare each platform's digest instead; the two lists are equal:
 
 ```sh
 jq -r '.manifests[] | select(.platform.os == "linux") | "\(.platform.architecture) \(.digest)"' published.json
@@ -83,21 +81,8 @@ docker buildx rm strait-rebuild
 
 A platform image's binaries can also be checked with `hack/distcheck`: [RFC0007, Releases](../../rfcs/RFC0007.md#releases), job `image-check`.
 
-## What is reproducible
-
-| Artifact | Same bytes as published |
-|---|---|
-| CLI archive | Yes. Compare it with the release's `SHA256SUMS`. |
-| Image index, from 1.5.0 | Yes, with the annotations that the release wrote on it. Its digest is the one that the chart names. |
-| Image of each platform, `linux/amd64` and `linux/arm64` | Yes, with the labels and annotations that the release wrote on it. |
-| Image index, before 1.5.0 | No. It holds the build's provenance and SBOM, with the build's times and random identifiers. Compare each platform's image instead. |
-
-v1.4.0 was rebuilt this way, and matched: the archive `strait_v1.4.0_linux_amd64.tar.gz`, and the images `linux/amd64` and `linux/arm64`.
-
 ## What it needs
 
-| Need | Why |
-|---|---|
-| A clone with the release's tag on `HEAD`, and no other change | Go records the commit, and whether the tree changed, in each binary. `make dist` names the version from the tag. A clone without tags builds other bytes. |
-| The Go version of the tag's `go.mod` | The release builds with it. |
-| docker with buildx, and `jq`, for the image | The release builds the image with the BuildKit image that its `release.yaml` pins. |
+- A clone with the release's tag on `HEAD`, and no other change.
+- The Go version of the tag's `go.mod`.
+- docker with buildx, and `jq`, for the image.

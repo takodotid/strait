@@ -2,7 +2,7 @@
 
 One gateway replica is active: it holds the gateway Lease `strait-gateway`. A handover moves the Lease to another replica. The sequence and its timing: [RFC0005, Failover sequence](../../rfcs/RFC0005.md#failover-sequence).
 
-Each handover resets every connection through the site's gateway, in both directions. If the gateway moved without a plan, go to [After a handover](#after-a-handover) and [Causes of a handover](#causes-of-a-handover).
+If the gateway moved without a plan, go to [After a handover](#after-a-handover) and [Causes of a handover](#causes-of-a-handover).
 
 ## A planned handover
 
@@ -32,7 +32,7 @@ kubectl --context site-a cordon NODE
 
 ### 3. Delete the active pod
 
-Its agent removes its WireGuard interfaces and releases the Lease as it stops. A standby takes the Lease within 2.2 × `lease.retryPeriod`, 2.2s by default. Replace `POD` with the active pod from `strait --context site-a status`.
+Replace `POD` with the active pod from `strait --context site-a status`.
 
 Dry run:
 
@@ -56,10 +56,6 @@ When the work on the node is done, uncordon it. Replace `NODE` as in step 2.
 kubectl --context site-a uncordon NODE
 ```
 
-## The end-to-end step
-
-The end-to-end step `gateway-handover` deletes the active pod in the same way as step 3, with the direct link cut. It requires a write from the other site to land within 8s of the takeover: [`test/e2e/README.md`](../../test/e2e/README.md#scenarios).
-
 ## After a handover
 
 Check the new active pod in the `GATEWAY` column:
@@ -74,19 +70,7 @@ Check each move, with the pods before and after. A Warning event marks a moment 
 kubectl --context site-a get events -A --field-selector reason=GatewayHandover
 ```
 
-Check the links of the new active pod, and at each peer. Expect a link to the other site `HEALTHY` and `ACTIVE`.
-
-```sh
-strait --context site-a links
-strait --context site-b links
-```
-
-Check the peers. Expect `REACHABLE`.
-
-```sh
-strait --context site-a peers
-strait --context site-b peers
-```
+Check the links and peers at both sites, as in [step 3 of the upgrade](./upgrade.md#3-wait). Expect the link to the other site `HEALTHY` and `ACTIVE`, and every peer `REACHABLE`.
 
 The metric `strait_gateway_lease_transitions_total` counts the moves, and the alert `StraitGatewayHandovers` fires on more than 3 in an hour ([Metrics](../metrics.md)).
 
@@ -94,7 +78,6 @@ The metric `strait_gateway_lease_transitions_total` counts the moves, and the al
 
 | Cause | Moves |
 |---|---|
-| A gateway rollout: an upgrade to another release, or `kubectl rollout restart` | Once ([Upgrade](./upgrade.md)). |
-| A drain of the active pod's node | Once ([Node drains](./upgrade.md#node-drains)). |
+| A gateway rollout (an upgrade, or `kubectl rollout restart`), or a drain of the active pod's node | Once ([Upgrade](./upgrade.md), [Node drains](./upgrade.md#node-drains)). |
 | The active pod is deleted, or its node fails | Once. |
 | The active pod's Envoy is not ready for 6s | Once. With one replica, the same replica takes the Lease again once its Envoy is ready ([Not ready](not-ready.md#gateway)). |

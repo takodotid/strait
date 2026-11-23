@@ -12,8 +12,6 @@ Merge the release's pull request into `main`. It names the new version wherever 
 git grep -nE -- '--version [0-9]|v=v[0-9]|\$v = "v|latest release' README.md docs
 ```
 
-[Rebuild a release](./rebuild.md) names v1.4.0 on purpose, the release it was checked on. The site is built from the tag, so it shows what the tag holds.
-
 ### 2. Wait for CI
 
 Wait until the `ci` run of the merge commit on `main` has finished with every job successful.
@@ -58,24 +56,14 @@ gh workflow run pages.yaml
 | `gate.sh: release refused: tag ... is not vX.Y.Z` | Tag the commit again with a name `vX.Y.Z`. |
 | `is not annotated`, or `does not verify the signature` | Tag again with `git tag -s`, with a key that GitHub has for the tagger's account. |
 | `is not on main`, or `points at ..., not at ...` | Tag the merge commit on `main`. |
-| `has not finished` | Re-run the whole run once the `ci` run has succeeded, as the block below shows. Nothing was pushed. |
+| `has not finished` | Once the `ci` run has succeeded, re-run the whole run: `gh run rerun RUN`. Nothing was pushed. |
 | `no ci run of commit ... succeeded` | Fix `main`, and release a later commit. |
 | `published already` | That version exists, and the release never replaces it. Release the next patch version. |
-| `cannot be told` | GitHub or the registry did not answer. Re-run the failed jobs, as the block below shows. |
+| `cannot be told` | GitHub or the registry did not answer. Re-run the failed jobs: `gh run rerun RUN --failed`. |
 
 A tag that the release refused can be deleted and pushed again with the same name, where the repository's tag rules allow it. Otherwise, use the next patch version.
 
-To re-run the whole run, replace `RUN` with the run's ID, the number that `gh run list` prints for it:
-
-```sh
-gh run rerun RUN
-```
-
-To re-run only the failed jobs:
-
-```sh
-gh run rerun RUN --failed
-```
+In the table, `RUN` is the run's ID, the number that `gh run list` prints for it.
 
 ## A run that fails after a push
 
@@ -94,10 +82,8 @@ What the release does not check, and what to do about it ([RFC0007, Releases](..
 
 | Gap | What to do |
 |---|---|
-| `gate` runs from the workflow of the tag's commit. A tag on a commit whose `release.yaml` lacks it publishes anyway. | Only people trusted to release may push `v*` tags: a tag ruleset in the repository's settings. |
-| GitHub verifies a tag's signature against the keys of the tagger's GitHub account. Any account that may push tags passes the check with its own key. | Keep the right to push tags to the people trusted to release. |
+| `gate` runs from the workflow of the tag's commit, so a tag on a commit whose `release.yaml` lacks it publishes anyway. GitHub verifies a tag's signature against the keys of the tagger's GitHub account, so any account that may push tags passes with its own key. | Only people trusted to release may push `v*` tags: a tag ruleset in the repository's settings. |
 | The `ci` run that `gate` requires builds and tests the image from the same commit, but not the image that the release pushes. | Verify the release as [Verify a release](../guide/install.md#verify-a-release) shows. A rebuild that differs shows there: [Rebuild](rebuild.md). |
 | A run that fails after its chart's push cannot go on: a re-run stops with the version published. | Release the next patch version, as [A run that fails after a push](#a-run-that-fails-after-a-push) says. |
-| Renovate proposes helm's new version, but not its SHA-256. helm publishes its archives and their SHA-256 on `get.helm.sh`, not as assets of its GitHub releases. The update fails CI at the check of `setup-helm`. | Set the SHA-256 by hand in the same pull request, from `helm-<version>-linux-amd64.tar.gz.sha256sum` on `get.helm.sh`. It comes in a pull request of its own, so it holds back no other update. |
-| Renovate proposes bun's new version, but not its SHA-256. The update fails the `pages` build at the check of `setup-bun`. | Set the SHA-256 by hand in the same pull request, from `SHASUMS256.txt` of bun's release, the line of `bun-linux-x64.zip`. |
-| Some tools come pinned by others, or with the runner. The `e2e` job's kind and kubectl come from `helm/kind-action`, checked against checksum files of the same release. `actions/setup-go` downloads Go, and `make test` downloads envtest's binaries with `setup-envtest`. docker, buildx, gh, jq and curl come with the runner image. | Review those actions' updates as carefully as the tools' own. |
+| Renovate proposes a new helm or bun version without its SHA-256, so CI fails at the check of `setup-helm` or `setup-bun`. | Set the SHA-256 by hand in the same pull request: helm's from `helm-<version>-linux-amd64.tar.gz.sha256sum` on `get.helm.sh`, bun's from the `bun-linux-x64.zip` line of its release's `SHASUMS256.txt`. |
+| kind and kubectl come from `helm/kind-action`, Go from `actions/setup-go`, and envtest from `setup-envtest`. | Review those actions' updates as carefully as the tools' own. |
