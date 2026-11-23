@@ -408,7 +408,7 @@ func TestServiceConflict(t *testing.T) {
 }
 
 // When another owner takes the name of a Service that Strait wrote, the slices that Strait wrote earlier stop feeding
-// it. Once that Service is gone, Strait writes its own again (issue #33).
+// it. Once that Service is gone, Strait writes its own again.
 func TestServiceConflictDeletesSlices(t *testing.T) {
 	r, c := reconciler(t, readB, append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))...)
 	run(t, r)
@@ -524,7 +524,7 @@ func TestIsolatedSite(t *testing.T) {
 
 // After a restart, until the first poll of every peer has ended, the status shows AwaitingPeers in place of the
 // decision's reason. Then it shows the decision's reason, also when the poll of a cut-off peer failed. The route and
-// the endpoints are the decision's throughout (issue #19).
+// the endpoints are the decision's throughout.
 func TestStatusAtStartup(t *testing.T) {
 	ss := webService("web-a")
 	// The status from before the restart.
@@ -580,7 +580,7 @@ func routeChangedEvents(r *SiteServiceReconciler) int {
 }
 
 // A cache that has not yet seen the controller's last status write does not make the next write conflict, and does
-// not repeat the route change (issue #18).
+// not repeat the route change.
 func TestStatusWriteOnLaggingCache(t *testing.T) {
 	objs := append(appService("web-a", "10.0.0.1"), site("a", "10.0.9.9"), webService("web-a"))
 	r, c := reconciler(t, readB, objs...)
@@ -684,7 +684,7 @@ func sliceAddresses(es discoveryv1.EndpointSlice) []string {
 }
 
 // Endpoint-direct writes only IP addresses from a peer's document, and none that is unspecified, loopback, link-local
-// or multicast. Status names what it dropped (issue #36).
+// or multicast. Status names what it dropped.
 func TestEndpointDirectDropsAddresses(t *testing.T) {
 	c := directPeer(t, nil, "10.1.0.7", "127.0.0.1", "not-an-ip", "169.254.169.254", "224.0.0.1", "0.0.0.0", "::ffff:10.1.0.8")
 	es := endpointSlices(t, c)["web-b"]
@@ -699,7 +699,7 @@ func TestEndpointDirectDropsAddresses(t *testing.T) {
 	}
 }
 
-// A peer cannot make the Routed message too long for the API server, which takes up to 32768 bytes (issue #36).
+// A peer cannot make the Routed message too long for the API server, which takes up to 32768 bytes.
 func TestEndpointDirectBoundsTheMessage(t *testing.T) {
 	addresses := []string{"10.1.0.7", strings.Repeat("x", 100_000)}
 	for i := range 20 {
@@ -712,8 +712,7 @@ func TestEndpointDirectBoundsTheMessage(t *testing.T) {
 	}
 }
 
-// A member whose document gives no address that endpoint-direct accepts takes the gateway, as with no address
-// (issue #36).
+// A member whose document gives no address that endpoint-direct accepts takes the gateway, as with no address.
 func TestEndpointDirectFallsBackToGateway(t *testing.T) {
 	c := directPeer(t, nil, "127.0.0.1")
 	es := endpointSlices(t, c)["web-b"]
@@ -725,7 +724,7 @@ func TestEndpointDirectFallsBackToGateway(t *testing.T) {
 	}
 }
 
-// With endpointCIDRs, endpoint-direct writes only addresses in those ranges (issue #36).
+// With endpointCIDRs, endpoint-direct writes only addresses in those ranges.
 func TestEndpointDirectCIDRs(t *testing.T) {
 	c := directPeer(t, func(l *straitv1.SiteLink) { l.Spec.Direct.EndpointCIDRs = []string{"10.1.0.0/16", "fd00:1::/64"} },
 		"10.1.0.7", "10.2.0.9", "192.0.2.1")
@@ -1105,7 +1104,7 @@ func TestDecisionsRecordTheirTime(t *testing.T) {
 // A CloudNativePG Cluster whose .spec.replica.self is not its own name declares a primary that is no member's name.
 // The route stays as the decision gives it, nowhere with NotDeclared. The condition DeclarationUnmatched is True, says
 // which site declares what and what the Cluster must set, and a Warning event fires once. Once the Cluster leaves
-// self unset, the condition is False (RFC#0002 requirement 42, RFC#0003 requirement 7; issue #64).
+// self unset, the condition is False (RFC#0002 requirement 42, RFC#0003 requirement 7).
 func TestDeclarationUnmatchedCondition(t *testing.T) {
 	svc := &straitv1.SiteService{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "web", UID: "uid-web"},
@@ -1169,7 +1168,7 @@ func TestDeclarationUnmatchedCondition(t *testing.T) {
 // A change of an EndpointSlice requeues only the SiteServices whose members' plugin reads its Service: a declared
 // member's Service, each Service of a cnpg member's Cluster, and its Pooler. A slice of another Service, one with no
 // Service label, Strait's own slice of an application name, and a slice of another namespace requeue none
-// (RFC#0002 requirement 43; issue #64).
+// (RFC#0002 requirement 43).
 func TestSliceRequeuesItsUsers(t *testing.T) {
 	web := webService("web-a")
 	pg := &straitv1.SiteService{

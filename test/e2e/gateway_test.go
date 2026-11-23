@@ -59,7 +59,7 @@ func (e *env) envoyTask(ctx context.Context, s *site, pod, verb string) error {
 }
 
 // envoyNotReady: the Envoy of site a's active gateway replica freezes. Its agent steps down, the standby takes the
-// gateway Lease, and writes from site b land on cluster-a again (issue #35).
+// gateway Lease, and writes from site b land on cluster-a again.
 func (e *env) envoyNotReady(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b
 	var active string
@@ -139,7 +139,7 @@ func handshake(ctx context.Context, s *site, link string) string {
 
 // gatewayHandover: with the direct link cut, site b reaches site a over the wireguard link only, which site a's side
 // waits on. Site a's active gateway pod is deleted and the standby takes the gateway Lease. A write from site b lands on
-// cluster-a within handoverRecovery of the takeover (issue #44).
+// cluster-a within handoverRecovery of the takeover.
 func (e *env) gatewayHandover(ctx context.Context, t *testing.T) {
 	a, b := e.a, e.b
 	direct, wan := a.name+"-direct", a.name+"-wan"

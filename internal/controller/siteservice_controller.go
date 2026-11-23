@@ -614,7 +614,7 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 	for _, member := range slices.Sorted(maps.Keys(targets)) {
 		t := targets[member]
 		// A slice's address type cannot change. A slice that would hold none of the member's addresses is deleted
-		// and written again with their address type (issue #38). The cache may still show the deleted slice, so the
+		// and written again with their address type. The cache may still show the deleted slice, so the
 		// new one is written over what the API server holds.
 		deleted := false
 		if name := memberObjectName(svc, member); !hasFamily(t.addresses, a.slices[name].AddressType) {
@@ -639,10 +639,10 @@ func (r *SiteServiceReconciler) apply(ctx context.Context, svc *straitv1.SiteSer
 
 // writeSlice writes the EndpointSlice of one routed member. Right after the controller's own write, the cache may
 // not show it yet: a create finds the slice exists, and an update finds a newer version, or none after a delete. The
-// slice is then read from the API server and written once more (issue #38).
+// slice is then read from the API server and written once more.
 // Live reads from the API server at once, as after the controller deleted the slice. So does a cache whose copy is
 // not inPlace, the slice as the controller last wrote or read it: comparing the wanted slice with an older cached
-// copy could find them equal and send nothing over a newer version (issue #45).
+// copy could find them equal and send nothing over a newer version.
 func (r *SiteServiceReconciler) writeSlice(ctx context.Context, svc *straitv1.SiteService, member string, t target, live bool, inPlace discoveryv1.EndpointSlice) (*discoveryv1.EndpointSlice, error) {
 	if !live && r.APIReader != nil && inPlace.ResourceVersion != "" {
 		var cached discoveryv1.EndpointSlice

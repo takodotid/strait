@@ -319,7 +319,7 @@ func exportStatus(t *testing.T, c client.Client) straitv1.ExportStatus {
 }
 
 // A cache that has not yet seen the controller's last write of an Export's status does not make the next write
-// conflict (issue #23).
+// conflict.
 func TestExportStatusWriteOnLaggingCache(t *testing.T) {
 	r, cache, c := laggingExport(t)
 	// The first reconcile allocates the port. The second has nothing new to write.
@@ -347,7 +347,7 @@ func TestExportStatusWriteOnLaggingCache(t *testing.T) {
 }
 
 // A cache that has not yet seen the controller's last write of an Import's status does not make the next write
-// conflict (issue #23).
+// conflict.
 func TestImportStatusWriteOnLaggingCache(t *testing.T) {
 	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(nil))
 	cache := &laggingCache{Client: c}
@@ -451,7 +451,7 @@ func importPorts(t *testing.T, c client.Client, names ...string) []int32 {
 }
 
 // Two Exports created together get different ports, though the second is reconciled before the cache shows the
-// first one's port (issue #26).
+// first one's port.
 func TestExportPortsCreatedTogether(t *testing.T) {
 	r, cache, c := portsExport(t, newExport("one", 0), newExport("two", 0))
 	cache.freeze(t, &straitv1.Export{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "one"}})
@@ -463,7 +463,7 @@ func TestExportPortsCreatedTogether(t *testing.T) {
 }
 
 // Two Imports created together get different ports, though the second is reconciled before the cache shows the
-// first one's port (issue #26).
+// first one's port.
 func TestImportPortsCreatedTogether(t *testing.T) {
 	r, cache, c := portsImport(t, newImport("one", 0), newImport("two", 0))
 	cache.freeze(t, &straitv1.Import{ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "one"}})
@@ -475,7 +475,7 @@ func TestImportPortsCreatedTogether(t *testing.T) {
 }
 
 // Of two Exports that hold one port, as an earlier release could leave them, the one that comes second by namespace
-// and name moves to a free port, whichever is reconciled first. The first keeps it (issue #26).
+// and name moves to a free port, whichever is reconciled first. The first keeps it.
 func TestExportDuplicatePortRepaired(t *testing.T) {
 	for _, order := range [][]string{{"a-first", "b-second"}, {"b-second", "a-first"}} {
 		r, _, c := portsExport(t, newExport("a-first", 16000), newExport("b-second", 16000), newExport("c-other", 16001))
@@ -488,7 +488,7 @@ func TestExportDuplicatePortRepaired(t *testing.T) {
 	}
 }
 
-// Of two Imports that hold one port, the one that comes second moves to a free port. The first keeps it (issue #26).
+// Of two Imports that hold one port, the one that comes second moves to a free port. The first keeps it.
 func TestImportDuplicatePortRepaired(t *testing.T) {
 	for _, order := range [][]string{{"a-first", "b-second"}, {"b-second", "a-first"}} {
 		r, _, c := portsImport(t, newImport("a-first", 15000), newImport("b-second", 15000))
@@ -557,7 +557,7 @@ func (l *listCounter) List(ctx context.Context, list client.ObjectList, opts ...
 }
 
 // A reconcile of an Export or an Import that keeps its port lists no object of its kind but those that hold that
-// port. Only one that needs a port lists them all (issue #46, row 37).
+// port. Only one that needs a port lists them all.
 func TestPortKeptWithoutFullList(t *testing.T) {
 	var exports []client.Object
 	var imports []client.Object
@@ -645,8 +645,7 @@ func failingImport(t *testing.T) (r *ImportReconciler, c client.Client, tries fu
 }
 
 // A failed sync of an Import's Service writes SyncFailed, and asks for the next try after a fixed delay, with no error:
-// an error would retry with the controller's backoff, which grows to about 16 minutes (RFC0005, requirement 51;
-// issue #62).
+// an error would retry with the controller's backoff, which grows to about 16 minutes (RFC0005, requirement 51).
 func TestImportSyncFailureRequeuesAfterAFixedDelay(t *testing.T) {
 	r, c, tries := failingImport(t)
 	for i := range 5 {
@@ -739,8 +738,7 @@ func (l *logLines) take(msg string) []string {
 // A failed sync of an Import logs at error level only when its error is new: the first failure after a success, a
 // change of the error, and the first failure of an Import created again. Every other try logs at V(1), with the error.
 // The Import's SyncFailed condition holds the message. A permanent error, such as a namespace outside
-// controller.namespaces, would otherwise log an error every 2s, about 43,000 a day per Import (RFC0005, requirement
-// 51; issue #62).
+// controller.namespaces, would otherwise log an error every 2s, about 43,000 a day per Import (RFC0005, requirement 51).
 func TestImportSyncErrorLoggedWhenItChanges(t *testing.T) {
 	r, c := importReconciler(t, importSite("10.0.9.9"), webImport(webPort))
 	// fail is the error of the next read of the Import's Service; nil reads it.
@@ -816,7 +814,7 @@ func (l *listRecorder) List(ctx context.Context, list client.ObjectList, opts ..
 
 // A change of an EndpointSlice requeues the Exports of its namespace that forward to its Service, read through
 // IndexExportService, not a list of every Export of the namespace. A slice with no Service label requeues none
-// (RFC0005 requirement 53; issue #64).
+// (RFC0005 requirement 53).
 func TestExportSliceRequeuesItsExports(t *testing.T) {
 	export := func(namespace, name, service string) *straitv1.Export {
 		return &straitv1.Export{

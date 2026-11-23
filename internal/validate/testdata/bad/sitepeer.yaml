@@ -15,7 +15,7 @@ metadata:
 spec:
   wireguard: {}
 ---
-# An explicit 0 is a value, not a missing field: the API server does not default it (issue #64).
+# An explicit 0 is a value, not a missing field: the API server does not default it.
 # want: spec.controlPort: Invalid value: 0: must be between 1 and 65535
 apiVersion: strait.tako.id/v1
 kind: SitePeer

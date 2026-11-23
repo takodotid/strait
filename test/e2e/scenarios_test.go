@@ -121,7 +121,7 @@ func gatewayPolicy(ctx context.Context, t *testing.T, s *site, importName string
 }
 
 // portsTogether: Exports created at the same moment at site a, and Imports at site b, each get a gateway port no other
-// one holds, at every moment (issue #26). The creates run in parallel, so the controller reconciles the objects back
+// one holds, at every moment. The creates run in parallel, so the controller reconciles the objects back
 // to back, likely before its cache shows the port it gave the one before. Timing decides, so a pass on a build
 // without the fix is possible.
 func (e *env) portsTogether(ctx context.Context, t *testing.T) {

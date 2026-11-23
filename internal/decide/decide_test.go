@@ -1034,8 +1034,7 @@ func TestLocalWorkloadsDisagree(t *testing.T) {
 }
 
 // Each declaration of a known site, or of its workloads, that is no member's name shows in Unmatched, in site order.
-// A stale peer's does not, and Set mode has none. The route is the one the table gives (RFC#0002 requirement 42;
-// issue #64).
+// A stale peer's does not, and Set mode has none. The route is the one the table gives (RFC#0002 requirement 42).
 func TestUnmatchedDeclarations(t *testing.T) {
 	single := pgSpec(straitv1.RouteNowhere, hold, "a", "b")
 	pg := observations(writable("pg-a", "a"), replica("pg-b", "b"))

@@ -43,7 +43,7 @@ func ruleFor(t *testing.T, p networkingv1.NetworkPolicy, port int32) networkingv
 // The metrics port admits every source by default, and the sources of networkPolicy.metricsFrom when set. A policy on
 // the gateway pods is off by default; when on, it admits every source to the probes, the metrics as the controller's,
 // every pod of the cluster to the import and export ports only, the controller to the peer port, and
-// networkPolicy.gateway.peerCIDRs (RFC0007 requirement 28; issue #30, rows 39 and 27; issue #64).
+// networkPolicy.gateway.peerCIDRs (RFC0007 requirement 28).
 func TestNetworkPolicies(t *testing.T) {
 	r := render(t)
 	if _, ok := r.networkPolicies["strait-gateway"]; ok {
@@ -191,7 +191,7 @@ func siteGatewayDefaults(t *testing.T) []string {
 // The gateway policy admits the pods of the cluster to the gateway's import and export ports, and the controller to
 // its peer port. With site.create true, the chart takes them from site.spec.gateway, and the Site CRD's defaults where
 // it sets none. With site.create false, from networkPolicy.gateway.ports, and it fails to render without all three
-// (RFC0007 requirement 28; issue #64).
+// (RFC0007 requirement 28).
 func TestGatewayPolicyPorts(t *testing.T) {
 	pods := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{}}
 	controller := networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
@@ -275,7 +275,7 @@ func TestGatewayPolicyPorts(t *testing.T) {
 // The peer gateways reach the control port and the export ports over TCP, and the WireGuard listen ports of
 // networkPolicy.gateway.wireGuardPorts over UDP, nothing else. The control port comes from site.spec.gateway, or from
 // networkPolicy.gateway.ports with site.create false. With peerCIDRs, the chart fails to render while wireGuardPorts
-// is unset; an empty list is a site with no wireguard link (RFC0007 requirement 28; issue #64).
+// is unset; an empty list is a site with no wireguard link (RFC0007 requirement 28).
 func TestGatewayPolicyPeers(t *testing.T) {
 	peers := networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.21/32"}}
 	rule := func(r rendered) []string {

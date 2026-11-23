@@ -31,7 +31,7 @@ import (
 )
 
 // TestXDSTriggerFollowsExportedSlices: the gateway's configuration reads the EndpointSlices of exported Services only,
-// so a change of any other EndpointSlice of the cluster does not rebuild it (issue #46, row 18).
+// so a change of any other EndpointSlice of the cluster does not rebuild it.
 func TestXDSTriggerFollowsExportedSlices(t *testing.T) {
 	exp := &straitv1.Export{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "app", Name: "pg-pg-a"},
@@ -149,7 +149,7 @@ func TestXDSTriggerEvents(t *testing.T) {
 }
 
 // The Export reconciler and the xDS trigger both read IndexExportService. On one manager, the cache gets it once:
-// a cache refuses an index it holds already (issue #64).
+// a cache refuses an index it holds already.
 func TestExportIndexOnOneManager(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {

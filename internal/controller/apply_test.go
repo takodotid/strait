@@ -171,7 +171,7 @@ func reconcileWeb(r *SiteServiceReconciler) error {
 }
 
 // A route that moves from one member to another in one reconcile passes through nowhere: two members never have an
-// EndpointSlice at once, whichever write fails (issue #29).
+// EndpointSlice at once, whichever write fails.
 func TestSwitchNeverRoutesTwo(t *testing.T) {
 	// The writes of a clean switch.
 	f := &faults{}
@@ -246,7 +246,7 @@ func (h *hiding) List(ctx context.Context, list client.ObjectList, opts ...clien
 }
 
 // A slice that the controller wrote is deleted before another member's is written, also while the cache does not
-// show it yet (issue #29).
+// show it yet.
 func TestSwitchWhileCacheLags(t *testing.T) {
 	f := &faults{}
 	r, c := routedToA(t, f)
@@ -273,7 +273,7 @@ var moving = peers{
 }
 
 // The previous route is the last decision, not a status that a failed write left behind. A member that the route
-// dropped is not held when it turns Unknown, also after a restart (issue #32).
+// dropped is not held when it turns Unknown, also after a restart.
 func TestPreviousRouteIsTheLastDecision(t *testing.T) {
 	// web-b is routed through the gateway, then moves: the route drops it, but the status write fails.
 	setup := func(t *testing.T) (*SiteServiceReconciler, client.Client) {
@@ -347,7 +347,7 @@ func routedToB(t *testing.T, f *faults) (*SiteServiceReconciler, client.Client) 
 
 // An error after the decision still drops the member that the decision dropped. Status shows the route as far as it
 // is in place, and the Applied condition gives the error. The next decision comes at the next resync, not after the
-// controller's backoff (issue #31).
+// controller's backoff.
 func TestFailedApplyAfterTheDecision(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -401,7 +401,7 @@ func TestFailedApplyAfterTheDecision(t *testing.T) {
 	}
 }
 
-// A failed write does not delay the decision that ends a hold (issue #31).
+// A failed write does not delay the decision that ends a hold.
 func TestFailedWriteKeepsTheHoldTimer(t *testing.T) {
 	f := &faults{}
 	r, _ := routedToB(t, f)
@@ -471,7 +471,7 @@ func (s *lagging) Get(ctx context.Context, key client.ObjectKey, obj client.Obje
 }
 
 // A slice write right after the controller's own last write of that slice reads it from the API server when the cache
-// does not show that write yet, and writes again: the decision is applied in that reconcile (issue #38, item 1).
+// does not show that write yet, and writes again: the decision is applied in that reconcile.
 func TestSliceWriteWhileCacheLags(t *testing.T) {
 	t.Run("cache shows no slice", func(t *testing.T) {
 		f := &faults{}
@@ -527,7 +527,7 @@ func TestSliceWriteWhileCacheLags(t *testing.T) {
 }
 
 // An EndpointSlice's address type cannot change. When a member's addresses change family, its slice is deleted and
-// written again with the new family, so the member keeps its endpoints (issue #38, item 2).
+// written again with the new family, so the member keeps its endpoints.
 func TestSliceAddressFamilyChange(t *testing.T) {
 	f := &faults{}
 	r, c := routedToA(t, f)
@@ -577,7 +577,7 @@ func TestSliceAddressFamilyChange(t *testing.T) {
 }
 
 // The slice of a new address type is written also while the cache still shows the deleted one: one that still has
-// an endpoint, or one with none, as a release without this fix leaves it (issue #38, items 1 and 2).
+// an endpoint, or one with none, as a release without this fix leaves it.
 func TestSliceAddressFamilyChangeWhileCacheLags(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -635,7 +635,7 @@ func TestSliceAddressFamilyChangeWhileCacheLags(t *testing.T) {
 }
 
 // A slice write over a cache that does not show the controller's own last write of that slice yet reads the slice from
-// the API server, so a wanted slice that equals the cache's older copy is still written (issue #45).
+// the API server, so a wanted slice that equals the cache's older copy is still written.
 func TestSliceWriteEqualToTheCachesOlderCopy(t *testing.T) {
 	f := &faults{}
 	r, c := routedToA(t, f)

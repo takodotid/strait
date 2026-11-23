@@ -79,7 +79,7 @@ func (l *memoryLock) holder() string {
 }
 
 // A controller that stops releases its Lease, so the next one takes it at once instead of after the lease duration.
-// It releases it only after its leader-only runnables have stopped (issue #27).
+// It releases it only after its leader-only runnables have stopped.
 func TestStopReleasesLease(t *testing.T) {
 	lock := &memoryLock{id: "old"}
 	scheme := runtime.NewScheme()

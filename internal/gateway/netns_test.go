@@ -168,7 +168,7 @@ func up(t *testing.T, l netlink.Link) {
 
 // A peer of a wireguard link that widens its own allowed IPs and routes the gateway pod's address and another pod's
 // into its tunnel reaches only the gateway's control and export ports, in both IP families, though the gateway's
-// namespace forwards (RFC0007 requirement 12; issue #64). The gateway side runs the agent's own Netlink kernel and
+// namespace forwards (RFC0007 requirement 12). The gateway side runs the agent's own Netlink kernel and
 // Apply.
 func TestWireGuardPeerReachesOnlyControlAndExportPorts(t *testing.T) {
 	if !inContainer(t) {

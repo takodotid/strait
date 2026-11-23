@@ -159,7 +159,7 @@ func gatewayPortIndex(o client.Object) []string {
 // nextPort returns the port that obj holds next, as gatewayPort does. While obj's port is in rng, it first reads only
 // the other objects that hold that port: through the cache's index and, while the cache predates this controller's
 // last status write of an object, as that write set it. Only when obj does not keep its port does it list every
-// object of its kind, so a reconcile that keeps a port costs no list (issue #46, row 37).
+// object of its kind, so a reconcile that keeps a port costs no list.
 func nextPort[T any, P interface {
 	*T
 	client.Object
