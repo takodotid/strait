@@ -225,7 +225,7 @@ func startupStatus(result decide.Result, in decide.Input, polled bool) decide.Re
 	if polled || len(unread) == 0 || result.Reason == straitv1.ReasonAwaitingPeers || (hold > 0 && in.Now.Sub(in.Started) >= hold) {
 		return result
 	}
-	result.Message = fmt.Sprintf("the first poll of every peer since the controller started has not ended, and site %s is not read yet; the decision is %s: %s",
+	result.Message = fmt.Sprintf("the first poll of every peer has not ended, and site %s is not read yet; the decision is %s: %s",
 		strings.Join(unread, ", "), result.Reason, result.Message)
 	result.Reason = straitv1.ReasonAwaitingPeers
 	return result

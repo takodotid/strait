@@ -63,9 +63,9 @@ func main() {
 	flag.StringVar(&gatewayNamespace, "gateway-namespace", os.Getenv("POD_NAMESPACE"), "Namespace of the gateway, its Lease and its Services.")
 	flag.StringVar(&observationsService, "observations-service", "", "Host name of the controller's Service, which the gateway forwards observation requests to.")
 	flag.BoolVar(&leaderElect, "leader-elect", true, "Elect one active controller.")
-	flag.StringVar(&namespaces, "namespaces", "", "Comma-separated namespaces where the controller writes Services and EndpointSlices, besides --gateway-namespace. Empty writes in every namespace. The chart sets it from controller.namespaces, which grants the writes.")
-	flag.BoolVar(&namespacedReads, "namespaced-reads", false, "Read Services, EndpointSlices and CloudNativePG's objects only in --namespaces and --gateway-namespace, so that the controller's cache holds only theirs. Needs --namespaces. The chart sets it from controller.namespacedReads, which grants those reads there only.")
-	flag.BoolVar(&cnpg, "cnpg", true, "Watch and read CloudNativePG's kinds, when their CRDs exist. False reports every member of the cnpg plugin Unknown. The chart sets it from cnpg.enabled, which grants the read.")
+	flag.StringVar(&namespaces, "namespaces", "", "Comma-separated namespaces where the controller writes Services and EndpointSlices, besides --gateway-namespace. Empty: every namespace. The chart sets it from controller.namespaces, which grants the writes.")
+	flag.BoolVar(&namespacedReads, "namespaced-reads", false, "Read Services, EndpointSlices and CloudNativePG's objects only in --namespaces and --gateway-namespace, so the controller's cache holds only theirs. Needs --namespaces. The chart sets it from controller.namespacedReads, which grants those reads there only.")
+	flag.BoolVar(&cnpg, "cnpg", true, "Watch and read CloudNativePG's kinds, when their CRDs exist. False reports every cnpg plugin member Unknown. The chart sets it from cnpg.enabled, which grants the read.")
 	flag.StringVar(&roleCredentials, "cnpg-role-credentials", "", "Directory with the files username and password of a PostgreSQL role with LOGIN and nothing else, for spec.plugin.cnpg.confirmRole. Empty: such members are Unknown. The chart sets it from cnpg.confirmRole.secretName.")
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)

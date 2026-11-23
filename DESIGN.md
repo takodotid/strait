@@ -162,24 +162,17 @@ components:
 
 **Creative North Star: "Sister Ships"**
 
-The docs wear a ship's livery. The hull's colour fills the masthead and the home page's opening. Below the waterline, the page is superstructure white, with the deck as the second plane, a black band, and the funnel's buff for the one action. Strait and Tack are sister ships: they share the token names and the rules, and differ in the hull and the tints that follow it. Strait's hull is sea green.
+The docs wear a ship's livery. The hull's colour fills the masthead and the home page's opening. Below the waterline the page is superstructure white, with the deck as the second plane, a black band, and the funnel's buff for the one action. Strait and Tack are sister ships: they share token names and rules, and differ in the hull and its tints. Strait's hull is sea green.
 
-Colour comes in whole planes, not in accents. Type is one family, Archivo, used across its width axis: wide for the name, a little wide for headings, normal for reading, narrow for markings. Code sits on the black hull in both themes.
+Colour comes in whole planes, not accents. Type is one family, Archivo, used across its width axis: wide for the name, a little wide for headings, normal for reading, narrow for markings.
 
 At night the planes turn dark and the ink turns light. The hull and the buff stay.
 
-**Key Characteristics:**
-
-- Whole planes of colour: hull, white, deck, black band, buff.
-- One action colour, the funnel's buff, with ink text on it.
-- One family across its width axis; IBM Plex Mono for code.
-- Heavy headings; short labels in narrow capitals, as stencilled on plate.
-- One radius of 3px for controls, code and callouts. Tables and planes are square.
-- Plain English: the answer first, in short sentences.
+**Key Characteristics:** whole planes of colour (hull, white, deck, black band, buff); heavy headings; short labels in narrow capitals, as stencilled on plate.
 
 ## Colors
 
-Every colour is a token in `docs/.vitepress/theme/tokens.css`, named `--ship-` and its role. `style.css` maps VitePress's own variables to them.
+Every colour is a token in `docs/.vitepress/theme/tokens.css`, named `--ship-` and its role. `style.css` maps VitePress's variables to them.
 
 | Token | Day | Night | Used for |
 |---|---|---|---|
@@ -211,7 +204,7 @@ The masthead's band and text on buff are `#101a17` in both themes.
 
 **The One Action Rule.** Buff is the only action colour. Text on it is ink. There is no second accent.
 
-**The Plane Rule.** A colour fills a whole region or marks one thing. There is no glow and no blur. The one gradient is the soft edge of a code block whose line runs past it.
+**The Plane Rule.** A colour fills a whole region or marks one thing. No glow, no blur. The one gradient is the soft edge of a code block whose line runs past it.
 
 **The Red Means Danger Rule.** Red is for danger only. Warnings are orange. Every state also carries its word, so it reads without colour.
 
@@ -219,7 +212,7 @@ The masthead's band and text on buff are `#101a17` in both themes.
 
 ## Typography
 
-**Family:** Archivo Variable, with its width axis, for everything but code. **Mono:** IBM Plex Mono, 400 and 600. Both are open-licensed and self-hosted from the `@fontsource` packages: no font is fetched from another host.
+**Family:** Archivo Variable, with its width axis, for everything but code. **Mono:** IBM Plex Mono, 400 and 600. Both are open-licensed and self-hosted from the `@fontsource` packages, with no font fetched from another host.
 
 | Role | Weight | Width | Size | Used for |
 |---|---|---|---|---|
@@ -240,11 +233,9 @@ The masthead's band and text on buff are `#101a17` in both themes.
 
 **The Markings Rule.** Capitals are only for short labels, set narrow and tracked 0.07em. Headings and reading text stay in sentence case. A table's head is never in capitals: a unit such as µs and a case-sensitive name must read as written.
 
-**The Width Rule.** Hierarchy comes from width and weight within the one family: wide for the name, narrow for markings and numerals. No second family is added for display.
+**The Width Rule.** Hierarchy comes from width and weight within the one family. No second family for display.
 
 ## Layout
-
-VitePress's layout: the masthead, the sidebar, the page, and its outline.
 
 | Part | Rule |
 |---|---|
@@ -259,7 +250,7 @@ VitePress's layout: the masthead, the sidebar, the page, and its outline.
 
 ## Elevation & Depth
 
-Flat. Depth comes from the planes and from lines.
+Flat. Depth comes from planes and lines.
 
 | Shadow | Where |
 |---|---|
@@ -290,7 +281,7 @@ With `prefers-reduced-motion`, the drawing starts paused and the transitions are
 
 ### Buttons
 
-The primary button is buff with ink text in an ink frame, and darkens on hover. The others are the plane with an ink frame and ink text, and take the deck on hover. On the hull, the primary button has no ink frame, the second has a frame in `on-hull`, and both turn `on-hull` on hover.
+The primary button is buff with ink text in an ink frame, and darkens on hover. The others are the plane with an ink frame and ink text, and take the deck on hover. On the hull, the primary has no ink frame, the second has an `on-hull` frame, and both turn `on-hull` on hover.
 
 ### Tables
 
@@ -302,17 +293,17 @@ Set as a timetable: a head band, hairline rows, no frame, figures that line up. 
 | A table with an empty head | Shows no head. Its first row starts on a 3px rule of the head's colour. |
 | A word of code in a cell | May break anywhere. A short word, of 28 characters or fewer, does not break while the table has room. |
 | Below 1280px | Less padding in each cell. |
-| Below 720px | No columns. Each row is a record: its cells one under the other, each after its column's name. `markdown.ts` gives each cell that name, and each part of the table its role for a screen reader. |
+| Below 720px | No columns. Each row is a record: its cells one under the other, each after its column's name. `markdown.ts` gives each cell that name, and each table part its screen-reader role. |
 
 A table never scrolls the page sideways.
 
 ### Code
 
-A block is light text on the black hull in a 1px edge, with comments soft and keywords in buff. A line that runs past the block leaves a soft edge where it goes on. Below 720px a shell block wraps, and the next line of a wrap is set in by four characters. A word of code in the text is ink on the deck, in a hairline frame.
+A block is light text on the black hull in a 1px edge, with soft comments and buff keywords. A line that runs past the block leaves a soft edge. Below 720px a shell block wraps, set in by four characters on the next line. A word of code in the text is ink on the deck, in a hairline frame.
 
 ### Callouts
 
-A deck plane in a 2px frame of the kind's colour: green for a tip, orange for a warning, red for danger, ink for information. The kind is said in a word, set as a marking on the kind's colour. The title and the text are ink. A callout that guards a runbook step comes before that step.
+A deck plane in a 2px frame of the kind's colour: green for a tip, orange for a warning, red for danger, ink for information. The kind is a word, set as a marking on the kind's colour. Title and text are ink. A callout that guards a runbook step comes before that step.
 
 ### Badges
 
@@ -320,7 +311,7 @@ Ink on the deck in a hairline frame, as a marking. The word carries the state.
 
 ### Navigation
 
-The wordmark, lettered wide. Nav links and sidebar groups are markings. The active nav item has a 6px buff bar under it, and a nav link turns buff on hover. In the phone's menu the current section is on the deck, in the link colour, after a buff square. The current page in the sidebar is on the deck, in the link colour, heavier. A long entry of the outline wraps.
+The wordmark, lettered wide. Nav links and sidebar groups are markings. The active nav item has a 6px buff bar under it, and a nav link turns buff on hover. In the phone's menu the current section is on the deck, in the link colour, after a buff square. The current sidebar page is on the deck, in the link colour, heavier. A long outline entry wraps.
 
 ### Focus
 
@@ -328,11 +319,11 @@ A 3px ring, 2px clear of the control: the link colour on a plane, `on-hull` on t
 
 ### Diagrams
 
-Mermaid diagrams take the tokens: boxes on the plane with ink frames and text, the deck for groups, ink lines. A diagram keeps the width it was laid out at, and a narrow column scrolls it sideways.
+Mermaid diagrams take the tokens: boxes on the plane with ink frames and text, the deck for groups, ink lines. A diagram keeps its laid-out width, and a narrow column scrolls it sideways.
 
 ### Home drawing
 
-Two sites on the black hull, with the link between their gateways. The route in use is buff, and the rest stays quiet. The link is solid in every moment. Where the sheet is narrower than 580px the sites stack, and the controls stay in view above the drawing. A key names the lines.
+Two sites on the black hull, with the link between their gateways. The route in use is buff, and the rest stays quiet. The link is solid in every moment. Below 580px the sites stack, and the controls stay in view above the drawing. A key names the lines.
 
 ### Not found
 
@@ -340,7 +331,7 @@ Two sites on the black hull, with the link between their gateways. The route in 
 
 ## Contrast
 
-Every text pair meets WCAG AA at rest: 4.5:1 for text, 3:1 for a mark that is not text, by the WCAG 2 formula from the tokens.
+Every text pair meets WCAG AA at rest: 4.5:1 for text, 3:1 for a mark that is not text (WCAG 2 formula, from the tokens).
 
 | Use | Pair | Needs | Day | Night |
 |---|---|---|---|---|
@@ -377,20 +368,10 @@ One pair is below 4.5:1: a nav link on hover is `buff` on `hull`, 4.14:1. It is 
 ### Do:
 
 - **Do** take every colour, face and radius from `docs/.vitepress/theme/tokens.css`, by its role.
-- **Do** fill whole planes with colour, and keep buff for the one action.
-- **Do** put ink text on buff, and `on-hull` text on the hull and the band.
-- **Do** give every state its word as well as its colour.
-- **Do** keep markings short, and headings in sentence case.
 - **Do** keep a table to the page at every width, and check a new page at 390px and at 1440px, by day and at night.
-- **Do** write the answer first, in short sentences of everyday English.
 
 ### Don't:
 
-- **Don't** add a second accent colour or a second display family.
-- **Don't** add a glow, a blur, a gradient beyond the edge of a code block, or a shadow beyond the two listed.
-- **Don't** use red for anything but danger.
 - **Don't** set text in `line`, or in buff on the hull at rest.
-- **Don't** set a table's head in capitals.
 - **Don't** set a marking over a heading as decoration.
-- **Don't** load a font from another host.
 - **Don't** use em-dashes in any copy.

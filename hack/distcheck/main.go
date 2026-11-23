@@ -109,7 +109,7 @@ func run(args []string, stdout io.Writer) error {
 		epoch := os.Getenv("SOURCE_DATE_EPOCH")
 		secs, err := strconv.ParseInt(epoch, 10, 64)
 		if err != nil || secs < 0 {
-			return fmt.Errorf("SOURCE_DATE_EPOCH %q is not a number of seconds: it is the time of every entry of the archives", epoch)
+			return fmt.Errorf("SOURCE_DATE_EPOCH %q is not a number of seconds: it sets the time of every archive entry", epoch)
 		}
 		c.epoch = time.Unix(secs, 0).UTC()
 		errs = c.archives(rest[1])
@@ -390,7 +390,7 @@ func (c check) index(digest, file string) []error {
 	for _, m := range idx.Manifests {
 		p := path.Join(m.Platform.OS, m.Platform.Architecture, m.Platform.Variant)
 		if t := m.Annotations["vnd.docker.reference.type"]; t != "" {
-			errs = append(errs, fmt.Errorf("index: lists %s, platform %s, an %s: the provenance and the SBOM are attested apart from the index", m.Digest, p, t))
+			errs = append(errs, fmt.Errorf("index: lists %s, platform %s, an %s: provenance and SBOM are attested apart from the index", m.Digest, p, t))
 			continue
 		}
 		if want := "application/vnd.oci.image.manifest.v1+json"; m.MediaType != want {
@@ -438,7 +438,7 @@ func (c check) binary(name, goos, goarch string, data []byte) error {
 		return fmt.Errorf("%s: built for %s/%s, want %s/%s", name, settings["GOOS"], settings["GOARCH"], goos, goarch)
 	}
 	if settings["-trimpath"] != "true" {
-		return fmt.Errorf("%s: built without -trimpath, so it holds the build machine's paths (RFC0006 requirement 21)", name)
+		return fmt.Errorf("%s: built without -trimpath, so it holds build machine paths (RFC0006 requirement 21)", name)
 	}
 	if rev, ok := settings["vcs.revision"]; ok && (rev != c.commit || settings["vcs.modified"] != "false") {
 		return fmt.Errorf("%s: stamped with commit %s, modified %s; want commit %s, not modified (RFC0006 requirement 21)",
