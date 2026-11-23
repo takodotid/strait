@@ -19,25 +19,23 @@ kubectl --context site-a -n strait-system logs deployment/strait-controller
 
 Add `--previous` for the run before a restart.
 
-### `Pending`
-
-Cause: no node fits the pod.
-
-Next step: describe the pod. The pod's requests are `controller.resources` in the chart's values.
+The controller pod:
 
 ```sh
 kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=controller
 ```
+
+### `Pending`
+
+Cause: no node fits the pod.
+
+Next step: describe the pod, as above. The pod's requests are `controller.resources` in the chart's values.
 
 ### `ErrImagePull` or `ImagePullBackOff`
 
 Cause: the node cannot pull the image.
 
-Next step: read the image in `describe pod`, and check the node's access to the registry.
-
-```sh
-kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=controller
-```
+Next step: read the image in `describe pod`, as above, and check the node's access to the registry.
 
 ### Running, not ready, for up to 15s after a start
 
@@ -55,47 +53,27 @@ Next step: read the holder, then find that pod.
 kubectl --context site-a -n strait-system get lease strait-controller -o jsonpath='{.spec.holderIdentity}'
 ```
 
-### `CrashLoopBackOff` with `forbidden` for `clusters` in the log
-
-The log has `forbidden` for `clusters` in the API group `postgresql.cnpg.io`, then `failed to wait for siteservice caches to sync`.
-
-Cause: a controller before 1.3.0, with the chart value `cnpg.enabled` false, on a cluster that has CloudNativePG's CRDs. From 1.3.0, the value also turns the controller's watch off.
-
-Next step: upgrade to 1.3.0 or later, or set `cnpg.enabled: true`, with `helm upgrade` and the same values: [Getting started, The cnpg plugin switch](../getting-started.md#the-cnpg-plugin-switch).
-
 ### `OOMKilled`
 
 The pod restarts, and `describe pod` shows `Last State: Terminated` with `Reason: OOMKilled`.
 
 Cause: the controller outgrew `controller.resources.limits.memory`. Its cache holds every Service and EndpointSlice of the cluster, unless `controller.namespacedReads` is set.
 
-Next step: raise the limit, or set `controller.namespacedReads`: [Sizing](../sizing.md). To see the last state again:
-
-```sh
-kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=controller
-```
+Next step: raise the limit, or set `controller.namespacedReads`: [Sizing](../sizing.md). `describe pod`, as above, shows the last state.
 
 ### `Liveness probe failed`
 
 The pod restarts, and the events have `Liveness probe failed`.
 
-Cause: the elected controller's poll round or xDS rebuild loop stopped for longer than twice its period plus 30s, 34s by default ([RFC0004](../../rfcs/RFC0004.md#requirements), requirement 18). A slow API server or link does not fail the probe.
+Cause: the elected controller's poll round or xDS rebuild loop stopped for longer than twice its period plus 30s, 34s by default ([RFC0004](../../rfcs/RFC0004.md#requirements), requirement 18).
 
-Next step: read the log of the run before the restart, and `strait_peer_last_seen_timestamp_seconds` ([Metrics](../metrics.md)).
-
-```sh
-kubectl --context site-a -n strait-system logs deployment/strait-controller --previous
-```
+Next step: read the log of the run before the restart (`--previous`), and `strait_peer_last_seen_timestamp_seconds` ([Metrics](../metrics.md)).
 
 ### `CrashLoopBackOff` for another reason
 
 Cause: an error that stops the controller is logged as `controller stopped`, with the error.
 
-Next step: read the last lines of the log of the run before the restart.
-
-```sh
-kubectl --context site-a -n strait-system logs deployment/strait-controller --previous
-```
+Next step: read the last lines of the log of the run before the restart (`--previous`).
 
 ### `want exactly one Site, found 0`
 
@@ -107,7 +85,7 @@ Next step: restore it: [Roll back, the `Site`](rollback.md#the-site).
 
 ## Gateway
 
-A gateway pod is ready while its Envoy's admin endpoint `/ready` answers 200. Only a ready replica holds the gateway Lease: the agent joins the election once Envoy is ready, and steps down once Envoy has not been ready for 6s ([RFC0005, Gateway Lease](../../rfcs/RFC0005.md#gateway-lease)).
+A gateway pod is ready while its Envoy's admin endpoint `/ready` answers 200. Only a ready replica holds the gateway Lease ([RFC0005, Gateway Lease](../../rfcs/RFC0005.md#gateway-lease)).
 
 ### No gateway pod
 
@@ -147,10 +125,8 @@ Next step: raise `gateway.resources.envoy.requests.cpu` ([benchmark](../benchmar
 
 Cause: no ready pod holds the gateway Lease yet.
 
-Next step: read the agent's log. It logs `Envoy is not ready; not joining the gateway election`, and `leading` once it holds the Lease. Replace `POD` with the name of a gateway pod from the `get pods` output at the top of this page.
+Next step: read the agent's log. It logs `Envoy is not ready; not joining the gateway election`, and `leading` once it holds the Lease. Replace `POD` with the name of a gateway pod from the `get pods` output at the top of this page. The `Site`'s gateway conditions: [Troubleshooting, the conditions of the `Site`](../troubleshooting.md#the-conditions-of-the-site).
 
 ```sh
 kubectl --context site-a -n strait-system logs POD -c agent
 ```
-
-The `Site`'s gateway conditions: [Troubleshooting, the conditions of the `Site`](../troubleshooting.md#the-conditions-of-the-site).

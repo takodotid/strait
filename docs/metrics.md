@@ -6,13 +6,13 @@ Every metric that Strait exports, how to scrape it, and the alert rules that the
 
 | Pod | Port | Path | Serves |
 |---|---|---|---|
-| Controller | `metrics`, 8080 | `/metrics` | The controller's metrics. Only the elected controller decides, polls and serves xDS. |
+| Controller | `metrics`, 8080 | `/metrics` | The controller's metrics. |
 | Each gateway pod | `metrics`, 8091 | `/metrics` | The gateway agent's metrics. |
 | Each gateway pod | `metrics`, 8091 | `/stats/prometheus` | Envoy's stats that the agent lets through ([Envoy](#envoy)). |
 
-Scrape every gateway pod, including the standbys. Their Envoy checks the links just as the active pod's Envoy does.
+Scrape every gateway pod, including the standbys.
 
-With the Prometheus Operator, the chart renders the scrape configuration and the rules. Both are off by default, since their CRDs may be absent:
+With the Prometheus Operator, the chart renders:
 
 | Value | Renders |
 |---|---|
@@ -65,12 +65,10 @@ The metrics are plain HTTP. `networkPolicy.metricsFrom` limits the sources that 
 | `strait_link_healthy` | gauge | `link`, `peer`, `transport` | 1 while the link is healthy, from `SiteLink.status`. |
 | `strait_link_active` | gauge | `link`, `peer`, `transport` | 1 while the link carries the pair's traffic, from `SiteLink.status`. |
 | `strait_site_condition` | gauge | `condition` | 1 while the condition of the local `Site` is True: `GatewayActive`, `GatewayServices`, `GatewayConfig`. |
-| `strait_gateway_lease_transitions_total` | counter | | How many times a gateway replica took the gateway Lease, from another holder or after a release: the Lease's `leaseTransitions`. Each move resets every connection across the site's gateway. |
+| `strait_gateway_lease_transitions_total` | counter | | How many times a gateway replica took the gateway Lease, from another holder or after a release: the Lease's `leaseTransitions`. Each move is a [handover](runbooks/gateway-handover.md). |
 | `strait_xds_rejected_total` | counter | `type` | Configurations that a gateway Envoy rejected, by resource type, such as `Cluster` ([RFC0005](../rfcs/RFC0005.md#configuration-rejections)). |
 | `strait_status_read_failed` | gauge | `kind` | 1 when the scrape could not read the objects of the kind. Their metrics are then missing, not 0. |
 | `leader_election_master_status` | gauge | `name` | 1 while this controller holds the Lease `name="strait-controller"`. From controller-runtime. |
-
-controller-runtime also exports its own metrics, such as `controller_runtime_reconcile_total`, `workqueue_depth` and `rest_client_requests_total`, and those of Go and the process.
 
 ## Gateway agent
 
@@ -80,8 +78,6 @@ controller-runtime also exports its own metrics, such as `controller_runtime_rec
 | `strait_gateway_link_connections` | gauge | `link`, `peer` | Open connections of the imports to the peer over the link, from this replica's Envoy. |
 | `strait_gateway_wireguard_receive_bytes_total` | counter | `link`, `peer` | Bytes received on the link's WireGuard interface since it was created. Active replica only. |
 | `strait_gateway_wireguard_transmit_bytes_total` | counter | `link`, `peer` | Bytes sent on the link's WireGuard interface since it was created. Active replica only. |
-
-The agent also exports the metrics of Go and the process.
 
 ## Envoy
 
@@ -102,8 +98,6 @@ At `/stats/prometheus`, the agent serves these of Envoy's stats, and no other pa
 | `peer/<peer>` | The control port of a peer, over each link. |
 | `controller` | The controller's observation port. |
 
-Per-link bytes exist for `wireguard` links only, from the interface. A `direct` link has no interface, and Envoy's stats per endpoint are labelled by address.
-
 ## Alerts
 
 The rules of `deploy/helm/strait/files/alerts.yaml`. They suit one Prometheus per site, since `absent()` and `max()` cover every series in that Prometheus.
@@ -122,11 +116,9 @@ The rules of `deploy/helm/strait/files/alerts.yaml`. They suit one Prometheus pe
 | `StraitGatewayHandovers` | The gateway Lease moved more than 3 times in an hour. | The `GatewayHandover` events of the `Site`, and the gateway pods' restarts. |
 | `StraitGatewayNotConfigured` | A gateway pod has had no xDS stream to the controller for 5m. | The controller's Service, and the network policy on it. |
 
-The `for` of each rule is longer than what Strait rides out on its own: a link failover, a gateway handover, a hold of an `Unknown` member.
-
 ## Probes
 
-Liveness checks only the work that waits for neither the API server nor a link. So a slow API server, or a link that is down, restarts nothing. Work that waits for them shows in the metrics above instead.
+A slow API server or a down link restarts nothing. Work that waits for them shows in the metrics above.
 
 | Container | Liveness fails when |
 |---|---|

@@ -48,7 +48,17 @@ Check: whether any link to that peer is `HEALTHY`.
 
 ## By route reason
 
-Find the `Reason` of the name in `strait explain`, then read its heading below.
+Find the `Reason` of the name in `strait explain`, then read its row. `Active`, `PreferDeclared` and `Eligible` with failing connections, and `DeclarationsDisagree`, have their own headings below the table.
+
+| Reason | Look at | Means and next step |
+|---|---|---|
+| `HeldUnknown`, `UnknownTimeout`, `MemberUnknown` | The `REASON` of the `Unknown` member. | [Unknown members](#unknown-members). |
+| `Transitioning` | The `REASON` of the member whose `STATE` is `Transitioning`. | The workload is moving. The route comes back once the move ends. The `cnpg` reasons: [RFC0003, role and state](../rfcs/RFC0003.md#cnpg-role-and-state). A routine configuration change and the restart after a promotion also count: [RFC0003, Limitations](../rfcs/RFC0003.md#limitations). |
+| `NotDeclared` | `Declarations:` and the members table. | One member is writable, but a site names another member. Compare each site's declaration with where the primary runs, and fix the workload's configuration. A declaration that is no member's name: see `DeclarationUnmatched` ([RFC0002](../rfcs/RFC0002.md), requirement 42). |
+| `MultipleWritable` | The members whose `ROLE` is `primary` and `ELIGIBLE` is true. | Two members accept writes, for example after a partition heals. Demote one with the workload's own tools. The `Multiple` condition is True. |
+| `NoEligibleMember` | The `REASON` of each member. | [Members that are not eligible](#members-that-are-not-eligible). |
+| `SiteIsolated` | `strait peers`, and the route's `Message`. | `policy.isolationTimeout` is set, and this site has read no peer for that long. The local member is not routed. It ends when a peer is read again. After a site loss: [Site loss](runbooks/site-loss.md). |
+| `AwaitingPeers` | `strait peers`, and the route's `Message`. | The first poll of every peer has not ended yet. The message gives the reason of the route decided before it. It ends within about one `pollInterval`. With `policy.startupHold`: [Site return, startupHold](runbooks/site-return.md#ahead-of-time-startuphold). |
 
 ### `Active`, `PreferDeclared` or `Eligible`, but connections fail
 
@@ -56,28 +66,9 @@ Look at: `Endpoints:`, and the `Routed` and `Applied` conditions.
 
 - `Applied` is False with `SyncFailed`: a write of the route failed, and its message gives the error.
   - A message that says the namespace `is not one where the controller writes`: add the namespace to the chart value `controller.namespaces`, then `helm upgrade` ([RFC0007](../rfcs/RFC0007.md#writes-by-namespace)).
-  - Members that the route dropped are gone, and the next try comes within 2s.
 - `Routed` is False with `NoEndpoints`: the routed member has no ready endpoint.
 - `Routed` is False with `ServiceConflict`: a Service with the `SiteService`'s name exists, and Strait does not own it. Strait deletes its EndpointSlices for that name and writes none until that Service is gone.
 - For a routed member whose `PATH` is `Gateway`, check `strait links`.
-
-### `HeldUnknown`
-
-Look at: the `REASON` of the `Unknown` member.
-
-The route is kept, since the member was confirmed less than `policy.unknownHold` ago. See [Unknown members](#unknown-members).
-
-### `UnknownTimeout` and `MemberUnknown`
-
-Look at: the `REASON` of the `Unknown` member.
-
-See [Unknown members](#unknown-members).
-
-### `Transitioning`
-
-Look at: the `REASON` of the member whose `STATE` is `Transitioning`.
-
-The workload is moving. The route comes back once the move ends. The `cnpg` reasons: [RFC0003, role and state](../rfcs/RFC0003.md#cnpg-role-and-state). A routine configuration change and the restart after a promotion also count: [RFC0003, Limitations](../rfcs/RFC0003.md#limitations).
 
 ### `DeclarationsDisagree`
 
@@ -87,36 +78,6 @@ The sites name different primaries, or the `Cluster`s of one site do: the messag
 
 - For `cnpg`, compare `.spec.replica.primary` of every `Cluster`.
 - For `declared`, compare `spec.plugin.declared.active` at each site.
-
-### `NotDeclared`
-
-Look at: `Declarations:` and the members table.
-
-One member is writable, but a site names another member. Compare each site's declaration with where the primary runs, and fix the workload's configuration. A declaration that is no member's name sets the condition `DeclarationUnmatched`, whose message names the site and the name. With `cnpg`, a `Cluster` sets `.spec.replica.self` to a name other than its own `metadata.name`, or `.spec.replica.primary` names no member's `Cluster` ([RFC0003](../rfcs/RFC0003.md#cnpg), requirement 7).
-
-### `MultipleWritable`
-
-Look at: the members whose `ROLE` is `primary` and `ELIGIBLE` is true.
-
-Two members accept writes, for example after a partition heals. Strait never picks one. Demote one with the workload's own tools, and Strait follows. The `Multiple` condition is True.
-
-### `NoEligibleMember`
-
-Look at: the `REASON` of each member.
-
-No member can take traffic. See [Members that are not eligible](#members-that-are-not-eligible).
-
-### `SiteIsolated`
-
-Look at: `strait peers`, and the route's `Message`.
-
-`policy.isolationTimeout` is set, and this site has read no peer for that long. The local member is not routed. It ends when a peer is read again. After a site loss with two sites, the survivor stays isolated: set `isolationTimeout` to 0s there once its member is the one to write to ([Site loss](runbooks/site-loss.md)).
-
-### `AwaitingPeers`
-
-Look at: `strait peers`, and the route's `Message`.
-
-The controller has started, and its first poll of every peer has not ended yet. The route is what it decided before reading any peer, and the message gives that decision's reason. It ends with that first poll, within about one `pollInterval`. With `policy.startupHold`, the controller also does not route to the local member until it has read every site with a member, or until the hold ends.
 
 ## Connections after a route change
 
@@ -136,7 +97,7 @@ Check: `Socket LB: Enabled`, and that the agent's configuration does not set `bp
 
 This is with `policy.connections: EndGateway`.
 
-Envoy closes it when its drain time has passed: 600s unless the chart value `envoy.drainTimeSeconds` sets it. Set it to a few seconds. Replace `SITESERVICE-MEMBER` with the `SiteService`'s name and the member's name, joined by a hyphen:
+Set the chart value `envoy.drainTimeSeconds` to a few seconds ([RFC0002](../rfcs/RFC0002.md)). Replace `SITESERVICE-MEMBER` with the `SiteService`'s name and the member's name, joined by a hyphen:
 
 ```sh
 kubectl get import SITESERVICE-MEMBER -o jsonpath='{.spec.closed}'
@@ -156,23 +117,9 @@ The `REASON` column of the members table, for a member whose `STATE` is `Unknown
 | `NotObserved` | The member's site is reachable, but its document holds no observation of this member. | Apply the same `SiteService`, with the same namespace, name and member names, at the member's site. |
 | `ObservationStale` | The member's site is reachable, but its controller last observed the member more than that site's `peerTimeout` ago, and at least 6s ago. Its reconciles fail or hang ([RFC0004](../rfcs/RFC0004.md#age-of-the-publishers-observations)). | The controller's logs at the member's site, and its API server. |
 | `ReadFailed: ...` | The plugin could not read the workload at this site. The rest of the reason is the error. | Follow the error. For `cnpg`, check that CloudNativePG is installed at this site. |
-| `RoleMismatch: ...` | `spec.plugin.cnpg.confirmRole` is on, and the database at the `-rw` address named in the reason gives a `pg_is_in_recovery()` answer that contradicts the `Cluster`'s role. CloudNativePG's status and the database disagree. | Compare the `Cluster`'s `.status.currentPrimary` and `.spec.replica` with the database ([the command is below](#compare-a-cluster-with-its-database)). Fix the workload with its own tools. Strait routes nowhere rather than pick one ([RFC0003](../rfcs/RFC0003.md#cnpg-confirming-the-role)). |
+| `RoleMismatch: ...` | `spec.plugin.cnpg.confirmRole` is on, and the database at the `-rw` address named in the reason gives a `pg_is_in_recovery()` answer that contradicts the `Cluster`'s role. CloudNativePG's status and the database disagree. | Run `kubectl get cluster NAME -o yaml` (`NAME` is the `Cluster`'s name) and compare `.status.currentPrimary` and `.spec.replica` with the database. Fix the workload with its own tools. Strait routes nowhere rather than pick one ([RFC0003](../rfcs/RFC0003.md#cnpg-confirming-the-role)). |
 | `RoleNotConfirmed: ...` | `confirmRole` is on, and the check got no answer. The rest of the reason is the error: no credentials, a refused login, a timeout, or no ready address. | Set the chart value `cnpg.confirmRole.secretName` to a Secret with `username` and `password` of a role with `LOGIN`, at this site. Check that the role exists, may log in to `postgres` over TLS, and that the controller's pod reaches the database's pods on 5432. |
 | `PluginDisabled` | The member's plugin is off at this site: the chart value `cnpg.enabled` is `false`. | Set `cnpg.enabled: true` with `helm upgrade` at the member's site. |
-
-While a peer is unreachable, every member at that peer counts as `Unknown` ([RFC0004](../rfcs/RFC0004.md)). A routed member stays in the route for `policy.unknownHold` after it was last confirmed, then the name routes nowhere.
-
-A peer is unreachable while its controller restarts, as in an upgrade. Upgrade one site at a time: [Upgrade](runbooks/upgrade.md).
-
-### Compare a `Cluster` with its database
-
-For `RoleMismatch`. Replace `NAME` with the `Cluster`'s name:
-
-```sh
-kubectl get cluster NAME -o yaml
-```
-
-Check: `.status.currentPrimary` and `.spec.replica`, against what the database reports.
 
 ## Members that are not eligible
 
@@ -192,23 +139,9 @@ An eligible member shows `PrimaryCluster`, `Ready` or `Declared`.
 
 Read both ends: a link needs the gateway at each site.
 
-### 1. Read the peers
+Steps 3 and 4 of [Start here](#start-here) read the peers and the links.
 
-```sh
-strait --context site-a peers
-```
-
-Check: `REACHABLE` false, and `LAST ERROR`.
-
-### 2. Read the links
-
-```sh
-strait --context site-a links
-```
-
-Check: whether any link to that peer is `HEALTHY`.
-
-### 3. Read the link's condition
+### Read the link's condition
 
 ```sh
 kubectl --context site-a get sitelink b-wan -o yaml
@@ -216,7 +149,7 @@ kubectl --context site-a get sitelink b-wan -o yaml
 
 Check: the reason and message of the `Healthy` condition.
 
-### 4. Read the site's conditions
+### Read the site's conditions
 
 ```sh
 kubectl --context site-a get site a -o yaml
@@ -229,14 +162,9 @@ Check: the `GatewayActive`, `GatewayServices` and `GatewayConfig` conditions.
 | Symptom | Cause and next step |
 |---|---|
 | `LAST ERROR` holds `site mismatch` | The peer's document names another site. Name the `SitePeer` after the peer's `site.name`. |
-| A healthy link, but the peer is not reachable | The peer's controller does not serve its document. Check the peer, and its controller's logs. |
+| A healthy link, but the peer is not reachable | The peer's controller does not serve its document. Run `strait --context site-b status` at the peer, and read its controller's logs. |
 | No healthy link to the peer | See the `Healthy` condition below. |
 
-For the second row, run this at the peer:
-
-```sh
-strait --context site-b status
-```
 
 ### The `Healthy` condition of a `SiteLink`
 
@@ -302,21 +230,11 @@ Read the controller's log, `a gateway Envoy rejected its configuration`. The con
 
 #### `GatewayActive` moves to another pod while nothing failed
 
-The active gateway replica could not renew the gateway Lease within `spec.gateway.lease.renewDeadline`, 4s by default, for example while the API server stalled. Every connection across the gateway resets.
+The active gateway replica could not renew the gateway Lease within `spec.gateway.lease.renewDeadline`, for example while the API server stalled. Every handover resets connections: [Gateway handover](runbooks/gateway-handover.md).
 
 Check the API server's availability. A longer `renewDeadline` and `duration` ride out longer stalls, and keep a failed replica active for longer ([RFC0005, Timing of the gateway Lease](../rfcs/RFC0005.md#timing-of-the-gateway-lease)).
 
 ## Logs, events and metrics
-
-### Versions
-
-The CLI:
-
-```sh
-strait version
-```
-
-The site's controller: the `VERSION` column of `strait status`.
 
 ### Events
 
@@ -354,7 +272,7 @@ Each link that fails, comes back, or starts or stops carrying traffic logs `Site
 kubectl --context site-a get events -A --field-selector reason=GatewayHandover
 ```
 
-Each one resets every connection across the site's gateway.
+Each one resets every connection: [Gateway handover](runbooks/gateway-handover.md).
 
 ### Metrics
 

@@ -187,10 +187,6 @@ onBeforeUnmount(() => {
                         </a>
                         <a class="sh-button" :href="withBase('/guide/introduction')">Read the introduction</a>
                     </p>
-                    <p class="sh-supports">
-                        Today Strait carries TCP, and reads a workload through two plugins: <code>cnpg</code>, for CloudNativePG, and
-                        <code>declared</code>. <a :href="withBase('/limitations')">Limitations</a> has the rest.
-                    </p>
                 </div>
 
                 <figure class="sh-sheet">
@@ -287,9 +283,6 @@ onBeforeUnmount(() => {
                                 Wire or link
                             </li>
                         </ul>
-                        <p class="sh-sheet-note">
-                            A drawn example, from <a :href="withBase('/guide/introduction#how-it-works')">How it works in the introduction</a>.
-                        </p>
                     </div>
                 </figure>
             </div>
@@ -302,7 +295,6 @@ onBeforeUnmount(() => {
                 <div class="sh-chapter-head">
                     <h2>One connection, from site b to a primary at site a.</h2>
                     <p>Each site decides its own route. Its controller reads only the members at its own site, and polls what the other sites observe.</p>
-                    <p><a :href="withBase('/guide/concepts')">Concepts</a> has the pieces and what each one guarantees.</p>
                 </div>
 
                 <ol class="sh-marks">
@@ -323,8 +315,7 @@ onBeforeUnmount(() => {
                 <div class="sh-chapter-head">
                     <h2>Routes nowhere rather than to a guess.</h2>
                     <p>
-                        Strait never promotes, demotes or fences anything. It follows. When it can't tell which member is active, the name has no
-                        endpoints, and <code>strait explain</code> says why.
+                        When it can't tell which member is active, the name has no endpoints, and <code>strait explain</code> says why.
                     </p>
                 </div>
 

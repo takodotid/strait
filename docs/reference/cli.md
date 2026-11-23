@@ -1,6 +1,6 @@
 # The strait command
 
-`strait` reads the state of Strait at one site and explains it. It is read-only: it never creates, updates, patches or deletes an object. [Install](../guide/install.md#the-cli) puts it on the `PATH`, with `kubectl-strait` next to it.
+`strait` reads the state of Strait at one site and explains it. It is read-only. [Install](../guide/install.md#the-cli) puts it on the `PATH`, with `kubectl-strait` next to it: installed as `kubectl-strait` (`kubectl-strait.exe` on Windows), the same commands run as `kubectl strait`.
 
 ## Commands
 
@@ -11,7 +11,7 @@
 | `strait links` | Every link to a peer, its health, and which link carries the traffic. |
 | `strait peers` | Every peer, and whether its observations can be read. |
 | `strait validate -f PATH` | Checks manifests offline, with the rules of the CRDs. |
-| `strait --skill` | Prints the skill document for AI agents. |
+| `strait --skill` | Prints the skill document for AI agents. `strait --skill > <skills dir>/strait/SKILL.md` installs it. |
 | `strait version` | The CLI's version and commit. `strait --version` prints them on one line. |
 | `strait completion SHELL` | The completion script for `bash`, `zsh`, `fish` or `powershell`. |
 
@@ -22,8 +22,8 @@
 | Flag | Does |
 |---|---|
 | `--context` | The kubeconfig context to read. Each command that reads a cluster reads one site, so pass `--context` for each. |
-| `--kubeconfig` | The kubeconfig file. Defaults to `$KUBECONFIG`, then `~/.kube/config`. |
-| `-n`, `--namespace` | The namespace of namespaced objects. Defaults to the context's namespace. |
+| `--kubeconfig` | The kubeconfig file. |
+| `-n`, `--namespace` | The namespace of namespaced objects. |
 | `-A`, `--all-namespaces` | Read namespaced objects in every namespace. |
 | `-o`, `--output` | `table`, `json` or `yaml`, for every command that prints state, a validation or a version. |
 
@@ -37,51 +37,18 @@
 
 ## Output on a terminal
 
-On a terminal, `strait explain` marks the route with a symbol: ✔ a route to a confirmed member, ▲ a route kept while a member is `Unknown` or the controller awaits its peers, ■ a route to nowhere. Green shows what works, yellow a warning, and red what stops traffic. Colours are off when `NO_COLOR` is set. Piped or redirected, the output is plain text, and `-o json` and `-o yaml` never change.
-
-## kubectl strait
-
-Installed as `kubectl-strait`, or `kubectl-strait.exe` on Windows, the same commands run as `kubectl strait`.
-
-## The skill for AI agents
-
-`strait --skill > <skills dir>/strait/SKILL.md` installs a skill that explains how to read Strait's state.
+On a terminal, `strait explain` marks the route with a symbol: ✔ a route to a confirmed member, ▲ a route kept while a member is `Unknown` or the controller awaits its peers, ■ a route to nowhere. Colours are off when `NO_COLOR` is set.
 
 ## Shell completion
 
-Completion covers commands, flags, the values of `-o`, the kubeconfig's contexts, and the names of namespaces and `SiteService`s. Names come from the context's cluster, within 2s. A completion never asks for credentials.
+Completion covers commands, flags, the values of `-o`, the kubeconfig's contexts, and the names of namespaces and `SiteService`s.
 
-### bash
-
-Needs the `bash-completion` package. Add this line to `~/.bashrc`:
-
-```sh
-source <(strait completion bash)
-```
-
-### zsh
-
-Add this line to `~/.zshrc`, after `compinit`:
-
-```sh
-source <(strait completion zsh)
-```
-
-### fish
-
-Write the script to the fish completions directory:
-
-```sh
-strait completion fish > ~/.config/fish/completions/strait.fish
-```
-
-### PowerShell
-
-Add this line to `$PROFILE`:
-
-```powershell
-strait completion powershell | Out-String | Invoke-Expression
-```
+| Shell | Setup |
+|---|---|
+| bash | Needs the `bash-completion` package. Add `source <(strait completion bash)` to `~/.bashrc`. |
+| zsh | Add `source <(strait completion zsh)` to `~/.zshrc`, after `compinit`. |
+| fish | `strait completion fish > ~/.config/fish/completions/strait.fish` |
+| PowerShell | Add `strait completion powershell \| Out-String \| Invoke-Expression` to `$PROFILE`. |
 
 ### The kubectl plugin
 
