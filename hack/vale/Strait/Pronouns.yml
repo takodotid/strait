@@ -1,0 +1,20 @@
+# AGENTS.md, Writing: refer to "the operator" or a role, never a person, and no personal pronouns.
+extends: existence
+message: "'%s': name the operator or a role, not a person."
+level: error
+tokens:
+  - I(?![/-])
+  - "[Mm]e"
+  - "[Mm]y"
+  - "[Ww]e"
+  - us
+  - "[Oo]urs?"
+  - "[Oo]urselves"
+  - "[Yy]ou"
+  - "[Yy]ours?"
+  - "[Yy]oursel(?:f|ves)"
+  - "[Hh]e"
+  - "[Ss]he"
+  - him
+  - "[Hh]er"
+  - "[Hh]is"

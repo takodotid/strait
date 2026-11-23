@@ -14,7 +14,7 @@
 
 Each site has one `Site`, one `SitePeer` per peer and one `SiteLink` per path. Every resource is listed in [Resources and chart values](../reference/api.md).
 
-## A `SiteService`
+## A SiteService
 
 Apply the same object at every site:
 

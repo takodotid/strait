@@ -1,46 +1,149 @@
 # Upgrade
 
-Upgrade one site at a time. Sites on different 1.x releases still read each other's observations. To go back to an earlier release: [Roll back within 1.x](./rollback.md).
+Upgrade one site at a time. Sites on different 1.x releases read each other's observations.
+
+::: warning From a release before 1.5.0
+With `networkPolicy.gateway.enabled`, `helm upgrade` fails without `networkPolicy.gateway.wireGuardPorts` when `networkPolicy.gateway.peerCIDRs` is set, and without `networkPolicy.gateway.ports` when `site.create` is false. [1.5.0](#150) says what to set.
+:::
+
+## Before the upgrade
+
+- Work out the pull budget: [How to plan](#how-to-plan). Step 1 needs it.
+- Read [Notes by version](#notes-by-version) for every release after the site's.
 
 ## Steps
 
-| Step | What to do |
-|---|---|
-| 1. Pull the images | Required when a pull can take longer than the site's budget, in [How to plan](#how-to-plan). List the release's images with `helm template`, as below. Pull each one on every node of the site, for example with `crictl pull`. From 1.3.0, the chart's pre-pull Job also runs the release's image on the controller's node before the upgrade changes anything (`controller.prePull`), but the new controller pod can start on another node. |
-| 2. Upgrade the site | Read [Notes by version](#notes-by-version) for every release after the site's. Apply the release's CRDs first, then upgrade the chart with the same values, as below. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them. |
-| 3. Wait | Run `strait --context SITE status -A` at every site. Go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. |
-| 4. Next site | Back to step 1. |
+### 1. Pull the images
+
+Required when a pull can take longer than the site's budget, in [How to plan](#how-to-plan). List the release's images with `helm template`. Pull each one on every node of the site, for example with `crictl pull`.
+
+Change `v` and `values-a.yaml` to the release and the site's values file.
 
 ```sh
 v=v1.5.0
 helm template strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" --values values-a.yaml | grep 'image:' | sort -u
+```
+
+From 1.3.0, the chart's pre-pull Job also runs the release's image on the controller's node before the upgrade changes anything (`controller.prePull`), but the new controller pod can start on another node.
+
+### 2. Upgrade the site
+
+Apply the release's CRDs first, then upgrade the chart with the same values. Helm installs the chart's CRDs on the first install only, and never upgrades or deletes them.
+
+Change `v`, `site-a` and `values-a.yaml` as in step 1, in both blocks.
+
+```sh
+v=v1.5.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
+```
+
+Check: the `curl` and `kubectl apply` commands both succeed. If either fails, stop: do not upgrade the chart.
+
+Then upgrade the chart. Run it in the same shell, so that `v` is still set.
+
+```sh
 helm --kube-context site-a upgrade strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" \
   --namespace strait-system --values values-a.yaml --wait
 ```
 
-When the release's image can't be pulled or run, the pre-pull Job fails, and `helm upgrade` fails with `pre-upgrade hooks failed` on `Job/strait-system/strait-pre-pull`. Nothing else has changed, and the old controller still runs. Read why with `kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=pre-pull`. The failed Job stays until the next upgrade replaces it.
+If `helm upgrade` fails with `pre-upgrade hooks failed`: [If the pre-pull Job fails](#if-the-pre-pull-job-fails).
+
+### 3. Wait
+
+Run this at every site. Change `site-a` to each site's context.
+
+```sh
+strait --context site-a status -A
+```
+
+Check: go on once each shows every peer `REACHABLE`, and every name with the route and reason it had before the upgrade, usually `Active`. If a check fails, or to go back to an earlier release: [Roll back within 1.x](./rollback.md).
+
+### 4. Upgrade the next site
+
+Back to step 1.
+
+## If the pre-pull Job fails
+
+When the release's image can't be pulled or run, the pre-pull Job fails, and `helm upgrade` fails with `pre-upgrade hooks failed` on `Job/strait-system/strait-pre-pull`. Nothing else has changed, and the old controller still runs. The failed Job stays until the next upgrade replaces it.
+
+Read why:
+
+```sh
+kubectl --context site-a -n strait-system describe pod -l app.kubernetes.io/component=pre-pull
+```
 
 ## Notes by version
 
-Each row applies when the site runs a release before that version.
+Each note applies when the site runs a release before that version.
 
-| From a release before | What changes | What to do |
-|---|---|---|
-| 1.2.0 | The new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server doesn't know until the new CRDs are applied. | Apply the CRDs before the chart. |
-| 1.3.0 | The new CRDs add `Site.spec.gateway.lease`. | Apply the CRDs before the chart. |
-| 1.4.0 | The new CRDs refuse a `Site` whose gateway ports include 8090, 8091 or 9901, where the gateway agent and Envoy's admin interface listen. On Kubernetes 1.31 and 1.32, under the new CRDs, every write to the status of a `Site` stored with such a port is refused. The controller then stops updating that status, including the active gateway's address. This was seen on envtest's API server, 1.31.0 to 1.37.0, and from 1.33 the status write passes ([RFC0005](../../rfcs/RFC0005.md#requirements), requirement 52). | Change such a port first. |
-| 1.5.0 | With `networkPolicy.gateway.enabled`, the gateway's policy lets the cluster's pods reach the import and export ports only, and lets the controller reach the peer port. A pod that connects to another gateway port, such as the control port, is refused. The CIDRs in `networkPolicy.gateway.peerCIDRs` can reach only these: the control and export ports, and the UDP ports in the new value `networkPolicy.gateway.wireGuardPorts` ([RFC0007](../../rfcs/RFC0007.md#network-policies), requirement 28). | List the site's WireGuard listen ports in `networkPolicy.gateway.wireGuardPorts`, or `[]` when the site has no `wireguard` link. With `site.create: false`, set `networkPolicy.gateway.ports` too. Without them, `helm upgrade` fails. |
-| 1.5.0 | The image's index lists the platform images only, and each platform image carries its provenance and SBOM as cosign attestations. The verify commands of 1.4.0 still pass: `cosign verify` of the chart and the image, and `gh attestation verify` of an archive. `docker buildx imagetools inspect --format '{{json .Provenance}}'` and `'{{json .SBOM}}'` read attestations from the index, so they print `{}`. | Read the attestations with `cosign verify-attestation` ([Verify a release](../guide/install.md#verify-a-release)). |
-| 1.5.0 | The gateway agent uses nftables to filter the traffic that arrives on its WireGuard interfaces. On a node whose kernel lacks `nf_tables`, once the gateway rolls, each `wireguard` link has no interface and shows `NotConfigured` ([RFC0005](../../rfcs/RFC0005.md#wireguard)). | Check the nodes that can run a gateway pod first. |
+### 1.2.0
+
+- What to do: Apply the CRDs before the chart.
+- What changes: The new CRDs add `SiteLink.spec.direct.endpointCIDRs`, which the API server doesn't know until the new CRDs are applied.
+
+### 1.3.0
+
+- What to do: Apply the CRDs before the chart.
+- What changes: The new CRDs add `Site.spec.gateway.lease`.
+
+### 1.4.0
+
+- What to do: Change a gateway port of 8090, 8091 or 9901 first.
+- What changes:
+  - The new CRDs refuse a `Site` whose gateway ports include 8090, 8091 or 9901, where the gateway agent and Envoy's admin interface listen.
+  - On Kubernetes 1.31 and 1.32, under the new CRDs, every write to the status of a `Site` stored with such a port is refused. The controller then stops updating that status, including the active gateway's address.
+  - This was seen on envtest's API server, 1.31.0 to 1.37.0, and from 1.33 the status write passes ([RFC0005](../../rfcs/RFC0005.md#requirements), requirement 52).
+
+### 1.5.0
+
+The release has three changes.
+
+- Network policy:
+  - What to do: List the site's WireGuard listen ports in `networkPolicy.gateway.wireGuardPorts`, or `[]` when the site has no `wireguard` link. With `site.create: false`, set `networkPolicy.gateway.ports` too. With `networkPolicy.gateway.enabled`, `helm upgrade` fails without `wireGuardPorts` when `peerCIDRs` is set, and without `networkPolicy.gateway.ports` when `site.create` is false.
+  - What changes: With `networkPolicy.gateway.enabled`, the gateway's policy lets the cluster's pods reach the import and export ports only, and lets the controller reach the peer port. A pod that connects to another gateway port, such as the control port, is refused. The CIDRs in `networkPolicy.gateway.peerCIDRs` can reach only these: the control and export ports, and the UDP ports in the new value `networkPolicy.gateway.wireGuardPorts` ([RFC0007](../../rfcs/RFC0007.md#network-policies), requirement 28).
+- Attestations:
+  - What to do: Read the attestations with `cosign verify-attestation` ([Verify a release](../guide/install.md#verify-a-release)).
+  - What changes: The image's index lists the platform images only, and each platform image carries its provenance and SBOM as cosign attestations. The verify commands of 1.4.0 still pass: `cosign verify` of the chart and the image, and `gh attestation verify` of an archive. `docker buildx imagetools inspect --format '{{json .Provenance}}'` and `'{{json .SBOM}}'` read attestations from the index, so they print `{}`.
+- nftables:
+  - What to do: Check the nodes that can run a gateway pod first.
+  - What changes: The gateway agent uses nftables to filter the traffic that arrives on its WireGuard interfaces. On a node whose kernel lacks `nf_tables`, once the gateway rolls, each `wireguard` link has no interface and shows `NotConfigured` ([RFC0005](../../rfcs/RFC0005.md#wireguard)).
 
 ## What the site shows
 
-| Part | What happens | What the operator sees |
-|---|---|---|
-| Controller | One replica with the `Recreate` strategy ([RFC0004](../../rfcs/RFC0004.md#requirements), requirement 12). The site has no controller from the moment its old pod stops until its new pod serves. That gap includes the image pull, the start, and the wait for the leader election Lease. There is no wait when the old controller released the Lease as it stopped, and a 15s wait when it didn't ([RFC0004](../../rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it. | At the other sites, once the gap passes `peerTimeout` (6s by default), the site's peer isn't `REACHABLE`, and its members are `Unknown`. A routed `Unknown` member stays in the route, with reason `HeldUnknown`, for `policy.unknownHold` (30s by default) after it was last confirmed. Then the name routes nowhere with `UnknownTimeout` until the new controller serves ([RFC0002](../../rfcs/RFC0002.md#requirements), requirement 17). At the site itself, its names keep the endpoints written last, and their status doesn't change. Then their status shows `AwaitingPeers` until the new controller's first poll of every peer has ended. |
-| Gateway | Every release rolls the gateway, because its agent runs the release's image. With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left. The active pod has a deletion cost, so it stops last ([RFC0005, Gateway rollout](../../rfcs/RFC0005.md#gateway-rollout)). When it stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a new replica takes it ([RFC0005, Failover sequence](../../rfcs/RFC0005.md#failover-sequence)). The Lease moves once. From a release before 1.3.0, it can move twice, because the active pod has no deletion cost until the new controller sets it. | Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members. Connections to a local member, and endpoint-direct connections, don't cross the gateway. New connections through the gateway fail until the new active pod's links pass their health checks. The polls between the site and its peers cross the gateway too. When a move lasts longer than `peerTimeout`, each side counts the other's members as `Unknown`, as in the controller row. `strait status` shows the new active gateway pod. |
+### Controller
+
+What the operator sees:
+
+- At the other sites, once the gap passes `peerTimeout` (6s by default), the site's peer isn't `REACHABLE`, and its members are `Unknown`.
+- A routed `Unknown` member stays in the route, with reason `HeldUnknown`, for `policy.unknownHold` (30s by default) after it was last confirmed.
+- Then the name routes nowhere with `UnknownTimeout` until the new controller serves ([RFC0002](../../rfcs/RFC0002.md#requirements), requirement 17).
+- At the site itself, its names keep the endpoints written last, and their status doesn't change.
+- Then their status shows `AwaitingPeers` until the new controller's first poll of every peer has ended.
+
+What happens:
+
+- One replica with the `Recreate` strategy ([RFC0004](../../rfcs/RFC0004.md#requirements), requirement 12).
+- The site has no controller from the moment its old pod stops until its new pod serves. That gap includes the image pull, the start, and the wait for the leader election Lease.
+- There is no wait when the old controller released the Lease as it stopped, and a 15s wait when it didn't ([RFC0004](../../rfcs/RFC0004.md#leader-election)). A controller of 1.1.3 or later releases it.
+
+### Gateway
+
+What the operator sees:
+
+- Each move resets every connection through the site's gateway, in both directions: this site's clients of remote members, and the other sites' clients of this site's members.
+- Connections to a local member, and endpoint-direct connections, don't cross the gateway.
+- New connections through the gateway fail until the new active pod's links pass their health checks.
+- The polls between the site and its peers cross the gateway too. When a move lasts longer than `peerTimeout`, each side counts the other's members as `Unknown`, as for the controller.
+- `strait status` shows the new active gateway pod.
+
+What happens:
+
+- Every release rolls the gateway, because its agent runs the release's image.
+- With the chart's 2 replicas, the Deployment starts one new pod, and stops an old pod once the new one is ready, until no old pod is left.
+- The active pod has a deletion cost, so it stops last ([RFC0005, Gateway rollout](../../rfcs/RFC0005.md#gateway-rollout)).
+- When it stops, its agent removes its WireGuard interfaces and releases the gateway Lease, and a new replica takes it ([RFC0005, Failover sequence](../../rfcs/RFC0005.md#failover-sequence)).
+- The Lease moves once. From a release before 1.3.0, it can move twice, because the active pod has no deletion cost until the new controller sets it.
 
 ## How to plan
 
@@ -64,29 +167,47 @@ A drain moves Strait's pods off a node. The chart's PodDisruptionBudget lets a d
 
 With `gateway.antiAffinity: required`, each gateway replica runs on a node of its own, so one drain never takes two. A rollout then needs one node more than `gateway.replicas`, for the new pod it starts first. With the default, `preferred`, two replicas can share a node when no other node fits.
 
-Drain the nodes of one site at a time, and plan each drain as an upgrade. After a node that ran the controller or the active gateway pod, wait as in step 3 before the next node. `kubectl --context site-a -n strait-system get pods -o wide` shows each pod's node, and `strait --context site-a status` shows the active gateway pod.
+Drain the nodes of one site at a time, and plan each drain as an upgrade. After a node that ran the controller or the active gateway pod, wait as in [step 3](#3-wait) before the next node. These commands show each pod's node, and the active gateway pod:
+
+```sh
+kubectl --context site-a -n strait-system get pods -o wide
+strait --context site-a status
+```
 
 ## From 0.1 to 1.0
 
 1.0 serves the API as `strait.tako.id/v1`. It still serves `strait.tako.id/v1alpha1`, deprecated, with the same schema ([RFC0001](../../rfcs/RFC0001.md#api-versions)).
 
-| Step | What to do |
-|---|---|
-| 1. Upgrade each site | As above. Objects that 0.1 stored keep working and keep their identity. |
-| 2. Move your manifests | Change `apiVersion: strait.tako.id/v1alpha1` to `strait.tako.id/v1`. Nothing else changes. `strait validate` warns about each object that still names `v1alpha1`, and `kubectl` prints a deprecation warning. |
-| 3. Store every object as `v1` | Needed before a release that stops serving `v1alpha1`. Run the commands below at each site. |
+### 1. Upgrade each site
+
+As above. Objects that 0.1 stored keep working and keep their identity.
+
+### 2. Move the manifests
+
+Change `apiVersion: strait.tako.id/v1alpha1` to `strait.tako.id/v1`. Nothing else changes. `strait validate` warns about each object that still names `v1alpha1`, and `kubectl` prints a deprecation warning.
+
+### 3. Store every object as `v1`
+
+Needed before a release that stops serving `v1alpha1`. Run the two loops below at each site, one after the other.
+
+`replace` writes each object again, in the version that the API server stores, which is `v1`. If it reports a conflict, the controller changed that object in the meantime. Run this loop again. Set `ctx` to the site's context in both blocks, and run the second block for the same site.
 
 ```sh
 ctx=site-a
 for r in sites sitepeers sitelinks exports imports siteservices; do
-  kubectl --context "$ctx" get "$r.strait.tako.id" --all-namespaces -o json | kubectl --context "$ctx" replace -f -
+  kubectl --context "$ctx" get "$r.strait.tako.id" --all-namespaces -o json \
+    | kubectl --context "$ctx" replace -f -
 done
+```
+
+Run the second loop only once the first has replaced every object. Set `ctx` to the same site's context as in the first loop.
+
+```sh
+ctx=site-a
 for r in sites sitepeers sitelinks exports imports siteservices; do
   kubectl --context "$ctx" patch crd "$r.strait.tako.id" --subresource=status --type=merge \
     -p '{"status":{"storedVersions":["v1"]}}'
 done
 ```
-
-`replace` writes each object again, in the version that the API server stores, which is `v1`. If it reports a conflict, the controller changed that object in the meantime. Run the first loop again. Run the second loop only once the first has replaced every object.
 
 The 1.0 CLI reads `v1`, so it needs a site whose CRDs are 1.0. With the 1.0 CRDs in place, `helm rollback` to 0.1 still works, since they serve `v1alpha1`.

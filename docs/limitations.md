@@ -1,5 +1,5 @@
 ---
-outline: [2, 2]
+outline: [2, 3]
 ---
 
 <script setup>
@@ -23,11 +23,11 @@ These are choices, set as requirements in [RFC0001](../rfcs/RFC0001.md#requireme
 
 Each RFC lists the limitations of its subject: what to do about each one, and when to revisit it. They are shown below as the RFCs stood when this site was built:
 
-- [RFC0002, Limitations](../rfcs/RFC0002.md#limitations)
-- [RFC0003, Limitations](../rfcs/RFC0003.md#limitations)
-- [RFC0004, Limitations](../rfcs/RFC0004.md#limitations)
-- [RFC0005, Limitations](../rfcs/RFC0005.md#limitations)
-- [RFC0007, Limitations](../rfcs/RFC0007.md#limitations)
+- [RFC0002, Limitations](#rfc0002)
+- [RFC0003, Limitations](#rfc0003)
+- [RFC0004, Limitations](#rfc0004)
+- [RFC0005, Limitations](#rfc0005)
+- [RFC0007, Limitations](#rfc0007)
 
 <div v-for="section in data" :key="section.rfc">
   <h3 :id="section.rfc.toLowerCase()">{{ section.rfc }}: {{ section.title }} <a class="header-anchor" :href="'#' + section.rfc.toLowerCase()" :aria-label="'Permalink to ' + section.rfc"></a></h3>

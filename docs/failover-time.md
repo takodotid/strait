@@ -6,6 +6,17 @@ Strait never moves a primary. The workload's controller or the operator does tha
 
 Real timings come from a run on real clusters, not from CI or kind.
 
+## At a glance
+
+| Part | Default |
+|---|---|
+| A local member's change seen | Under 2s |
+| A remote member's change seen | Within `peerTimeout`, 6s |
+| A dead member dropped from the route | After `unknownHold`, 30s |
+| The promotion restart, which the workload takes and Strait waits for | Up to `smartShutdownTimeout`, 180s ([The promotion restart](#the-promotion-restart)) |
+
+[The parts](#the-parts) lists every part and what to tune.
+
 ## When the route became `Active` again
 
 Read `status.route.lastChangeTime` together with `status.route.reason`:

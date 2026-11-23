@@ -11,17 +11,20 @@ Strait routes. It never fails over, promotes or demotes a workload. The workload
 The same `SiteService`, named `pg`, is applied at both sites. Each site decides its own route. A connection to `pg.app.svc` takes this path:
 
 ```mermaid
-flowchart LR
-  subgraph sb["site b: the primary is remote"]
-    appB["app"] -->|"connects to"| nameB["pg.app.svc<br/>endpoints: gateway b"]
-    nameB --> gwB["strait-gateway b"]
-  end
-  subgraph sa["site a: the primary is local"]
-    appA["app"] -->|"connects to"| nameA["pg.app.svc<br/>endpoints: the pods of pg-a"]
-    nameA --> pgA[("pg-a<br/>primary")]
-    gwA["strait-gateway a"] --> pgA
-  end
-  gwB ==>|"link, direct or wireguard"| gwA
+block-beta
+  %% accTitle: Path of a connection from the application to pg-a
+  columns 5
+  appA["app<br/>site a"] space nameA["pg.app.svc"] space pgA[("pg-a<br/>primary")]
+  space space space space space
+  space space space space gwA["gateway a"]
+  space space space space space
+  appB["app<br/>site b"] space nameB["pg.app.svc"] space gwB["gateway b"]
+  appA --> nameA
+  nameA -- "pods of pg-a" --> pgA
+  gwA --> pgA
+  appB --> nameB
+  nameB -- "gateway b" --> gwB
+  gwB == "link" ==> gwA
 ```
 
 - At site a, the primary `pg-a` is local. `pg.app.svc` points at its pods.
@@ -30,18 +33,25 @@ flowchart LR
 The route comes from the controller at each site:
 
 ```mermaid
-flowchart LR
-  subgraph sa["site a"]
-    clA["Cluster pg-a<br/>primary"] -->|"plugin reads,<br/>read-only"| ctrlA["strait-controller a"]
-    ctrlA -->|"writes endpoints"| nameA["pg.app.svc"]
-    ctrlA -->|"xDS"| gwA["strait-gateway a"]
-  end
-  subgraph sb["site b"]
-    clB["Cluster pg-b<br/>replica"] -->|"plugin reads,<br/>read-only"| ctrlB["strait-controller b"]
-    ctrlB -->|"writes endpoints"| nameB["pg.app.svc"]
-    ctrlB -->|"xDS"| gwB["strait-gateway b"]
-  end
-  ctrlA <-.->|"observations,<br/>polled over the link"| ctrlB
+block-beta
+  %% accTitle: How each site's controller sets the route and watches the other site
+  columns 5
+  clA["Cluster pg-a<br/>primary"] space ctrlA["controller a"] space nameA["site a<br/>pg.app.svc"]
+  space space space space space
+  space space space space gwA["gateway a"]
+  space space space space space
+  space space space space gwB["gateway b"]
+  space space space space space
+  clB["Cluster pg-b<br/>replica"] space ctrlB["controller b"] space nameB["site b<br/>pg.app.svc"]
+  clA -- "read-only" --> ctrlA
+  ctrlA -- "endpoints" --> nameA
+  ctrlA -- "xDS" --> gwA
+  gwA == "link" === gwB
+  ctrlA -. "observations" .-> gwB
+  clB -- "read-only" --> ctrlB
+  ctrlB -- "endpoints" --> nameB
+  ctrlB -- "xDS" --> gwB
+  ctrlB -. "observations" .-> gwA
 ```
 
 Each controller reads only the members at its own site. It polls the other site's observations through the gateways, over the same link. The pieces, the resources and what each one guarantees are in [Concepts](./concepts.md).
@@ -93,14 +103,20 @@ Every command of `strait` is in [The strait command](../reference/cli.md).
 make e2e
 ```
 
-It builds the image, creates the kind clusters `strait-e2e-a` and `strait-e2e-b`, runs the scenarios, and deletes the clusters. To keep them and look around:
+It builds the image, creates the kind clusters `strait-e2e-a` and `strait-e2e-b`, runs the scenarios, and deletes the clusters. To keep them:
 
 ```sh
 STRAIT_E2E_KEEP=1 make e2e
-make build
-bin/strait --kubeconfig <kubeconfig of site b> --context kind-strait-e2e-b -n db explain pg
 ```
 
-The test prints where it wrote the kubeconfigs. The prerequisites, the fixture and the scenarios are in [`test/e2e/README.md`](../../test/e2e/README.md).
+The test prints where it wrote the kubeconfigs. To look around, build the CLI and run it against site b. Replace `PATH_TO_KUBECONFIG_B` with the kubeconfig of site b:
+
+```sh
+make build
+bin/strait --kubeconfig PATH_TO_KUBECONFIG_B \
+  --context kind-strait-e2e-b -n db explain pg
+```
+
+The prerequisites, the fixture and the scenarios are in [the e2e README](../../test/e2e/README.md).
 
 To set up two real clusters, start with [Install](./install.md), then [Getting started](../getting-started.md).

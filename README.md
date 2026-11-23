@@ -4,9 +4,9 @@
 
 <p align="center">
     <a href="https://github.com/takodotid/strait/actions/workflows/ci.yaml?query=branch%3Amain"><img src="https://github.com/takodotid/strait/actions/workflows/ci.yaml/badge.svg?branch=main" alt="ci"></a>
-    <a href="https://github.com/takodotid/strait/releases"><img src="https://img.shields.io/github/v/release/takodotid/strait?label=release&color=b0127a" alt="release"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-16233b" alt="license"></a>
-    <a href="https://strait.tako.id"><img src="https://img.shields.io/badge/docs-strait.tako.id-b0127a" alt="docs"></a>
+    <a href="https://github.com/takodotid/strait/releases"><img src="https://img.shields.io/github/v/release/takodotid/strait?label=release&color=0d5c50" alt="release"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-101a17" alt="license"></a>
+    <a href="https://strait.tako.id"><img src="https://img.shields.io/badge/docs-strait.tako.id-0d5c50" alt="docs"></a>
 </p>
 
 <p align="center">
@@ -113,11 +113,11 @@ Strait is built with AI coding agents (Claude Code), and a person directs and ap
 - Each fix comes with a test that fails without the fix.
 - CI runs the unit tests, the race detector, and end-to-end tests on kind for every pull request.
 - Before a release, the change is tested on real clusters, not only in CI.
-- Releases are signed, and you can verify every release asset (see [Verify a release](https://strait.tako.id/guide/install#verify-a-release)).
+- Releases are signed, and every release asset can be verified (see [Verify a release](https://strait.tako.id/guide/install#verify-a-release)).
 
-**Why we trust it in production:** we run Strait ourselves, for our own databases. A router that sends writes to the wrong database would hurt us first.
+**Why the maintainers trust it in production:** the maintainers run Strait for their own databases. A router that sends writes to the wrong database would hurt them first.
 
-If you find a problem, open an issue. Saying that it looks AI-written is fine, as long as you say what's wrong.
+To report a problem, open an issue. Saying that it looks AI-written is fine, as long as the issue says what is wrong.
 
 ## Contributing
 
@@ -125,7 +125,7 @@ Design decisions live in [`rfcs/`](rfcs/). Before changing a subject, read the R
 
 | Change | Process |
 |---|---|
-| Code that conforms to an Active RFC | A pull request. CI runs `make verify`, `make test`, `make test-race`, `make lint`, `make test-envoy`, `make test-netns`, `make build` and `make e2e` on it, and builds the docs site. |
+| Code that conforms to an Active RFC | A pull request. CI runs `make verify`, `make test`, `make test-race`, `make lint`, `make prose`, `make test-envoy`, `make test-netns`, `make build` and `make e2e` on it, and builds the docs site. |
 | Code that departs from an RFC | Amend the RFC first, in the same pull request or an earlier one. When the code and an RFC disagree, the RFC wins. |
 | A new subject | A new RFC with the status Draft. It becomes Active with the maintainers' approval, once its open questions are resolved. |
 | A change that breaks a user of the API | A new API version. |

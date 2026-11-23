@@ -1,0 +1,34 @@
+# AGENTS.md, Writing: everyday words.
+extends: substitution
+message: "Write '%s', not '%s'."
+level: error
+ignorecase: true
+swap:
+  utili[sz]e: use
+  utili[sz]es: uses
+  utili[sz]ed: used
+  utili[sz]ing: using
+  leverage: use
+  leverages: uses
+  leveraged: used
+  leveraging: using
+  facilitate: help
+  facilitates: helps
+  facilitated: helped
+  facilitating: helping
+  commence: start
+  commences: starts
+  commenced: started
+  commencing: starting
+  in order to: to
+  prior to: before
+  subsequent to: after
+  subsequently: then
+  approximately: about
+  a number of: some
+  due to the fact that: because
+  in the event that: if
+  at this point in time: now
+  is able to: can
+  are able to: can
+  functionality: feature

@@ -1,0 +1,7 @@
+# AGENTS.md, Writing: no em-dashes.
+extends: existence
+message: "Remove the em-dash. Use a comma, a colon or two sentences."
+level: error
+nonword: true
+tokens:
+  - "—"

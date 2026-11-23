@@ -1,310 +1,878 @@
-/*
- * The chart table on VitePress's default theme. Colours and fonts come from tokens.css only: this file names no colour and no
- * font. The rules it follows are in DESIGN.md.
- */
+/* Sister ships on VitePress's default theme: its variables take the tokens, then the rules below set the frame. */
 
 :root,
 .dark {
-    --vp-font-family-base: var(--chart-font-text);
-    --vp-font-family-mono: var(--chart-font-mono);
+    --vp-c-bg: var(--ship-plane);
+    --vp-c-bg-alt: var(--ship-deck);
+    --vp-c-bg-elv: var(--ship-plane);
+    --vp-c-bg-soft: var(--ship-deck);
 
-    --vp-c-bg: var(--chart-paper);
-    --vp-c-bg-alt: var(--chart-paper);
-    --vp-c-bg-elv: var(--chart-card);
-    --vp-c-bg-soft: var(--chart-sea);
+    --vp-c-text-1: var(--ship-ink);
+    --vp-c-text-2: var(--ship-soft-ink);
+    --vp-c-text-3: var(--ship-soft-ink);
 
-    --vp-c-text-1: var(--chart-ink);
-    --vp-c-text-2: var(--chart-soft-ink);
-    --vp-c-text-3: var(--chart-soft-ink);
+    --vp-c-divider: var(--ship-line);
+    --vp-c-border: var(--ship-line);
+    --vp-c-gutter: var(--ship-line);
 
-    --vp-c-border: var(--chart-contour);
-    --vp-c-divider: var(--chart-contour);
-    --vp-c-gutter: var(--chart-contour);
+    --vp-c-brand-1: var(--ship-link);
+    --vp-c-brand-2: var(--ship-link-hover);
+    --vp-c-brand-3: var(--ship-hull);
+    --vp-c-brand-soft: var(--ship-deck);
 
-    --vp-c-brand-1: var(--chart-magenta);
-    --vp-c-brand-2: var(--chart-magenta-hover);
-    --vp-c-brand-3: var(--chart-magenta);
-    --vp-c-brand-soft: var(--chart-sea);
+    --vp-c-tip-1: var(--ship-tip);
+    --vp-c-tip-soft: var(--ship-deck);
+    --vp-c-note-1: var(--ship-ink);
+    --vp-c-note-soft: var(--ship-deck);
+    --vp-c-warning-1: var(--ship-warning);
+    --vp-c-warning-soft: var(--ship-deck);
+    --vp-c-danger-1: var(--ship-danger);
+    --vp-c-danger-soft: var(--ship-deck);
 
-    --vp-c-default-1: var(--chart-ink);
-    --vp-c-default-2: var(--chart-soft-ink);
-    --vp-c-default-3: var(--chart-soft-ink);
-    --vp-c-default-soft: var(--chart-sea);
+    --vp-font-family-base: var(--ship-font);
+    --vp-font-family-mono: var(--ship-font-mono);
 
-    --vp-c-note-1: var(--chart-ink);
-    --vp-c-note-2: var(--chart-ink);
-    --vp-c-note-3: var(--chart-ink);
-    --vp-c-note-soft: var(--chart-sea);
-    --vp-c-tip-1: var(--chart-tip);
-    --vp-c-tip-2: var(--chart-tip);
-    --vp-c-tip-3: var(--chart-tip);
-    --vp-c-tip-soft: var(--chart-sea);
-    --vp-c-warning-1: var(--chart-warning);
-    --vp-c-warning-2: var(--chart-warning);
-    --vp-c-warning-3: var(--chart-warning);
-    --vp-c-warning-soft: var(--chart-sea);
-    --vp-c-danger-1: var(--chart-danger);
-    --vp-c-danger-2: var(--chart-danger);
-    --vp-c-danger-3: var(--chart-danger);
-    --vp-c-danger-soft: var(--chart-sea);
+    --vp-code-color: var(--ship-ink);
+    --vp-code-bg: var(--ship-deck);
+    --vp-code-block-bg: var(--ship-code-bg);
+    --vp-code-block-color: var(--ship-code-text);
+    --vp-code-block-divider-color: var(--ship-code-line);
+    --vp-code-line-number-color: var(--ship-code-soft);
+    --vp-code-lang-color: var(--ship-code-soft);
+    --vp-code-copy-code-bg: var(--ship-code-bg);
+    --vp-code-copy-code-border-color: var(--ship-code-line);
+    --vp-code-copy-code-hover-bg: var(--ship-code-line);
+    --vp-code-copy-code-hover-border-color: var(--ship-code-soft);
+    --vp-code-copy-code-active-text: var(--ship-code-text);
+    --vp-code-tab-bg: var(--ship-code-bg);
+    --vp-code-tab-divider: var(--ship-code-line);
+    --vp-code-tab-text-color: var(--ship-code-soft);
+    --vp-code-tab-hover-text-color: var(--ship-code-text);
+    --vp-code-tab-active-text-color: var(--ship-code-text);
+    --vp-code-tab-active-bar-color: var(--ship-buff);
 
-    --vp-nav-bg-color: var(--chart-paper);
-    --vp-local-nav-bg-color: var(--chart-paper);
-    --vp-sidebar-bg-color: var(--chart-paper);
-    --vp-backdrop-bg-color: color-mix(in srgb, var(--chart-ink) 55%, transparent);
+    --vp-button-brand-bg: var(--ship-buff);
+    --vp-button-brand-border: var(--ship-ink);
+    --vp-button-brand-text: #101a17;
+    --vp-button-brand-hover-bg: var(--ship-buff-deep);
+    --vp-button-brand-hover-border: var(--ship-ink);
+    --vp-button-brand-hover-text: #101a17;
+    --vp-button-brand-active-bg: var(--ship-buff-deep);
+    --vp-button-brand-active-text: #101a17;
+    --vp-button-alt-bg: var(--ship-plane);
+    --vp-button-alt-text: var(--ship-ink);
+    --vp-button-alt-border: var(--ship-ink);
+    --vp-button-alt-hover-bg: var(--ship-deck);
+    --vp-button-alt-hover-text: var(--ship-ink);
 
-    --vp-code-color: var(--chart-ink);
-    --vp-code-bg: var(--chart-card);
-    --vp-code-link-color: var(--chart-magenta);
-    --vp-code-link-hover-color: var(--chart-magenta-hover);
-    --vp-code-block-color: var(--chart-ink);
-    --vp-code-block-bg: var(--chart-card);
-    --vp-code-block-divider-color: var(--chart-contour);
-    --vp-code-lang-color: var(--chart-soft-ink);
-    --vp-code-line-number-color: var(--chart-soft-ink);
-    --vp-code-copy-code-bg: var(--chart-card);
-    --vp-code-copy-code-hover-bg: var(--chart-sea);
-    --vp-code-copy-code-border-color: var(--chart-contour);
-    --vp-code-copy-code-hover-border-color: var(--chart-ink);
-    --vp-code-copy-copied-text-content: "Copied";
+    --vp-nav-height: 68px;
+    --vp-nav-bg-color: var(--ship-plane);
+    --vp-sidebar-bg-color: var(--ship-plane);
+    --vp-local-search-bg: var(--ship-plane);
+    --vp-local-search-result-bg: var(--ship-deck);
+    --vp-local-search-highlight-bg: var(--ship-buff);
+    --vp-local-search-highlight-text: #101a17;
 
-    --vp-button-brand-bg: var(--chart-magenta);
-    --vp-button-brand-border: var(--chart-magenta);
-    --vp-button-brand-text: var(--chart-on-magenta);
-    --vp-button-brand-hover-bg: var(--chart-magenta-hover);
-    --vp-button-brand-hover-border: var(--chart-magenta-hover);
-    --vp-button-brand-hover-text: var(--chart-on-magenta);
-    --vp-button-brand-active-bg: var(--chart-magenta-hover);
-    --vp-button-brand-active-border: var(--chart-magenta-hover);
-    --vp-button-brand-active-text: var(--chart-on-magenta);
-    --vp-button-alt-bg: var(--chart-card);
-    --vp-button-alt-border: var(--chart-ink);
-    --vp-button-alt-text: var(--chart-ink);
-    --vp-button-alt-hover-bg: var(--chart-sea);
-    --vp-button-alt-hover-border: var(--chart-ink);
-    --vp-button-alt-hover-text: var(--chart-ink);
-
-    --vp-custom-block-info-bg: var(--chart-sea);
-    --vp-custom-block-info-border: var(--chart-ink);
-    --vp-custom-block-info-text: var(--chart-ink);
-    --vp-custom-block-note-bg: var(--chart-sea);
-    --vp-custom-block-note-border: var(--chart-ink);
-    --vp-custom-block-note-text: var(--chart-ink);
-    --vp-custom-block-tip-bg: var(--chart-sea);
-    --vp-custom-block-tip-border: var(--chart-tip);
-    --vp-custom-block-tip-text: var(--chart-ink);
-    --vp-custom-block-warning-bg: var(--chart-sea);
-    --vp-custom-block-warning-border: var(--chart-warning);
-    --vp-custom-block-warning-text: var(--chart-ink);
-    --vp-custom-block-danger-bg: var(--chart-sea);
-    --vp-custom-block-danger-border: var(--chart-danger);
-    --vp-custom-block-danger-text: var(--chart-ink);
-    --vp-custom-block-caution-bg: var(--chart-sea);
-    --vp-custom-block-caution-border: var(--chart-danger);
-    --vp-custom-block-caution-text: var(--chart-ink);
-
-    --vp-badge-info-text: var(--chart-ink);
-    --vp-badge-info-bg: var(--chart-card);
-    --vp-badge-info-border: var(--chart-contour);
-    --vp-badge-tip-text: var(--chart-ink);
-    --vp-badge-tip-bg: var(--chart-card);
-    --vp-badge-tip-border: var(--chart-tip);
-    --vp-badge-warning-text: var(--chart-ink);
-    --vp-badge-warning-bg: var(--chart-card);
-    --vp-badge-warning-border: var(--chart-warning);
-    --vp-badge-danger-text: var(--chart-ink);
-    --vp-badge-danger-bg: var(--chart-card);
-    --vp-badge-danger-border: var(--chart-danger);
-
-    --vp-home-hero-name-color: var(--chart-ink);
-    --vp-home-hero-name-background: none;
-    --vp-home-hero-image-background-image: none;
-    --vp-home-hero-image-filter: none;
-
-    --vp-local-search-bg: var(--chart-paper);
-    --vp-local-search-result-bg: var(--chart-card);
-    --vp-local-search-result-border: var(--chart-contour);
-    --vp-local-search-result-selected-bg: var(--chart-sea);
-    --vp-local-search-result-selected-border: var(--chart-magenta);
-    --vp-local-search-highlight-bg: var(--chart-magenta);
-    --vp-local-search-highlight-text: var(--chart-on-magenta);
-
-    /* Flat: no shadow anywhere. */
     --vp-shadow-1: none;
     --vp-shadow-2: none;
-    --vp-shadow-3: none;
-    --vp-shadow-4: none;
-    --vp-shadow-5: none;
-
-    /* The code colours: ink, with comments in soft ink and keywords in the accent. */
-    --shiki-foreground: var(--chart-ink);
-    --shiki-background: var(--chart-card);
-    --shiki-token-constant: var(--chart-ink);
-    --shiki-token-string: var(--chart-ink);
-    --shiki-token-string-expression: var(--chart-ink);
-    --shiki-token-comment: var(--chart-soft-ink);
-    --shiki-token-keyword: var(--chart-magenta);
-    --shiki-token-parameter: var(--chart-ink);
-    --shiki-token-function: var(--chart-ink);
-    --shiki-token-punctuation: var(--chart-soft-ink);
-    --shiki-token-link: var(--chart-magenta);
-    --shiki-ansi-black: var(--chart-ink);
-    --shiki-ansi-white: var(--chart-paper);
-    --shiki-ansi-red: var(--chart-danger);
-    --shiki-ansi-green: var(--chart-tip);
-    --shiki-ansi-yellow: var(--chart-ink); /* orange text fails 4.5:1 on card */
-    --shiki-ansi-blue: var(--chart-ink);
-    --shiki-ansi-magenta: var(--chart-magenta);
-    --shiki-ansi-cyan: var(--chart-ink);
-    --shiki-ansi-bright-black: var(--chart-soft-ink);
-    --shiki-ansi-bright-white: var(--chart-card);
-    --shiki-ansi-bright-red: var(--chart-danger);
-    --shiki-ansi-bright-green: var(--chart-tip);
-    --shiki-ansi-bright-yellow: var(--chart-ink);
-    --shiki-ansi-bright-blue: var(--chart-ink);
-    --shiki-ansi-bright-magenta: var(--chart-magenta);
-    --shiki-ansi-bright-cyan: var(--chart-ink);
+    --vp-shadow-3: 0 10px 28px rgb(16 26 23 / 0.18);
+    --vp-shadow-4: 0 10px 28px rgb(16 26 23 / 0.18);
+    --vp-shadow-5: 0 10px 28px rgb(16 26 23 / 0.18);
 }
 
-/* Square: no rounded corner anywhere. */
-*,
-*::before,
-*::after {
-    border-radius: var(--chart-radius) !important;
+/* The parts the browser draws. */
+::selection {
+    background: var(--ship-buff);
+    color: #101a17;
+}
+html {
+    scrollbar-color: var(--ship-soft-ink) var(--ship-deck);
+    caret-color: var(--ship-hull);
+    /* A heading reached by its address clears the masthead (72px); below 1280px it clears the local bar (49px) too. */
+    scroll-padding-top: 88px;
+}
+@media (max-width: 1279px) {
+    html {
+        scroll-padding-top: 140px;
+    }
+}
+:focus-visible {
+    outline: 3px solid var(--ship-focus);
+    outline-offset: 2px;
+    border-radius: var(--ship-radius);
+}
+/* A button takes the same ring: the theme's own is the browser's blue. */
+button:focus-visible {
+    outline: 3px solid var(--ship-focus);
+    outline-offset: 2px;
 }
 
-/* Flat: no blur behind the navigation. */
+/* The ring follows the surface: the link colour on a plane, the light of the hull on every dark one. */
+.VPNav,
+.VPFooter,
+.sh-opening,
+.sh-sheet,
+.sh-black,
+.vp-doc div[class*="language-"] {
+    --ship-focus: var(--ship-on-hull);
+}
+/* The phone's menu and a flyout of the bar are planes inside the dark bar: their ring is the link colour again. */
+.VPNavScreen,
+.VPNav .VPMenu {
+    --ship-focus: var(--ship-link);
+}
+/* A scrolling line of code takes its ring inside its block, which clips an outer one. */
+.vp-doc div[class*="language-"] pre:focus-visible {
+    outline-offset: -3px;
+}
+
+/* One radius for controls; no blur behind the bar. */
+.VPButton,
+.vp-doc div[class*="language-"],
+.vp-doc :not(pre) > code,
+.custom-block,
+.VPLocalSearchBox .shell,
+.DocSearch-Button,
+.VPBadge,
+.VPLocalNavOutlineDropdown .items,
+.VPNavScreenAppearance,
+.VPSkipLink,
+.VPMenu,
+.VPMenuLink {
+    border-radius: var(--ship-radius) !important;
+}
 .VPNav,
 .VPNavBar,
-.VPLocalNav,
-.VPNavBar .content-body {
+.VPLocalNav {
     backdrop-filter: none !important;
 }
 
-/* The wordmark: the name in the text face, no logo. */
-.VPNavBarTitle .title {
-    font-family: var(--chart-font-text);
-    font-weight: 700;
-    font-size: 22px;
-    letter-spacing: 0;
+/* The masthead: the hull's colour on every page, ending on the boot-top, an ink band. */
+.VPNav {
+    background: var(--ship-hull);
+    border-bottom: 4px solid #101a17;
+}
+.VPNavBar,
+.VPNavBar:not(.home.top),
+.VPNavBar.has-sidebar .content-body,
+.VPNavBar:not(.has-sidebar):not(.home.top),
+.VPNavBar .title {
+    background: var(--ship-hull) !important;
+    border-bottom: 0 !important;
+}
+.VPNavBar .divider {
+    display: none;
+}
+.VPNavBar .content-body::before,
+.VPNavBar .curtain {
+    display: none !important;
 }
 
-/* Labels: short, upright caps in the condensed face, tracked. Headings and reading text stay in sentence case. */
+/* The name, lettered wide as on a bow. */
+.VPNavBarTitle .title {
+    font-size: 21px;
+    font-weight: 800;
+    font-stretch: 125%;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ship-on-hull) !important;
+}
+
+/* Between the phone's menu and a window of 1048px the bar is tight: the links sit closer and the search shows no key, so the bar never runs wider than the window. */
+@media (min-width: 768px) and (max-width: 1047px) {
+    .VPNavBar .VPNavBarMenuLink {
+        padding: 0 6px;
+    }
+    .VPNavBar .VPNavBarSearch {
+        padding-left: 12px;
+    }
+    .VPNavBar .DocSearch-Button .DocSearch-Button-Keys {
+        display: none !important;
+    }
+}
+
+/* Markings: short labels in narrow caps, as stencilled on plate. Headings and reading text stay in sentence case. */
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .text,
 .VPNavScreenMenuLink,
-.VPNavScreenMenuGroup .button-text,
-.VPSidebarItem.level-0 > .item > .text,
-.vp-doc th,
-.vp-doc .custom-block .custom-block-title,
+.VPSidebarItem.level-0 > .item .text,
 .VPBadge,
 .VPDocAsideOutline .outline-title,
-.VPHomeFeatures .VPFeature .title {
-    font-family: var(--chart-font-label);
-    font-weight: 600;
-    letter-spacing: var(--chart-label-tracking);
+.VPLocalNav .menu-text,
+.VPLocalNavOutlineDropdown > button,
+.prev-next .desc {
+    font-weight: 700;
+    font-stretch: 78%;
+    font-size: 13.5px;
     text-transform: uppercase;
+    letter-spacing: 0.07em;
 }
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .text,
-.VPNavScreenMenuLink,
-.VPNavScreenMenuGroup .button-text,
-.VPSidebarItem.level-0 > .item > .text,
-.vp-doc th,
-.vp-doc .custom-block .custom-block-title,
-.VPDocAsideOutline .outline-title {
-    font-size: 12px;
+.VPNavScreenMenuLink {
+    font-size: 14.5px;
+}
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text,
+.VPNavBarSocialLinks .VPSocialLink,
+.VPNavBarExtra .icon,
+.VPNavBarMenuLink.active {
+    color: var(--ship-on-hull) !important;
+}
+.VPNavBarMenuLink:hover,
+.VPNavBarSocialLinks .VPSocialLink:hover {
+    color: var(--ship-buff) !important;
+}
+.VPNavBarMenuLink.active {
+    box-shadow: inset 0 -6px 0 var(--ship-buff);
+}
+/* The mark beside an outward link follows the link's colour, light on the hull in both themes. */
+.VPNavBarMenuLink.vp-external-link-icon::after {
+    color: inherit !important;
+}
+.VPNavBarHamburger .container > span {
+    background: var(--ship-on-hull) !important;
+}
+.VPNavBar .VPSwitch {
+    border-color: var(--ship-on-hull-soft);
+    background: var(--ship-hull-deep);
+}
+.VPNavBar .DocSearch-Button {
+    background: var(--ship-hull-deep);
+}
+.VPNavBar .DocSearch-Button,
+.VPNavBar .DocSearch-Button .DocSearch-Button-Placeholder,
+.VPNavBar .DocSearch-Button .DocSearch-Search-Icon,
+.VPNavBar .DocSearch-Button .DocSearch-Button-Key {
+    color: var(--ship-on-hull) !important;
+}
+/* The two keys are drawn as one box, so no tick shows where they meet. */
+.VPNavBar .DocSearch-Button .DocSearch-Button-Keys {
+    border: 1px solid var(--ship-on-hull-soft) !important;
+    border-radius: 4px;
+    padding: 0 6px;
+    height: 22px;
+    align-items: center;
+}
+.VPNavBar .DocSearch-Button .DocSearch-Button-Key {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    border: 0 !important;
+    padding: 0 2px;
+    height: 100%;
+    line-height: 1;
+}
+/* On a phone the search is an icon beside the menu button, with no box of its own. */
+@media (max-width: 767px) {
+    .VPNavBar .DocSearch-Button {
+        background: transparent;
+    }
+}
+.VPNavBar .divider-line,
+.VPNavBarAppearance::before,
+.VPNavBarSocialLinks::before,
+.VPNavBarExtra::before,
+.VPNavBarTranslations::before {
+    background-color: var(--ship-on-hull-soft) !important;
 }
 
-/* Headings in the text face, sentence case. A second-level heading has an ink rule above it. */
+/* Every control of the masthead has the same ring: 3px, light, 2px clear of the control. A control as tall as the bar takes it inside. */
+.VPNav :focus-visible,
+.VPNav .DocSearch-Button:focus-visible,
+.VPNav .VPSwitch:focus-visible {
+    outline: 3px solid var(--ship-focus) !important;
+    outline-offset: 2px;
+}
+.VPNav .VPNavBarMenuLink:focus-visible,
+.VPNav .VPNavBarTitle .title:focus-visible,
+.VPNav .VPNavBarHamburger:focus-visible,
+.VPNav .DocSearch-Button:focus-visible {
+    outline-offset: -3px;
+}
+.VPNav .VPNavBarMenuLink:focus-visible {
+    box-shadow: none;
+}
+
+/* A hit area of 44px for the small controls of the bar: the social link, and the switch, which keeps its drawn size. */
+.VPNav .VPSocialLink {
+    width: 44px;
+    height: 44px;
+}
+.VPNav .VPSwitch::after {
+    content: "";
+    position: absolute;
+    inset: -11px -2px;
+}
+
+/* The mark of the current section in the phone menu, set by the theme's script. */
+.VPNavScreen .VPNavScreenMenuLink {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    padding-block: 0;
+}
+.VPNavScreen .VPNavScreenMenuLink.active {
+    color: var(--ship-link);
+    background: var(--ship-deck);
+}
+.VPNavScreen .VPNavScreenMenuLink.active::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-right: 10px;
+    background: var(--ship-buff);
+}
+.VPNavScreen .VPNavScreenAppearance {
+    min-height: 48px;
+}
+.VPNavScreen .VPNavScreenAppearance .text {
+    font-size: 13.5px;
+}
+
+/* The bars of a phone: every control 44px tall or more. */
+.VPLocalNav .menu,
+.VPLocalNavOutlineDropdown > button {
+    min-height: 48px;
+}
+.VPLocalNav .menu {
+    align-items: center;
+    padding-block: 0;
+}
+.VPLocalNav .VPLocalNavOutlineDropdown {
+    padding-block: 0;
+}
+.VPLocalNavOutlineDropdown > button {
+    display: flex;
+    align-items: center;
+}
+.VPLocalNavOutlineDropdown .items {
+    top: 100%;
+}
+/* A page with no outline has nothing to return to the top of. */
+.VPLocalNavOutlineDropdown > button:not(:has(.menu-text)) {
+    display: none;
+}
+.VPLocalNavOutlineDropdown .items .top-link {
+    font-weight: 700;
+}
+
+/* The sidebar: the current page in the hull's colour, heavier, on the deck. */
+.VPSidebarItem.level-0 > .item .text {
+    color: var(--ship-ink);
+}
+.VPSidebarItem .link .text {
+    font-size: 14.5px;
+}
+@media (max-width: 959px) {
+    .VPSidebarItem .link .text {
+        padding-block: 10px;
+    }
+}
+/* A drawer that is closed is off the screen and out of the Tab order; it keeps its slide, and is there at once when it opens. */
+@media (max-width: 959px) {
+    .VPSidebar.VPSidebar:not(.open) {
+        visibility: hidden;
+        transition: opacity 0.5s, transform 0.25s ease, visibility 0s 0.5s;
+    }
+}
+/* The mark of an outward link stays beside its label. */
+.VPSidebarItem .link .text {
+    flex-grow: 0;
+}
+.VPSidebarItem .link {
+    min-width: 0;
+}
+.VPSidebarItem.is-active > .item {
+    background: var(--ship-deck);
+    border-radius: var(--ship-radius);
+    margin-inline: -8px;
+    padding-inline: 8px;
+}
+.VPSidebarItem.is-active > .item .text {
+    color: var(--ship-link) !important;
+    font-weight: 700;
+}
+
+/* The outline beside a page: a long label wraps, and the marker keeps to its first line. */
+.VPDocOutlineItem .outline-link {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 20px;
+    padding-block: 6px;
+}
+
+/* Headings: heavy and a little wide. The page title carries the funnel mark under it: buff with an ink cap. */
 .vp-doc h1,
 .vp-doc h2,
 .vp-doc h3,
-.vp-doc h4,
-.VPHero .name,
-.VPHero .text {
-    font-family: var(--chart-font-text);
-    font-weight: 700;
-    letter-spacing: -0.01em;
+.vp-doc h4 {
+    font-stretch: 106%;
+    font-weight: 750;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+}
+.vp-doc h1 {
+    /* The longest title, at its width, fits a phone: no word breaks inside. */
+    font-size: clamp(28px, 9vw, 42px);
+    line-height: 1.1;
+    font-weight: 800;
+    padding-bottom: 22px;
+    overflow-wrap: break-word;
+}
+/* The mark under the title is two bars: the ink cap on the buff, drawn in a box of its own, not as the heading's background. */
+.vp-doc h1::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 64px;
+    height: 10px;
+    border-top: 4px solid var(--ship-ink);
+    background-color: var(--ship-buff);
 }
 .vp-doc h2 {
-    border-top: 2px solid var(--chart-ink);
+    font-size: 27px;
+    margin-top: 56px;
+    padding-top: 28px;
+    border-top: 1px solid var(--ship-line);
+}
+/* A second-level heading straight under the title: the title's mark is its rule, and its gap is the only one. */
+.vp-doc h1 + h2 {
+    margin-top: 28px;
+    padding-top: 0;
+    border-top: 0;
+}
+.vp-doc h3 {
+    font-size: 20px;
+}
+/* A word of code in a heading is sized to the heading. */
+.vp-doc.vp-doc :is(h1, h2, h3, h4) > code {
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0;
 }
 
-/* Reading text. */
+/* Reading text, set to a line of about 72 characters. Tables, code and diagrams keep the whole column. */
 .vp-doc p,
 .vp-doc li {
-    font-size: 17px;
-    line-height: 1.7;
+    font-size: 16.5px;
+    line-height: 1.72;
+}
+.vp-doc :is(p, dl, blockquote),
+.vp-doc :is(ul, ol):not(:has(div[class*="language-"], .table-wrap)) {
+    max-width: 32rem;
+}
+.vp-doc {
+    font-variant-numeric: lining-nums;
+}
+/* A step's check, and the lead-ins of a command: the word is a label. The check's is the loudest; the others are weight only. */
+.vp-doc .lead-check,
+.vp-doc .lead-in {
+    font-weight: 750;
+    color: var(--ship-ink);
+}
+.vp-doc .lead-check {
+    color: var(--ship-link);
+    font-size: 0.86em;
+    font-stretch: 85%;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
 }
 
-/* A diagram's labels keep the size mermaid measured them at, so they are not clipped. */
-.vp-doc .mermaid p {
-    font-size: inherit;
-    line-height: inherit;
-}
-
-/* The current page in the sidebar: a sea band behind it, in magenta. */
-.VPSidebarItem.is-active > .item {
-    background-color: var(--chart-sea);
-}
-
-/* Tables: cards with contour rules, the head a tinted band. A wide one scrolls instead of squeezing its columns. */
-.vp-doc table {
-    display: block;
-    overflow-x: auto;
-    border: 1px solid var(--chart-contour);
-}
-.vp-doc tr,
-.vp-doc tr:nth-child(2n) {
-    background-color: var(--chart-card);
-    border-top: 1px solid var(--chart-contour);
-}
-.vp-doc th {
-    background-color: var(--chart-sea);
-    color: var(--chart-ink);
-}
-.vp-doc th,
-.vp-doc td {
-    border: 1px solid var(--chart-contour);
-}
-
-/* Code: ink on card, in a contour frame. */
-.vp-doc div[class*="language-"],
-.vp-doc :not(pre) > code {
-    border: 1px solid var(--chart-contour);
-}
-
-/* Callouts: a tinted band, framed in the state's colour. Their text stays ink; the title says the state in words. */
-.vp-doc .custom-block {
-    border-width: 2px;
-}
-
-/* Links: the accent, underlined, so they read as links without colour too. */
+/* Links: the hull's colour, underlined. A link that opens a new tab carries the mark of the theme's own, in the link's colour. */
 .vp-doc a {
-    color: var(--chart-magenta);
+    color: var(--ship-link);
+    font-weight: 550;
     text-decoration: underline;
+    text-decoration-thickness: 1.5px;
     text-underline-offset: 3px;
 }
 .vp-doc a:hover {
-    color: var(--chart-magenta-hover);
+    color: var(--ship-link-hover);
+    text-decoration-thickness: 2.5px;
+}
+.vp-doc a[target="_blank"]::after {
+    margin-left: 3px;
+    width: 0.7em;
+    height: 0.7em;
 }
 
-/* The home page: a land band behind the hero, ink text on it. */
-.VPHome .VPHero {
-    background-color: var(--chart-land);
-    border-bottom: 2px solid var(--chart-ink);
+/*
+ * Tables, set as a timetable: a head band, hairline rows, figures that line up. A table fills the column. The first column is bold
+ * only when it holds short labels (the table is marked `labels`). A word of code breaks anywhere, unless it is short and marked `nb`.
+ */
+.vp-doc .table-wrap {
+    margin: 24px 0;
+    overflow-x: auto;
 }
-.VPHome .VPHero .tagline {
-    color: var(--chart-ink);
+.vp-doc .table-wrap + .table-wrap {
+    margin-top: 40px;
 }
-.VPHome .VPFeature {
-    background-color: var(--chart-card);
-    border: 1px solid var(--chart-contour);
+.vp-doc table {
+    display: table;
+    width: 100%;
+    margin: 0;
+    overflow: visible;
+    border-collapse: collapse;
+    --cell-pad: 14px;
+    font-variant-numeric: tabular-nums lining-nums;
+}
+@media (max-width: 1279px) {
+    .vp-doc table {
+        --cell-pad: 8px;
+    }
+}
+.vp-doc tr,
+.vp-doc tr:nth-child(2n) {
+    background: transparent;
+    border-top: 0;
+}
+/* Each head cell paints the band, grown by 1px under its neighbour: fractional column widths leave no seam between cells. */
+.vp-doc th {
+    background: var(--ship-head);
+    box-shadow: 0 0 0 1px var(--ship-head);
+    color: var(--ship-on-head);
+    border: 0;
+    text-align: left;
+    padding: 9px var(--cell-pad);
+    font-weight: 700;
+    font-stretch: 85%;
+    font-size: 14px;
+    letter-spacing: 0.02em;
+    overflow-wrap: break-word;
+}
+.vp-doc td {
+    border: 0;
+    border-bottom: 1px solid var(--ship-line);
+    padding: 11px var(--cell-pad);
+    font-size: 15px;
+    line-height: 1.6;
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+.vp-doc table.labels td:first-child {
+    font-weight: 650;
+}
+.vp-doc td a {
+    overflow-wrap: anywhere;
+}
+.vp-doc table :not(pre) > code {
+    overflow-wrap: anywhere;
+}
+/* A cell that holds one long word of code, a key or a metric, has room for two lines, not four. A number and its range stay together. */
+.vp-doc td.key {
+    min-width: 16rem;
+}
+.vp-doc .nw {
+    white-space: nowrap;
+}
+/* A table with no room for them whole (the script marks it `tight`) lets its words of code break again, at their dots first. */
+.vp-doc .table-wrap.tight code.nb {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.vp-doc .table-wrap.tight td.key {
+    min-width: 0;
+}
+.vp-doc code .wb {
+    display: inline-block;
+}
+/* The code of a head cell is part of the band, not a chip on it. */
+.vp-doc.vp-doc thead :not(pre) > code {
+    background: transparent;
+    color: inherit;
+    border-color: color-mix(in srgb, currentColor 45%, transparent);
 }
 
-/* Selection in the accent. */
-::selection {
-    background: var(--chart-magenta);
-    color: var(--chart-on-magenta);
+/* A table without a head shows no empty band: its first row starts on a rule of the band's colour. */
+.vp-doc table.headless thead {
+    display: none;
+}
+.vp-doc table.headless tr:first-child td {
+    border-top: 3px solid var(--ship-head);
+}
+
+/* On a phone each row is a block: every cell on its own line, named by its column's head. */
+@media (max-width: 719px) {
+    .vp-doc h2 {
+        font-size: 24px;
+        margin-top: 48px;
+    }
+    .vp-doc .table-wrap {
+        overflow: visible;
+    }
+    .vp-doc table,
+    .vp-doc tbody,
+    .vp-doc tr,
+    .vp-doc td {
+        display: block;
+        width: auto;
+    }
+    .vp-doc table {
+        border-top: 3px solid var(--ship-head);
+    }
+    .vp-doc thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+    .vp-doc tr {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--ship-line);
+    }
+    .vp-doc td {
+        border: 0;
+        padding: 4px 0;
+    }
+    .vp-doc td.key {
+        min-width: 0;
+    }
+    /* An empty cell stays in its row, and shows no label. */
+    .vp-doc td:empty {
+        padding: 0;
+    }
+    .vp-doc td[data-label]:empty::before {
+        display: none;
+    }
+    .vp-doc td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 1px;
+        font-size: 12.5px;
+        font-weight: 700;
+        font-stretch: 85%;
+        line-height: 1.3;
+        letter-spacing: 0.04em;
+        color: var(--ship-soft-ink);
+    }
+}
+
+/* Code: blocks on the black hull, with an edge that shows in the dark; a word of code in the text on the deck. */
+.vp-doc div[class*="language-"] {
+    border: 1px solid var(--ship-code-edge);
+}
+@media (max-width: 639px) {
+    .vp-doc div[class*="language-"] {
+        border-inline: 0;
+    }
+}
+/* A line that runs past the block leaves a soft edge where it goes on. The cover that hides the edge where nothing runs on is solid over the edge's width, then fades. */
+.vp-doc [class*="language-"] pre {
+    background:
+        linear-gradient(to right, var(--ship-code-bg) 14px, transparent 32px) left center / 32px 100% no-repeat local,
+        linear-gradient(to left, var(--ship-code-bg) 14px, transparent 32px) right center / 32px 100% no-repeat local,
+        linear-gradient(to right, rgb(255 255 255 / 0.3), transparent) left center / 14px 100% no-repeat scroll,
+        linear-gradient(to left, rgb(255 255 255 / 0.3), transparent) right center / 14px 100% no-repeat scroll,
+        var(--ship-code-bg);
+}
+/* On a phone a command wraps, so a flag at the end of a long line is on the screen. The next line of a wrap is set in by four characters, more than the two of a line that a backslash continues, so it is not read as a new command. Nothing is added to the text. */
+@media (max-width: 719px) {
+    .vp-doc :is(.language-sh, .language-bash, .language-shell, .language-console, .language-powershell) code {
+        padding-left: calc(24px + 4ch);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        text-indent: -4ch each-line;
+    }
+}
+.vp-doc :not(pre) > code {
+    color: var(--ship-ink);
+    background: var(--ship-deck);
+    border: 1px solid var(--ship-line);
+    font-size: 0.86em;
+    padding: 2px 6px;
+    overflow-wrap: anywhere;
+}
+/* A short word of code is not broken: a flag, a name, `-o yaml`. A plural `s` after a chip closes against it. */
+.vp-doc :not(pre) > code.nb {
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+.vp-doc :not(pre) > code.sx {
+    padding-right: 0;
+    border-right: 0;
+    border-radius: var(--ship-radius) 0 0 var(--ship-radius) !important;
+}
+.vp-doc a > code {
+    color: var(--ship-link);
+}
+.vp-doc div[class*="language-"] button.copy {
+    border-radius: var(--ship-radius);
+}
+/* Where nothing hovers, the copy button is there to see. */
+@media (hover: none) {
+    .vp-doc div[class*="language-"] > button.copy {
+        opacity: 0.75;
+    }
+}
+
+/* Notes: a deck plane in a frame of the kind's colour. The kind is said in a word, set as a mark; the colour repeats it. */
+.custom-block {
+    --kind: var(--ship-ink);
+    background: var(--ship-deck);
+    color: var(--ship-ink);
+    border: 2px solid var(--kind);
+    padding: 14px 20px;
+    max-width: calc(32rem + 44px);
+}
+.custom-block.tip {
+    --kind: var(--ship-tip);
+    border-color: var(--kind);
+}
+.custom-block.warning {
+    --kind: var(--ship-warning);
+    border-color: var(--kind);
+}
+.custom-block.danger {
+    --kind: var(--ship-danger);
+    border-color: var(--kind);
+}
+.custom-block p {
+    color: var(--ship-ink);
+}
+.custom-block .custom-block-title {
+    margin: 0 0 8px;
+    font-weight: 700;
+    color: var(--ship-ink);
+}
+.custom-block-kind {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 1px 8px;
+    border-radius: 2px;
+    background: var(--kind);
+    color: var(--ship-plane);
+    font-size: 13.5px;
+    font-stretch: 78%;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+.vp-doc .custom-block a,
+.vp-doc .custom-block.tip a,
+.vp-doc .custom-block.warning a,
+.vp-doc .custom-block.danger a {
+    color: var(--ship-link);
+}
+.vp-doc .custom-block code,
+.vp-doc .custom-block.tip code,
+.vp-doc .custom-block.warning code,
+.vp-doc .custom-block.danger code {
+    color: var(--ship-ink);
+    background: var(--ship-plane);
+}
+
+/* Badges: ink on the deck, the word carries the state. */
+.VPBadge {
+    background: var(--ship-deck) !important;
+    color: var(--ship-ink) !important;
+    border: 1px solid var(--ship-line);
+}
+
+/* The way forward and back. */
+.pager-link {
+    border: 1.5px solid var(--ship-ink) !important;
+    border-radius: var(--ship-radius) !important;
+}
+.pager-link:hover {
+    background: var(--ship-deck);
+}
+.pager-link .title {
+    color: var(--ship-link) !important;
+    font-weight: 700;
+}
+.VPDocFooter .edit-link-button {
+    line-height: 44px;
+}
+
+/* The foot: on the black hull. On a page with a sidebar it keeps to the column right of it. */
+.VPFooter {
+    background: var(--ship-code-bg) !important;
+    border-top: 0 !important;
+}
+.VPFooter .message,
+.VPFooter .copyright {
+    color: var(--ship-code-soft) !important;
+}
+.VPFooter.has-sidebar {
+    display: block !important;
+}
+.VPFooter.has-sidebar .container {
+    margin: 0;
+    text-align: left;
+}
+@media (min-width: 960px) {
+    .VPFooter.has-sidebar {
+        padding-left: calc(var(--vp-sidebar-width) + 32px);
+    }
+}
+@media (min-width: 1440px) {
+    .VPFooter.has-sidebar {
+        padding-left: calc((100vw - var(--vp-layout-max-width)) / 2 + var(--vp-sidebar-width) + 32px);
+    }
+}
+.VPNavBar .DocSearch-Button .DocSearch-Button-Keys,
+.VPNavBar .DocSearch-Button .DocSearch-Button-Key::after,
+.VPNavBar .DocSearch-Button .DocSearch-Button-Keys::before,
+.VPNavBar .DocSearch-Button .DocSearch-Button-Keys::after {
+    color: var(--ship-on-hull) !important;
+    border-color: var(--ship-on-hull-soft) !important;
+}
+
+/* The search box has one clear control, the theme's own: not the browser's second one. */
+.VPLocalSearchBox input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+    -webkit-appearance: none;
+}
+
+/* On a wide screen the column of a page with an outline is wider, for its tables and its code. */
+@media (min-width: 1440px) {
+    .VPContent .VPDoc.has-aside .content .content-container {
+        max-width: 768px;
+    }
+}
+
+/* Code takes its colours from the tokens: light text on the black hull, comments soft, keywords in the funnel's buff. */
+:root,
+.dark {
+    --shiki-foreground: var(--ship-code-text);
+    --shiki-background: var(--ship-code-bg);
+    --shiki-token-constant: var(--ship-code-text);
+    --shiki-token-string: var(--ship-code-text);
+    --shiki-token-string-expression: var(--ship-code-text);
+    --shiki-token-comment: var(--ship-code-soft);
+    --shiki-token-keyword: var(--ship-code-accent);
+    --shiki-token-parameter: var(--ship-code-text);
+    --shiki-token-function: var(--ship-code-text);
+    --shiki-token-punctuation: var(--ship-code-soft);
+    --shiki-token-link: var(--ship-code-accent);
+    --shiki-ansi-black: var(--ship-code-bg);
+    --shiki-ansi-white: var(--ship-code-text);
+    --shiki-ansi-red: #ff8a78;
+    --shiki-ansi-green: #5cc98d;
+    --shiki-ansi-yellow: var(--ship-code-accent);
+    --shiki-ansi-blue: var(--ship-code-text);
+    --shiki-ansi-magenta: var(--ship-code-text);
+    --shiki-ansi-cyan: var(--ship-code-text);
+    --shiki-ansi-bright-black: var(--ship-code-soft);
+    --shiki-ansi-bright-white: var(--ship-code-text);
+    --shiki-ansi-bright-red: #ff8a78;
+    --shiki-ansi-bright-green: #5cc98d;
+    --shiki-ansi-bright-yellow: var(--ship-code-accent);
+    --shiki-ansi-bright-blue: var(--ship-code-text);
+    --shiki-ansi-bright-magenta: var(--ship-code-text);
+    --shiki-ansi-bright-cyan: var(--ship-code-text);
+}
+
+/* A diagram's labels keep the size mermaid measured them at, so they are not clipped. */
+.vp-doc .mermaid p,
+.vp-doc .mermaid li {
+    font-size: inherit;
+    line-height: inherit;
+    max-width: none;
 }

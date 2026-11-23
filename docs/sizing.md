@@ -2,34 +2,9 @@
 
 The controller's memory grows with the Services and EndpointSlices that its cache holds. By default, that is every one in the cluster.
 
-## Measured
-
-`TestCacheMemory` in `cmd/strait-controller/cache_test.go` starts the controller's cache on envtest's API server, and measures its live heap. Each Service has four labels, two annotations and two ports. Each has one EndpointSlice with three ready endpoints, each with a pod reference, a node and a zone. Each object has one `managedFields` entry. The 10,000 Services are spread over 20 namespaces.
-
-| Cache | Services cached | Live heap | Per Service and its EndpointSlice |
-|---|---|---|---|
-| 1.2.x | 10,000 | 67 MiB | 7,056 bytes |
-| 1.3.0, which leaves out `managedFields` | 10,000 | 53 MiB | 5,621 bytes |
-| 1.3.0 with `controller.namespacedReads`, one namespace of the 20 | 500 | 3 MiB | 346 bytes per Service of the cluster |
-
-With no Service, the controller's live heap was 2 MiB more than the test's own. An object with more labels, endpoints or `managedFields` entries takes more.
-
-```sh
-STRAIT_CACHE_MEMORY=10000 make test
-```
-
 ## Setting the limit
 
-| Value | Effect |
-|---|---|
-| `controller.resources.limits.memory` | The container's limit, 256Mi by default. The chart passes it to the controller, which sets the Go runtime's soft memory limit to 90% of it. Near that limit, the garbage collector runs more often, instead of letting the heap grow to twice what it holds. |
-| `controller.resources.requests.memory` | 64Mi by default. Raise it together with the limit, so that the scheduler finds the room. |
-
-Leave twice the measured heap, and a margin of 128Mi for the binary, the Go runtime and the controller's other objects:
-
-```
-limits.memory >= 128Mi + 2 x 5.6 KiB x (Services of the cluster)
-```
+The limit by the size of the cluster:
 
 | Services in the cluster | `limits.memory` |
 |---|---|
@@ -37,7 +12,39 @@ limits.memory >= 128Mi + 2 x 5.6 KiB x (Services of the cluster)
 | 30,000 | 512Mi |
 | 80,000 | 1Gi |
 
+The rule: leave twice the measured heap ([Measured](#measured)), and a margin of 128Mi for the binary, the Go runtime and the controller's other objects:
+
+```
+limits.memory >= 128Mi
++ 2 x 5.5 KiB x (Services of the cluster)
+```
+
+The values that set it:
+
+| Value | Effect |
+|---|---|
+| `controller.resources.limits.memory` | The container's limit, 256Mi by default. The chart passes it to the controller, which sets the Go runtime's soft memory limit to 90% of it. Near that limit, the garbage collector runs more often, instead of letting the heap grow to twice what it holds. |
+| `controller.resources.requests.memory` | 64Mi by default. Raise it together with the limit, so that the scheduler finds the room. |
+
 A controller that runs out of memory restarts. Until the next one serves, the other sites count this site's members `Unknown` ([RFC0004](../rfcs/RFC0004.md)). The alert `StraitNoController` fires at this site, and `StraitPeerUnreachable` at the others ([Metrics and alerts](metrics.md)).
+
+## Measured
+
+`TestCacheMemory` in `cmd/strait-controller/cache_test.go` starts the controller's cache on envtest's API server, and measures its live heap. Each Service has four labels, two annotations and two ports. Each has one EndpointSlice with three ready endpoints, each with a pod reference, a node and a zone. Each object has one `managedFields` entry. The 10,000 Services are spread over 20 namespaces.
+
+| Cache | Services cached | Live heap, MiB | Bytes per Service and its EndpointSlice |
+|---|---|---|---|
+| 1.2.x | 10,000 | 67 | 7,056 |
+| 1.3.0, which leaves out `managedFields` | 10,000 | 53 | 5,621 |
+| 1.3.0 with `controller.namespacedReads`, one namespace of the 20 | 500 | 3 | 346 |
+
+In the last row, the bytes are per Service of the cluster.
+
+With no Service, the controller's live heap was 2 MiB more than the test's own. An object with more labels, endpoints or `managedFields` entries takes more.
+
+```sh
+STRAIT_CACHE_MEMORY=10000 make test
+```
 
 ## Fewer objects in the cache
 
