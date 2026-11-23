@@ -11,7 +11,7 @@ This guide installs Strait on two clusters, sites `a` and `b`, joins them with a
 | Pod Security level `privileged` | In the gateway's namespace. The gateway agent runs as root with `NET_ADMIN`, to hold the WireGuard interfaces ([RFC0007](../rfcs/RFC0007.md)). |
 | A UDP path from site b to site a | Site b dials a node of site a on UDP port 32100. Here, `203.0.113.10` stands for that node's address. |
 | Socket load balancing for pods | Recommended, where the CNI load-balances Services. For Cilium: socket LB on, with `socketLB.hostNamespaceOnly=false`. See [RFC0002, Route changes and connections](../rfcs/RFC0002.md#route-changes-and-connections). |
-| CloudNativePG | At both sites, installed before Strait. One `Cluster` per site in namespace `app`, in CloudNativePG's distributed topology: `pg-a` at site a, `pg-b` at site b. Strait only reads them. Whether the chart turns the plugin on: [The cnpg plugin switch](#the-cnpg-plugin-switch). |
+| CloudNativePG | At both sites, installed before Strait. One `Cluster` per site in namespace `app`, distributed topology: `pg-a` at a, `pg-b` at b. Strait only reads them. See [The cnpg plugin switch](#the-cnpg-plugin-switch). |
 | Tools | `kubectl`, `helm`, `wg` from wireguard-tools, and the `strait` CLI ([Install](./guide/install.md), [on Windows](./guide/install.md#on-windows)). |
 | A shell | bash (WSL on Windows). |
 
@@ -244,8 +244,11 @@ Fields:
 | `spec.plugin.cnpg.confirmRole` | Optional. Also ask each local database `pg_is_in_recovery()`. Needs a role with `LOGIN` and nothing else, and its Secret named in the chart value `cnpg.confirmRole.secretName`. [RFC0003](../rfcs/RFC0003.md#cnpg-confirming-the-role). |
 | `spec.policy.unknownHold` | How long a routed member stays in the route while its site cannot be read. |
 | `spec.policy.startupHold` | Optional. Caps the wait after start to read every other site. See [Site return](runbooks/site-return.md#ahead-of-time-startuphold). |
-| `spec.policy.connections` | Optional. `Keep` or `EndGateway`. `EndGateway` ends sessions through this site's gateway to a member that leaves the route, so remote clients reconnect; open transactions fail. Needs the chart value `envoy.drainTimeSeconds` set to a few seconds. [RFC0002](../rfcs/RFC0002.md#what-endgateway-covers-and-costs). |
-| `spec.policy.isolationTimeout` | Optional. A site that has read no other site for this long stops routing to its own member. Use it with three or more sites, or when a site that loses the others must stop writing. With two sites, the survivor of a site loss stops too until the operator sets `0s` there. [RFC0002](../rfcs/RFC0002.md#the-isolated-site-policy). |
+| `spec.policy.connections` | Optional. `Keep` or `EndGateway`. `EndGateway` ends sessions through this site's gateway to a member that leaves the route, so remote clients reconnect; open transactions fail. [RFC0002](../rfcs/RFC0002.md#what-endgateway-covers-and-costs). |
+| `spec.policy.isolationTimeout` | Optional. A site that has read no other site for this long stops routing to its own member. With two sites, the survivor of a site loss stops too: [RFC0002](../rfcs/RFC0002.md#the-isolated-site-policy). |
+
+- `spec.policy.connections`: `EndGateway` needs the chart value `envoy.drainTimeSeconds` set to a few seconds.
+- `spec.policy.isolationTimeout`: use it with three or more sites, or when a site that loses the others must stop writing. The survivor of a two-site loss stops until the operator sets `0s` there.
 
 Every field and rule: [RFC0002](../rfcs/RFC0002.md).
 
@@ -315,7 +318,7 @@ Site b gets the same with `name: a-direct`, `peer: a`, and site a's address.
 | `direct.address` | The peer gateway's IP address on the private path. |
 | `site.spec.gateway.directService` | How peers reach the control port and the export ports over the direct link. See below. |
 
-The value `site.spec.gateway.directService` is `ClusterIP` by default, which a peer cannot reach over a direct link. Set it in the chart's values, then run `helm upgrade`. Use `NodePort` on nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services).
+A peer cannot reach a `ClusterIP` over a direct link, so set `site.spec.gateway.directService` in the chart's values, then run `helm upgrade`. Use `NodePort` on nodes that no other network reaches. Otherwise use `LoadBalancer`, with the `annotations` that make the load balancer internal. Only the peer gateways need to reach it: [RFC0007, Sources of the gateway Services](../rfcs/RFC0007.md#sources-of-the-gateway-services).
 
 With `endpointDirect: true` on the direct link, the name points straight at the remote pods: see [RFC0005](../rfcs/RFC0005.md#endpoint-direct) and set `endpointCIDRs` to the peer's pod CIDRs.
 

@@ -49,5 +49,7 @@ When the active link fails, new connections move to the next one within 5 second
 
 | Feature | Is |
 |---|---|
-| Endpoint-direct | On a `direct` link with routable pod addresses, the name points straight at the remote pods, with no gateway hop. Set the link's `endpointCIDRs` to the peer's pod CIDRs. See [RFC0005](../../rfcs/RFC0005.md) and the [Gateway benchmark](../benchmark.md). |
+| Endpoint-direct | On a `direct` link with routable pod addresses, the name points straight at the remote pods, with no gateway hop. See [RFC0005](../../rfcs/RFC0005.md) and the [Gateway benchmark](../benchmark.md). |
 | Envoy over xDS | The controller configures Envoy with no reload. A route change never closes an established connection, unless `policy.connections: EndGateway` asks for it. See [RFC0002](../../rfcs/RFC0002.md#ending-connections-through-the-gateway). |
+
+- Endpoint-direct: set the link's `endpointCIDRs` to the peer's pod CIDRs.
