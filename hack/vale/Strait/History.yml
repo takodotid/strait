@@ -1,0 +1,9 @@
+# AGENTS.md, Keeping text lean: no history anywhere.
+extends: existence
+message: "'%s' is history. Remove the reference; git holds it."
+level: error
+nonword: true
+tokens:
+  - '\(#\d+\)'
+  - '#\d+,? (?:row|item) \d+'
+  - 'found in (?:a )?review'

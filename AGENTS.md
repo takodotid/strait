@@ -113,22 +113,30 @@ The resources Strait serves are its contract with its users.
 - **Dead simple.** Short sentences, everyday words. No intros, no filler, no em-dashes.
 - **Tables over prose for facts.** Each table row is one record.
 - **A fact lives in one doc;** link, don't copy.
-- **Effect, then action.** A table cell or a comment states the effect and what to do, in one or two sentences. The mechanism lives in the requirement or RFC it cites.
-- **Never grow prose back.** An edit keeps or lowers the word count of what it touches, unless it adds a new fact. Don't add reasons, examples or restatements to text that was cut.
-- **Link the owner.** A doc links an RFC rule, and a runbook links a shared step, instead of restating it:
-
-  |Fact|Owner|
-  |---|---|
-  |What Strait never does, and routing nowhere rather than to a guess|`docs/limitations.md`|
-  |Route outcomes, holds, isolation|RFC0002|
-  |Gateway Lease, failover sequence, node ports|RFC0005|
-  |A gateway handover resets connections|`docs/runbooks/gateway-handover.md`|
-  |The status check after a change|`docs/runbooks/upgrade.md`, step 3|
-  |The CloudNativePG replica step|`docs/runbooks/site-loss.md`, step 3|
-  |startupHold|`docs/runbooks/site-return.md`|
-  |End-to-end tests and CI timings|`test/e2e/README.md`|
-
 - Talk to the operator in their language, just as plain.
+
+### Keeping text lean
+
+- **Search before adding.** Before writing a fact, `rg` for it. If a page owns it, link there.
+- **Never grow prose back.** An edit keeps or lowers the word count of what it touches, unless it adds a new fact. Never restore cut text, or add reasons, examples or restatements to it.
+- **Effect, then action.** A table cell or a comment states the effect and what to do, in one or two sentences, about 30 words at most. The mechanism lives in the requirement or RFC it cites. More becomes a list or a section.
+- **No history anywhere:** no issue, PR or review references such as `(#35)` or `#35 row 47`, no "since v1.3.0" or "used to". Per-release notes live only in the upgrade and rollback guides. `make prose` checks the references.
+- **No line references into other projects' source.** Name the version, link the upstream docs.
+- **No meta lines:** no `This page explains`, no recap, no sentence that repeats a heading, table, code block or link text.
+- **RFC Requirements hold rules only.** Reasons go in Motivation, never deleted; steps go in `docs/runbooks/`.
+- **README is a pitch and links.** It holds no commands or tables from the guides.
+
+|Fact|Owner|
+|---|---|
+|What Strait never does, and routing nowhere rather than to a guess|`docs/limitations.md`|
+|Route outcomes, holds, isolation|RFC0002|
+|Gateway Lease, failover sequence, node ports|RFC0005|
+|A gateway handover resets connections|`docs/runbooks/gateway-handover.md`|
+|The status check after a change|`docs/runbooks/upgrade.md`, step 3|
+|The CloudNativePG replica step|`docs/runbooks/site-loss.md`, step 3|
+|startupHold|`docs/runbooks/site-return.md`|
+|Per-release notes|`docs/runbooks/upgrade.md`, `docs/runbooks/rollback.md`|
+|End-to-end tests and CI timings|`test/e2e/README.md`|
 
 ## Commits
 
