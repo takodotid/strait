@@ -70,9 +70,9 @@ export class Markdown {
 
     /**
      * A table sits in a wrapper that scrolls if it cannot fit. Each body cell carries its column's head text as `data-label`, so the CSS
-     * can stack a row's cells on a phone and name each; each table part carries its role, so a screen reader still reads a table when the
-     * CSS no longer sets it as one. A table whose first column holds only short labels is marked `labels` (bold column); one with an
-     * empty head is marked `headless` (no head shown).
+     * can set a row as a record, on a phone or in a Limitations table, and name each cell; each table part carries its role, so a screen
+     * reader still reads a table when the CSS no longer sets it as one. A table whose first column holds only short labels is marked
+     * `labels` (bold column); one with an empty head is marked `headless` (no head shown).
      */
     static tables(md: MarkdownRenderer): void {
         md.renderer.rules.table_open = (tokens, index, options, _env, self) => `<div class="table-wrap">${self.renderToken(tokens, index, options).trimEnd()}\n`;
@@ -150,13 +150,20 @@ export class Markdown {
                     } else if (!(token.attrGet("class") ?? "").includes("nb")) Markdown.mark(token, "long");
                     const next = children[index + 1];
                     const suffix = next?.type === "text" ? /^(?:['\u2019]s|s)(?![\p{L}\p{N}])/u.exec(next.content)?.[0] : undefined;
-                    if (next && suffix) {
-                        token.meta = { ...token.meta, suffix };
-                        next.content = next.content.slice(suffix.length);
-                    }
+                    // The text keeps its letter, so the page's title, read from the tokens after these rules, keeps it too.
+                    if (suffix) token.meta = { ...token.meta, suffix };
                 }
             }
         });
+
+        // A token that reads as `content` but is otherwise `token`.
+        const as = (token: Token, content: string): Token => Object.assign(Object.create(token) as Token, { content });
+        const text = md.renderer.rules.text!;
+        md.renderer.rules.text = (tokens, index, options, env, self) => {
+            const suffix: string | undefined = tokens[index - 1]?.meta?.suffix;
+            if (!suffix) return text(tokens, index, options, env, self);
+            return text([as(tokens[index]!, tokens[index]!.content.slice(suffix.length))], 0, options, env, self);
+        };
 
         const render = md.renderer.rules.code_inline!;
         md.renderer.rules.code_inline = (tokens, index, options, env, self) => {
@@ -165,10 +172,10 @@ export class Markdown {
             // A word that is kept whole, `mid`, takes a break that the CSS turns on (a `wbr` breaks even where white-space says not to).
             const mark = kind === "long" ? "<wbr>" : `<i class="wb"></i>`;
             const suffix: string | undefined = token.meta?.suffix;
+            const letter = suffix ? `<span class="sfx">${text([as(tokens[index + 1]!, suffix)], 0, options, env, self)}</span>` : "";
             return render(tokens, index, options, env, self).replace(
                 /^(<code[^>]*>)([\s\S]*)(<\/code>)$/,
-                (_, open: string, text: string, close: string) =>
-                    open + (kind ? text.replace(/[_./,=:](?=\S)/g, `$&${mark}`) : text) + (suffix ? `<span class="sfx">${md.utils.escapeHtml(suffix)}</span>` : "") + close
+                (_, open: string, body: string, close: string) => open + (kind ? body.replace(/[_./,=:](?=\S)/g, `$&${mark}`) : body) + letter + close
             );
         };
     }

@@ -643,7 +643,7 @@ button:focus-visible {
         display: none;
     }
     .vp-doc td[data-label]::before {
-        content: attr(data-label);
+        content: attr(data-label) / "";
     }
 }
 /* A column's name over its cell, in a table set as records. */
@@ -659,8 +659,9 @@ button:focus-visible {
 }
 
 /*
- * A Limitations table holds three columns of prose, too many for the column: the shortest gets a few words a line. Each row is a
- * record at every width: the limitation across the column, then what to do and when to revisit it side by side, each named.
+ * A Limitations table holds three columns of prose, too many for the column: the shortest gets a few words a line. From 720px each
+ * row is a record: the limitation across the column, then what to do and when to revisit it side by side, each named. Below 720px
+ * it stacks as every table does. The name is drawn only: a screen reader reads the column's head, as for every record.
  */
 @media (min-width: 720px) {
     .vp-doc .limitations :is(table, tbody, td) {
@@ -693,7 +694,7 @@ button:focus-visible {
         grid-column: 1 / -1;
     }
     .vp-doc .limitations td[data-label]::before {
-        content: attr(data-label);
+        content: attr(data-label) / "";
     }
 }
 
