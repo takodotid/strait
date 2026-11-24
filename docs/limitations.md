@@ -27,5 +27,5 @@ Each RFC lists the limitations of its subject: what to do about each one, and wh
 <div v-for="section in data" :key="section.rfc">
   <h3 :id="section.rfc.toLowerCase()">{{ section.rfc }}: {{ section.title }} <a class="header-anchor" :href="'#' + section.rfc.toLowerCase()" :aria-label="'Permalink to ' + section.rfc"></a></h3>
   <p><a :href="section.link">{{ section.rfc }} on GitHub</a></p>
-  <div v-html="section.html"></div>
+  <div class="limitations" v-html="section.html"></div>
 </div>
