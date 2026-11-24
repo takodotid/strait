@@ -8,6 +8,17 @@ Roll back one site at a time, like an [upgrade](./upgrade.md). Keep the CRDs of 
 
 A rollback across a release changes what the site does. Each table applies when the target release is before its version, and the site runs that version or later. Do each action before the rollback. A change with no action needs none.
 
+#### Before 1.6.0
+
+The CRDs of 1.6.0 stay, so the fields below stay in each object and the API server still accepts them. The older controller and gateway ignore them.
+
+| Change | Action |
+|---|---|
+| `policy.isolationTimeout` is ignored: a Single-mode `SiteService` routes to a local member while its site sees no peer. | Plan for a site cut off from every peer to route to its local member, as it did before 1.6.0. |
+| `policy.connections: EndGateway` is ignored, and so is `Import.spec.closed`: every import keeps its listener, and connections through the gateway to a member that left the route are kept. | Plan to end those connections from the application or the workload. |
+| `plugin.cnpg.confirmRole` is ignored: each member's role comes from its `Cluster`'s status only, so a member whose database answered the other role, or did not answer, can be routed again. | |
+| The chart ignores `cnpg.confirmRole.secretName` and `envoy.drainTimeSeconds`: the controller has no role check credentials, and Envoy keeps a removed or changed listener's connections for its default 600s. | |
+
 #### Before 1.5.0
 
 | Change | Action |
