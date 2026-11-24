@@ -38,7 +38,7 @@ The example is for site a, with `site-a-c.yaml` holding the `SitePeer` c and the
 Validate:
 
 ```sh
-helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.5.0 \
+helm template strait oci://ghcr.io/takodotid/charts/strait --version 1.6.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f - -f site-a-c.yaml
 ```
 

@@ -67,7 +67,7 @@ Dry run, which checks the rendered `Site`:
 
 ```sh
 helm template strait oci://ghcr.io/takodotid/charts/strait \
-  --version 1.5.0 \
+  --version 1.6.0 \
   --namespace strait-system --values values-a.yaml | strait validate -f -
 ```
 
@@ -76,7 +76,7 @@ Then install at both sites:
 ```sh
 for s in a b; do
   helm --kube-context site-$s install strait oci://ghcr.io/takodotid/charts/strait \
-    --version 1.5.0 \
+    --version 1.6.0 \
     --namespace strait-system --values values-$s.yaml --wait
 done
 ```
@@ -169,7 +169,7 @@ Dry run, which checks each site's objects together with its `Site`:
 ```sh
 for s in a b; do
   helm template strait oci://ghcr.io/takodotid/charts/strait \
-    --version 1.5.0 \
+    --version 1.6.0 \
     --namespace strait-system --values values-$s.yaml \
     | strait validate -f - -f site-$s.yaml
 done
