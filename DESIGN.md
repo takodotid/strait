@@ -300,7 +300,7 @@ A table never scrolls the page sideways.
 
 ### Code
 
-A block is light text on the black hull in a 1px edge, with soft comments and buff keywords. A line that runs past the block leaves a soft edge. Below 720px a shell block wraps, set in by four characters on the next line. A word of code in the text is ink on the deck, in a hairline frame.
+A block is light text on the black hull in a 1px edge, with soft comments and buff keywords. A line that runs past the block leaves a soft edge. Below 720px a shell block wraps, set in by four characters on the next line. A word of code in the text is ink on the deck, in a hairline frame. A plural `s` or `'s` after it sits inside the frame, in the reading type, so the two read as one word.
 
 ### Callouts
 

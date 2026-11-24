@@ -131,8 +131,8 @@ export class Markdown {
 
     /**
      * A short word of code is marked `nb`, so the CSS keeps it on one line: a flag, a name or `-o yaml` never splits at a hyphen. A long
-     * one is marked `long` and gets a break after each `_ . / , = :`, so it breaks there first. A word followed by a plural `s` or `'s`
-     * is marked `sx`, so the CSS closes the gap between the chip and the letter.
+     * one is marked `long` and gets a break after each `_ . / , = :`, so it breaks there first. A plural `s` or `'s` after a word moves
+     * into its chip, set in the reading type, so the chip and the letter read as one word and never part at a line's end.
      */
     static chips(md: MarkdownRenderer): void {
         md.core.ruler.push("strait_code_chips", (state) => {
@@ -149,19 +149,27 @@ export class Markdown {
                         if (token.content.length > FIRM_CODE) Markdown.mark(token, "mid");
                     } else if (!(token.attrGet("class") ?? "").includes("nb")) Markdown.mark(token, "long");
                     const next = children[index + 1];
-                    if (next?.type === "text" && /^(?:['\u2019]s|s)(?![\p{L}\p{N}])/u.test(next.content)) Markdown.mark(token, "sx");
+                    const suffix = next?.type === "text" ? /^(?:['\u2019]s|s)(?![\p{L}\p{N}])/u.exec(next.content)?.[0] : undefined;
+                    if (next && suffix) {
+                        token.meta = { ...token.meta, suffix };
+                        next.content = next.content.slice(suffix.length);
+                    }
                 }
             }
         });
 
         const render = md.renderer.rules.code_inline!;
         md.renderer.rules.code_inline = (tokens, index, options, env, self) => {
-            const html = render(tokens, index, options, env, self);
-            const kind = /\b(?:long|mid)\b/.exec(tokens[index]!.attrGet("class") ?? "")?.[0];
-            if (!kind) return html;
+            const token = tokens[index]!;
+            const kind = /\b(?:long|mid)\b/.exec(token.attrGet("class") ?? "")?.[0];
             // A word that is kept whole, `mid`, takes a break that the CSS turns on (a `wbr` breaks even where white-space says not to).
             const mark = kind === "long" ? "<wbr>" : `<i class="wb"></i>`;
-            return html.replace(/^(<code[^>]*>)([\s\S]*)(<\/code>)$/, (_, open: string, text: string, close: string) => open + text.replace(/[_./,=:](?=\S)/g, `$&${mark}`) + close);
+            const suffix: string | undefined = token.meta?.suffix;
+            return render(tokens, index, options, env, self).replace(
+                /^(<code[^>]*>)([\s\S]*)(<\/code>)$/,
+                (_, open: string, text: string, close: string) =>
+                    open + (kind ? text.replace(/[_./,=:](?=\S)/g, `$&${mark}`) : text) + (suffix ? `<span class="sfx">${md.utils.escapeHtml(suffix)}</span>` : "") + close
+            );
         };
     }
 

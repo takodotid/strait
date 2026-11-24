@@ -450,7 +450,8 @@ button:focus-visible {
 }
 /* A word of code in a heading is sized to the heading. */
 .vp-doc.vp-doc :is(h1, h2, h3, h4) > code {
-    font-size: 0.8em;
+    --chip-size: 0.8;
+    font-size: calc(var(--chip-size) * 1em);
     font-weight: 600;
     letter-spacing: 0;
 }
@@ -727,19 +728,20 @@ button:focus-visible {
     color: var(--ship-ink);
     background: var(--ship-deck);
     border: 1px solid var(--ship-line);
-    font-size: 0.86em;
+    --chip-size: 0.86;
+    font-size: calc(var(--chip-size) * 1em);
     padding: 2px 6px;
     overflow-wrap: anywhere;
 }
-/* A short word of code is not broken: a flag, a name, `-o yaml`. A plural `s` after a chip closes against it. */
+/* A short word of code is not broken: a flag, a name, `-o yaml`. A plural `s` inside a chip is set in the reading type and size. */
 .vp-doc :not(pre) > code.nb {
     white-space: nowrap;
     overflow-wrap: normal;
 }
-.vp-doc :not(pre) > code.sx {
-    padding-right: 0;
-    border-right: 0;
-    border-radius: var(--ship-radius) 0 0 var(--ship-radius) !important;
+.vp-doc code .sfx {
+    font-family: var(--vp-font-family-base);
+    font-size: calc(1em / var(--chip-size));
+    letter-spacing: 0;
 }
 .vp-doc a > code {
     color: var(--ship-link);
