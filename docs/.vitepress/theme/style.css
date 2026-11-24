@@ -450,7 +450,8 @@ button:focus-visible {
 }
 /* A word of code in a heading is sized to the heading. */
 .vp-doc.vp-doc :is(h1, h2, h3, h4) > code {
-    font-size: 0.8em;
+    --chip-size: 0.8;
+    font-size: calc(var(--chip-size) * 1em);
     font-weight: 600;
     letter-spacing: 0;
 }
@@ -642,15 +643,58 @@ button:focus-visible {
         display: none;
     }
     .vp-doc td[data-label]::before {
-        content: attr(data-label);
+        content: attr(data-label) / "";
+    }
+}
+/* A column's name over its cell, in a table set as records. */
+.vp-doc td[data-label]::before {
+    display: block;
+    margin-bottom: 1px;
+    font-size: 12.5px;
+    font-weight: 700;
+    font-stretch: 85%;
+    line-height: 1.3;
+    letter-spacing: 0.04em;
+    color: var(--ship-soft-ink);
+}
+
+/*
+ * A Limitations table holds three columns of prose, too many for the column: the shortest gets a few words a line. From 720px each
+ * row is a record: the limitation across the column, then what to do and when to revisit it side by side, each named. Below 720px
+ * it stacks as every table does. The name is drawn only: a screen reader reads the column's head, as for every record.
+ */
+@media (min-width: 720px) {
+    .vp-doc .limitations :is(table, tbody, td) {
         display: block;
-        margin-bottom: 1px;
-        font-size: 12.5px;
-        font-weight: 700;
-        font-stretch: 85%;
-        line-height: 1.3;
-        letter-spacing: 0.04em;
-        color: var(--ship-soft-ink);
+    }
+    .vp-doc .limitations table {
+        border-top: 3px solid var(--ship-head);
+    }
+    .vp-doc .limitations thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+    .vp-doc .limitations tr {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 28px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--ship-line);
+    }
+    .vp-doc .limitations td {
+        border: 0;
+        padding: 4px 0;
+    }
+    .vp-doc .limitations td:first-child {
+        grid-column: 1 / -1;
+    }
+    .vp-doc .limitations td[data-label]::before {
+        content: attr(data-label) / "";
     }
 }
 
@@ -685,19 +729,20 @@ button:focus-visible {
     color: var(--ship-ink);
     background: var(--ship-deck);
     border: 1px solid var(--ship-line);
-    font-size: 0.86em;
+    --chip-size: 0.86;
+    font-size: calc(var(--chip-size) * 1em);
     padding: 2px 6px;
     overflow-wrap: anywhere;
 }
-/* A short word of code is not broken: a flag, a name, `-o yaml`. A plural `s` after a chip closes against it. */
+/* A short word of code is not broken: a flag, a name, `-o yaml`. A plural `s` inside a chip is set in the reading type and size. */
 .vp-doc :not(pre) > code.nb {
     white-space: nowrap;
     overflow-wrap: normal;
 }
-.vp-doc :not(pre) > code.sx {
-    padding-right: 0;
-    border-right: 0;
-    border-radius: var(--ship-radius) 0 0 var(--ship-radius) !important;
+.vp-doc code .sfx {
+    font-family: var(--vp-font-family-base);
+    font-size: calc(1em / var(--chip-size));
+    letter-spacing: 0;
 }
 .vp-doc a > code {
     color: var(--ship-link);

@@ -294,12 +294,13 @@ Set as a timetable: a head band, hairline rows, no frame, figures that line up. 
 | A word of code in a cell | May break anywhere. A short word, of 28 characters or fewer, does not break while the table has room. |
 | Below 1280px | Less padding in each cell. |
 | Below 720px | No columns. Each row is a record: its cells one under the other, each after its column's name. `markdown.ts` gives each cell that name, and each table part its screen-reader role. |
+| A Limitations table, from 720px | A record per row, as below 720px, since its three columns of prose leave the shortest a few words a line. The limitation runs across the column; what to do and when to revisit it sit side by side. |
 
 A table never scrolls the page sideways.
 
 ### Code
 
-A block is light text on the black hull in a 1px edge, with soft comments and buff keywords. A line that runs past the block leaves a soft edge. Below 720px a shell block wraps, set in by four characters on the next line. A word of code in the text is ink on the deck, in a hairline frame.
+A block is light text on the black hull in a 1px edge, with soft comments and buff keywords. A line that runs past the block leaves a soft edge. Below 720px a shell block wraps, set in by four characters on the next line. A word of code in the text is ink on the deck, in a hairline frame. A plural `s` or `'s` after it sits inside the frame, in the reading type, so the two read as one word.
 
 ### Callouts
 

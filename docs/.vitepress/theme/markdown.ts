@@ -70,9 +70,9 @@ export class Markdown {
 
     /**
      * A table sits in a wrapper that scrolls if it cannot fit. Each body cell carries its column's head text as `data-label`, so the CSS
-     * can stack a row's cells on a phone and name each; each table part carries its role, so a screen reader still reads a table when the
-     * CSS no longer sets it as one. A table whose first column holds only short labels is marked `labels` (bold column); one with an
-     * empty head is marked `headless` (no head shown).
+     * can set a row as a record, on a phone or in a Limitations table, and name each cell; each table part carries its role, so a screen
+     * reader still reads a table when the CSS no longer sets it as one. A table whose first column holds only short labels is marked
+     * `labels` (bold column); one with an empty head is marked `headless` (no head shown).
      */
     static tables(md: MarkdownRenderer): void {
         md.renderer.rules.table_open = (tokens, index, options, _env, self) => `<div class="table-wrap">${self.renderToken(tokens, index, options).trimEnd()}\n`;
@@ -131,8 +131,8 @@ export class Markdown {
 
     /**
      * A short word of code is marked `nb`, so the CSS keeps it on one line: a flag, a name or `-o yaml` never splits at a hyphen. A long
-     * one is marked `long` and gets a break after each `_ . / , = :`, so it breaks there first. A word followed by a plural `s` or `'s`
-     * is marked `sx`, so the CSS closes the gap between the chip and the letter.
+     * one is marked `long` and gets a break after each `_ . / , = :`, so it breaks there first. A plural `s` or `'s` after a word moves
+     * into its chip, set in the reading type, so the chip and the letter read as one word and never part at a line's end.
      */
     static chips(md: MarkdownRenderer): void {
         md.core.ruler.push("strait_code_chips", (state) => {
@@ -149,19 +149,34 @@ export class Markdown {
                         if (token.content.length > FIRM_CODE) Markdown.mark(token, "mid");
                     } else if (!(token.attrGet("class") ?? "").includes("nb")) Markdown.mark(token, "long");
                     const next = children[index + 1];
-                    if (next?.type === "text" && /^(?:['\u2019]s|s)(?![\p{L}\p{N}])/u.test(next.content)) Markdown.mark(token, "sx");
+                    const suffix = next?.type === "text" ? /^(?:['\u2019]s|s)(?![\p{L}\p{N}])/u.exec(next.content)?.[0] : undefined;
+                    // The text keeps its letter, so the page's title, read from the tokens after these rules, keeps it too.
+                    if (suffix) token.meta = { ...token.meta, suffix };
                 }
             }
         });
 
+        // A token that reads as `content` but is otherwise `token`.
+        const as = (token: Token, content: string): Token => Object.assign(Object.create(token) as Token, { content });
+        const text = md.renderer.rules.text!;
+        md.renderer.rules.text = (tokens, index, options, env, self) => {
+            const suffix: string | undefined = tokens[index - 1]?.meta?.suffix;
+            if (!suffix) return text(tokens, index, options, env, self);
+            return text([as(tokens[index]!, tokens[index]!.content.slice(suffix.length))], 0, options, env, self);
+        };
+
         const render = md.renderer.rules.code_inline!;
         md.renderer.rules.code_inline = (tokens, index, options, env, self) => {
-            const html = render(tokens, index, options, env, self);
-            const kind = /\b(?:long|mid)\b/.exec(tokens[index]!.attrGet("class") ?? "")?.[0];
-            if (!kind) return html;
+            const token = tokens[index]!;
+            const kind = /\b(?:long|mid)\b/.exec(token.attrGet("class") ?? "")?.[0];
             // A word that is kept whole, `mid`, takes a break that the CSS turns on (a `wbr` breaks even where white-space says not to).
             const mark = kind === "long" ? "<wbr>" : `<i class="wb"></i>`;
-            return html.replace(/^(<code[^>]*>)([\s\S]*)(<\/code>)$/, (_, open: string, text: string, close: string) => open + text.replace(/[_./,=:](?=\S)/g, `$&${mark}`) + close);
+            const suffix: string | undefined = token.meta?.suffix;
+            const letter = suffix ? `<span class="sfx">${text([as(tokens[index + 1]!, suffix)], 0, options, env, self)}</span>` : "";
+            return render(tokens, index, options, env, self).replace(
+                /^(<code[^>]*>)([\s\S]*)(<\/code>)$/,
+                (_, open: string, body: string, close: string) => open + (kind ? body.replace(/[_./,=:](?=\S)/g, `$&${mark}`) : body) + letter + close
+            );
         };
     }
 
