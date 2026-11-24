@@ -16,7 +16,7 @@ Required when a pull can take longer than the site's budget, in [How to plan](#h
 Change `v` and `values-a.yaml` to the release and the site's values file.
 
 ```sh
-v=v1.5.0
+v=v1.6.0
 helm template strait oci://ghcr.io/takodotid/charts/strait --version "${v#v}" --values values-a.yaml | grep 'image:' | sort -u
 ```
 
@@ -29,7 +29,7 @@ Apply the release's CRDs first, then upgrade the chart with the same values. Hel
 Change `v`, `site-a` and `values-a.yaml` as in step 1.
 
 ```sh
-v=v1.5.0
+v=v1.6.0
 curl -fsSLO "https://github.com/takodotid/strait/releases/download/$v/strait-crds.yaml"
 kubectl --context site-a apply --server-side --force-conflicts -f strait-crds.yaml
 ```
@@ -110,6 +110,11 @@ Each note applies when the site runs a release before that version.
 - nftables:
   - What to do: Check the nodes that can run a gateway pod first.
   - What changes: The gateway agent uses nftables to filter the traffic that arrives on its WireGuard interfaces. On a node whose kernel lacks `nf_tables`, once the gateway rolls, each `wireguard` link has no interface and shows `NotConfigured` ([RFC0005](../../rfcs/RFC0005.md#wireguard)).
+
+### 1.6.0
+
+- What to do: Apply the CRDs before the chart.
+- What changes: The new CRDs add `SiteService.spec.policy.isolationTimeout`, `SiteService.spec.policy.connections`, `SiteService.spec.plugin.cnpg.confirmRole` and `Import.spec.closed`. Each is off unless set. The new chart values `cnpg.confirmRole.secretName` and `envoy.drainTimeSeconds` change nothing at their defaults.
 
 ## What the site shows
 

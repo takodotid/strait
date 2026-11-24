@@ -11,7 +11,7 @@ Install the chart at each site, then the CLI on the operator's machine. [Require
 | CLI archives for Linux, macOS and Windows, amd64 and arm64, with `SHA256SUMS` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 | The CRDs, in one file: `strait-crds.yaml` | [GitHub releases](https://github.com/takodotid/strait/releases) |
 
-Replace v1.5.0 with the latest version on the [releases page](https://github.com/takodotid/strait/releases).
+Replace v1.6.0 with the latest version on the [releases page](https://github.com/takodotid/strait/releases).
 
 ## Requirements
 
@@ -35,7 +35,7 @@ Every value of the chart is in [values.yaml](../../deploy/helm/strait/values.yam
 On Linux, here on amd64:
 
 ```sh
-v=v1.5.0
+v=v1.6.0
 base=https://github.com/takodotid/strait/releases/download/$v
 f="strait_${v}_linux_amd64"
 curl -fsSLO "$base/$f.tar.gz"
@@ -52,7 +52,7 @@ The archive also holds the man pages in `man/man1/` and the skill document `SKIL
 The Windows archive is a `.zip` with `strait.exe` and `kubectl-strait.exe`. Install it in PowerShell, here on amd64:
 
 ```powershell
-$v = "v1.5.0"
+$v = "v1.6.0"
 $a = "strait_${v}_windows_amd64"
 $url = "https://github.com/takodotid/strait/releases/download/$v"
 Invoke-WebRequest "$url/$a.zip" -OutFile "$a.zip" -UseBasicParsing
@@ -87,7 +87,7 @@ Each release is signed and attested.
 Verify the chart and its image with [cosign](https://docs.sigstore.dev/cosign/verifying/verify/) 3, and an archive with the GitHub CLI:
 
 ```sh
-v=v1.5.0
+v=v1.6.0
 id="https://github.com/takodotid/strait/.github/workflows/release.yaml@refs/tags/$v"
 issuer=https://token.actions.githubusercontent.com
 cosign verify "ghcr.io/takodotid/charts/strait:${v#v}" \
