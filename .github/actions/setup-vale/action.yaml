@@ -5,8 +5,8 @@ runs:
   steps:
     - shell: bash
       env:
-        VERSION: v3.28.1
-        SHA256: 068954ad869ebec24b8dec6ebcd1cbb1fd5f5a83e966a35baedfae8b2cdc093a
+        VERSION: v3.29.0
+        SHA256: 00356ae1bacd1160aa415664f3ed0d34ce9ef5319c61d31123a97366ea1a2f64
       run: |
         [[ $RUNNER_OS == Linux && $RUNNER_ARCH == X64 ]] || { echo "vale is pinned for Linux on amd64 only" >&2; exit 1; }
         dir="$RUNNER_TEMP/vale-$VERSION"
